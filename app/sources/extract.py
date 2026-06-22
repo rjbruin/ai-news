@@ -39,7 +39,8 @@ _SYSTEM = (
     "For each story, return its headline as `title`, a 1-3 sentence neutral "
     "`summary` drawn ONLY from the newsletter text (do not invent facts), and "
     "the `url` linking to the original source article (empty string if none). "
-    "Ignore ads, sponsorships, job listings, and unsubscribe/footer boilerplate."
+    "Ignore ads, sponsorships, job listings, and unsubscribe/footer boilerplate.\n\n"
+    'Respond ONLY with valid JSON in this exact format: {"items": [{"title": "...", "summary": "...", "url": "..."}, ...]}'
 )
 
 
@@ -59,7 +60,6 @@ def extract_items(doc: RawDocument) -> list[ExtractedItem]:
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": user_content},
             ],
-            schema=_EXTRACTION_SCHEMA,
         )
     except openrouter.LLMError as exc:
         logger.error("Extraction failed for %s: %s", doc.external_id, exc)

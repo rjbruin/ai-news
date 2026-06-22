@@ -21,14 +21,27 @@
     <tbody>
     {% for s in sources %}
       <tr>
-        <td>{{ s.name }} {% if not s.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}</td>
+        <td>
+          {{ s.name }}
+          {% if not s.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}
+        </td>
         <td><code>{{ s.type_key }}</code></td>
-        <td>{{ s.poll_interval_override or 'default' }}</td>
+        <td class="small">{{ s.poll_interval_override ~ 's' if s.poll_interval_override else 'default' }}</td>
         <td class="small">{{ s.last_polled_at.strftime('%Y-%m-%d %H:%M') if s.last_polled_at else '—' }}</td>
-        <td class="small text-body-secondary">{{ s.last_status or '—' }}</td>
+        <td class="small">
+          {% if s.last_status %}
+            {% if 'error' in s.last_status or 'partial' in s.last_status %}
+              <span class="text-danger">{{ s.last_status }}</span>
+            {% else %}
+              <span class="text-success">{{ s.last_status }}</span>
+            {% endif %}
+          {% else %}
+            <span class="text-body-secondary">never polled</span>
+          {% endif %}
+        </td>
         <td class="text-nowrap">
           <form method="post" action="{{ url_for('admin.source_poll', source_id=s.id) }}" class="d-inline">
-            <button class="btn btn-sm btn-outline-primary">Poll</button></form>
+            <button class="btn btn-sm btn-outline-primary">Poll now</button></form>
           <form method="post" action="{{ url_for('admin.source_toggle', source_id=s.id) }}" class="d-inline">
             <button class="btn btn-sm btn-outline-secondary">{{ 'Disable' if s.enabled else 'Enable' }}</button></form>
           <form method="post" action="{{ url_for('admin.source_delete', source_id=s.id) }}" class="d-inline">

@@ -36,7 +36,7 @@ class Config:
 
     # LLM (global OpenRouter key)
     OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-    OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+    OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5")
     OPENROUTER_BASE_URL = os.environ.get(
         "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
     )

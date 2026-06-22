@@ -35,8 +35,10 @@ def chat_json(
 ) -> dict | list:
     """Call OpenRouter chat completions and return parsed JSON.
 
-    If ``schema`` is given, request structured output via ``json_schema``.
-    Falls back to plain ``json_object`` response format otherwise.
+    Always uses ``json_object`` response format (universally supported on
+    OpenRouter).  When ``schema`` is provided its structure is described in the
+    system prompt so the model follows it — we don't use ``json_schema`` mode
+    because it is not supported by all providers on OpenRouter.
     """
     api_key = current_app.config.get("OPENROUTER_API_KEY")
     if not api_key:
@@ -45,19 +47,11 @@ def chat_json(
     base_url = current_app.config["OPENROUTER_BASE_URL"].rstrip("/")
     model = model or current_app.config["OPENROUTER_MODEL"]
 
-    if schema is not None:
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {"name": "result", "strict": True, "schema": schema},
-        }
-    else:
-        response_format = {"type": "json_object"}
-
     payload = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
-        "response_format": response_format,
+        "response_format": {"type": "json_object"},
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -76,7 +70,16 @@ def chat_json(
             timeout=timeout,
         )
         resp.raise_for_status()
-    except httpx.HTTPError as exc:  # network / status errors
+    except httpx.HTTPStatusError as exc:
+        body = ""
+        try:
+            body = exc.response.json()
+        except Exception:
+            body = exc.response.text[:500]
+        raise LLMError(
+            f"OpenRouter HTTP {exc.response.status_code}: {body}"
+        ) from exc
+    except httpx.HTTPError as exc:
         raise LLMError(f"OpenRouter request failed: {exc}") from exc
 
     data = resp.json()
@@ -85,7 +88,14 @@ def chat_json(
     except (KeyError, IndexError) as exc:
         raise LLMError(f"Unexpected OpenRouter response: {data}") from exc
 
+    # Strip markdown code fences if the model wrapped the JSON
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        # drop first line (```json or ```) and last line (```)
+        stripped = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
     try:
-        return json.loads(content)
+        return json.loads(stripped)
     except json.JSONDecodeError as exc:
         raise LLMError(f"LLM did not return valid JSON: {content[:500]}") from exc

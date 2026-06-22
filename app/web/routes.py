@@ -33,7 +33,7 @@ def index():
 def dashboard():
     recent = NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(10).all()
     counts = {
-        "items": NewsItem.query.count(),
+        "news": NewsItem.query.count(),
         "tags": Tag.query.count(),
         "summaries": Summary.query.filter_by(user_id=current_user.id).count(),
     }
@@ -88,7 +88,7 @@ def tag_new():
             )
             db.session.add(tag)
             db.session.commit()
-            flash(f"Tag “{name}” created.", "success")
+            flash(f'Tag "{name}" created.', "success")
             return redirect(url_for("web.tags"))
     return render_template("tags/edit.html", tag=None)
 

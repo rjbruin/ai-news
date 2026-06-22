@@ -38,7 +38,7 @@ class ImapNewsletterSource(NewsSource):
         "username": {"type": "text", "label": "Username", "required": False},
         "password": {"type": "password", "label": "Password", "required": False, "secret": True},
         "folder": {"type": "text", "label": "Folder", "required": False},
-        "mark_seen": {"type": "checkbox", "label": "Mark messages as seen", "required": False},
+        "mark_seen": {"type": "checkbox", "label": "Mark messages as seen after fetching (recommended)", "required": False, "default": True},
     }
 
     def _conn_params(self) -> dict:
@@ -49,7 +49,7 @@ class ImapNewsletterSource(NewsSource):
             "username": self.config.get("username") or cfg.get("IMAP_USERNAME"),
             "password": self.config.get("password") or cfg.get("IMAP_PASSWORD"),
             "folder": self.config.get("folder") or cfg.get("IMAP_FOLDER", "INBOX"),
-            "mark_seen": bool(self.config.get("mark_seen", False)),
+            "mark_seen": bool(self.config.get("mark_seen", True)),
         }
 
     def fetch(self, since: datetime | None) -> list[RawDocument]:
@@ -61,8 +61,12 @@ class ImapNewsletterSource(NewsSource):
             raise RuntimeError("IMAP source is not configured (host/username/password).")
 
         docs: list[RawDocument] = []
-        criteria = AND(seen=False)
-        if since is not None:
+        # Always filter unseen only. When mark_seen=True (default), processed
+        # emails are marked read and won't appear again — no date filter needed.
+        # When mark_seen=False, use a date floor to avoid reprocessing old mail.
+        if p["mark_seen"] or since is None:
+            criteria = AND(seen=False)
+        else:
             criteria = AND(date_gte=since.date(), seen=False)
 
         with MailBox(p["host"], port=p["port"]).login(

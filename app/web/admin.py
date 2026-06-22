@@ -75,11 +75,14 @@ def source_new():
 def source_poll(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
     stats = ingest.ingest_source(source)
-    flash(
-        f"Polled “{source.name}”: {stats['new_items']} new, "
-        f"{stats['tagged']} tagged, {stats['errors']} errors.",
-        "success" if not stats["errors"] else "warning",
+    msg = (
+        f"Polled '{source.name}': {stats['fetched']} emails fetched, "
+        f"{stats['new_items']} new items, {stats['tagged']} tagged, "
+        f"{stats['skipped']} skipped (duplicate), {stats['errors']} errors."
     )
+    if stats["error_log"]:
+        msg += " Errors: " + " | ".join(stats["error_log"][:5])
+    flash(msg, "success" if not stats["errors"] else "warning")
     return redirect(url_for("admin.index"))
 
 
@@ -108,8 +111,9 @@ def source_delete(source_id: int):
 def poll_all():
     totals = ingest.ingest_all_due(force=True)
     flash(
-        f"Polled {totals['sources']} sources: {totals['new_items']} new items.",
-        "success",
+        f"Polled {totals['sources']} sources: {totals['new_items']} new items, "
+        f"{totals['tagged']} tagged, {totals['errors']} errors.",
+        "success" if not totals["errors"] else "warning",
     )
     return redirect(url_for("admin.index"))
 
@@ -128,7 +132,7 @@ def tag_promote(tag_id: int):
     tag = db.session.get(Tag, tag_id) or abort(404)
     tag.scope = "global"
     db.session.commit()
-    flash(f"Tag “{tag.name}” promoted to global.", "success")
+    flash(f'Tag "{tag.name}" promoted to global.', "success")
     return redirect(url_for("web.tags"))
 
 

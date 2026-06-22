@@ -15,7 +15,8 @@ _SYSTEM = (
     "You are a precise news classifier. Given a news item and a taxonomy of "
     "tags (each with a name, keywords and explanation), decide which tags apply "
     "to the item. Only assign a tag when the item genuinely matches its meaning. "
-    "Return a confidence in [0,1] for each assigned tag."
+    "Return a confidence in [0,1] for each assigned tag.\n\n"
+    'Respond ONLY with valid JSON in this exact format: {"tags": [{"name": "TagName", "confidence": 0.9}, ...]}'
 )
 
 
@@ -66,7 +67,6 @@ def score_item(item_text: str, tags: list[dict]) -> dict[str, float]:
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": user},
             ],
-            schema=_schema(names),
         )
     except openrouter.LLMError as exc:
         logger.error("LLM tagging failed: %s", exc)

@@ -17,21 +17,23 @@ logger = logging.getLogger(__name__)
 
 def ingest_source(source: Source) -> dict:
     """Fetch + extract + persist + tag for a single source. Returns a stat dict."""
-    stats = {"fetched": 0, "new_items": 0, "tagged": 0, "errors": 0}
+    stats = {"fetched": 0, "new_items": 0, "tagged": 0, "skipped": 0, "errors": 0, "error_log": []}
     plugin = source_registry.create(source.type_key, source.config or {})
     if plugin is None:
-        source.last_status = f"unknown source type: {source.type_key}"
+        source.last_status = f"error: unknown source type '{source.type_key}'"
         db.session.commit()
         return stats
 
     try:
         docs = plugin.fetch(source.last_polled_at)
-    except Exception as exc:  # noqa: BLE001 - record and move on
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Fetch failed for source %s", source.id)
-        source.last_status = f"fetch error: {exc}"
+        msg = f"fetch error: {exc}"
+        source.last_status = msg
         source.last_polled_at = utcnow()
         db.session.commit()
         stats["errors"] += 1
+        stats["error_log"].append(msg)
         return stats
 
     stats["fetched"] = len(docs)
@@ -41,14 +43,22 @@ def ingest_source(source: Source) -> dict:
     for doc in docs:
         try:
             extracted = plugin.extract(doc)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            msg = f"extraction error for '{doc.subject or doc.external_id}': {exc}"
             logger.exception("Extraction failed for doc %s", doc.external_id)
             stats["errors"] += 1
+            stats["error_log"].append(msg)
             continue
+
+        if not extracted:
+            stats["error_log"].append(
+                f"no items extracted from '{doc.subject or doc.external_id}' (LLM returned empty or failed)"
+            )
 
         for ex in extracted:
             dedup = NewsItem.make_hash(ex.title, ex.url)
             if NewsItem.query.filter_by(dedup_hash=dedup).first():
+                stats["skipped"] += 1
                 continue
             item = NewsItem(
                 source_id=source.id,
@@ -69,15 +79,25 @@ def ingest_source(source: Source) -> dict:
         try:
             tagging_engine.apply_to_item(item, all_tags)
             stats["tagged"] += 1
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            msg = f"tagging error for '{item.title[:60]}': {exc}"
             logger.exception("Tagging failed for item %s", item.id)
             item.status = "error"
             stats["errors"] += 1
+            stats["error_log"].append(msg)
 
     source.last_polled_at = utcnow()
-    source.last_status = (
-        f"ok: {stats['new_items']} new of {stats['fetched']} docs"
-    )
+    if stats["errors"]:
+        status = (
+            f"partial: {stats['new_items']} new / {stats['fetched']} docs / "
+            f"{stats['errors']} errors / {stats['skipped']} skipped"
+        )
+    else:
+        status = (
+            f"ok: {stats['new_items']} new / {stats['fetched']} docs / "
+            f"{stats['skipped']} skipped"
+        )
+    source.last_status = status
     db.session.commit()
     return stats
 
