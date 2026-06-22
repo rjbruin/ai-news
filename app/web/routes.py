@@ -143,11 +143,32 @@ def tag_tryout():
             "keywords": request.form.get("keywords") or "",
             "explanation": (request.form.get("explanation") or "").strip(),
         }
-        matches = tagging_engine.preview(
-            form_data["name"],
-            _parse_keywords(form_data["keywords"]),
-            form_data["explanation"],
-        )
+        action = request.form.get("action", "preview")
+        if action == "save":
+            name = form_data["name"]
+            if not name:
+                flash("A tag needs a name.", "danger")
+            elif Tag.query.filter_by(name=name).first():
+                flash("A tag with that name already exists.", "danger")
+            else:
+                make_global = bool(request.form.get("make_global")) and current_user.is_admin
+                tag = Tag(
+                    name=name,
+                    keywords=_parse_keywords(form_data["keywords"]),
+                    explanation=form_data["explanation"],
+                    scope="global" if make_global else "user",
+                    owner_user_id=current_user.id,
+                )
+                db.session.add(tag)
+                db.session.commit()
+                flash(f'Tag "{name}" created.', "success")
+                return redirect(url_for("web.tags"))
+        else:
+            matches = tagging_engine.preview(
+                form_data["name"],
+                _parse_keywords(form_data["keywords"]),
+                form_data["explanation"],
+            )
     return render_template("tags/tryout.html", matches=matches, form_data=form_data)
 
 
