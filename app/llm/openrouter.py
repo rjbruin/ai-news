@@ -92,8 +92,9 @@ def chat_json(
     stripped = content.strip()
     if stripped.startswith("```"):
         lines = stripped.splitlines()
-        # drop first line (```json or ```) and last line (```)
-        stripped = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        # Find closing fence; model sometimes appends reasoning after it
+        close = next((i for i, l in enumerate(lines[1:], 1) if l.strip() == "```"), None)
+        stripped = "\n".join(lines[1:close] if close else lines[1:])
 
     try:
         return json.loads(stripped)
