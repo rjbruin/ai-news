@@ -106,8 +106,10 @@ class NewsItem(db.Model):
     dedup_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
     title = db.Column(db.String(500), nullable=False)
     url = db.Column(db.String(2000), nullable=True)
-    # Per decision Q7: store only the newsletter-provided summary + source URL.
     summary_text = db.Column(db.Text, nullable=True)
+    one_liner = db.Column(db.Text, nullable=True)
+    full_text = db.Column(db.Text, nullable=True)  # stored for URL-less offline items
+    item_type = db.Column(db.String(30), nullable=True)  # paper|announcement|blog|news|tool|opinion|other
     published_at = db.Column(db.DateTime, nullable=True)
     fetched_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     status = db.Column(db.String(20), default="parsed", nullable=False)  # parsed|tagged|error

@@ -66,6 +66,9 @@ def ingest_source(source: Source) -> dict:
                 title=ex.title[:500],
                 url=ex.url,
                 summary_text=ex.summary,
+                one_liner=ex.one_liner,
+                item_type=ex.item_type,
+                full_text=ex.full_text,
                 published_at=ex.published_at,
                 status="parsed",
             )
