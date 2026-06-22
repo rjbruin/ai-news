@@ -45,7 +45,7 @@ class Config:
 
     # Tagging
     TAGGING_MODE = os.environ.get("TAGGING_MODE", "nb_then_llm")
-    NB_CONFIDENCE_THRESHOLD = float(os.environ.get("NB_CONFIDENCE_THRESHOLD", "0.35"))
+    NB_CONFIDENCE_THRESHOLD = float(os.environ.get("NB_CONFIDENCE_THRESHOLD", "0.30"))
 
     # TTS
     ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
