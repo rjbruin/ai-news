@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
 from .extensions import db, login_manager, migrate
@@ -12,7 +13,18 @@ from .extensions import db, login_manager, migrate
 
 def create_app(config_object: type | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=False)
-    app.config.from_object(config_object or Config)
+    if config_object is None:
+        config_name = os.environ.get("FLASK_CONFIG", "")
+        if config_name:
+            import importlib
+            module_path, cls_name = config_name.rsplit(".", 1)
+            config_object = getattr(importlib.import_module(module_path), cls_name)
+        else:
+            config_object = Config
+    app.config.from_object(config_object)
+
+    # Trust one layer of reverse-proxy headers (nginx).
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # Ensure instance/artifact dirs exist for SQLite + generated files.
     _ensure_dirs(app)
