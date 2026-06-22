@@ -33,6 +33,15 @@ body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-se
 a { color: var(--brand); }
 a:hover { color: var(--brand-dark); }
 
+a[target="_blank"]:not(.btn)::after {
+  content: "\00a0⤴";
+  font-size: .6em;
+  vertical-align: 0.2em;
+  opacity: .75;
+  text-shadow: 0.4px 0 0 currentColor, -0.4px 0 0 currentColor,
+               0 0.4px 0 currentColor, 0 -0.4px 0 currentColor;
+}
+
 @media print {
   .app-navbar, footer, .btn { display: none !important; }
 }

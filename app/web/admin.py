@@ -15,7 +15,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import Source, Tag, User
+from ..models import IngestRun, NewsItem, NewsItemTag, Source, Tag, User
 from ..services import ingest
 from ..sources import registry as source_registry
 
@@ -86,6 +86,26 @@ def source_poll(source_id: int):
     return redirect(url_for("admin.index"))
 
 
+@bp.route("/sources/<int:source_id>/reset", methods=["POST"])
+@admin_required
+def source_reset(source_id: int):
+    source = db.session.get(Source, source_id) or abort(404)
+    # Delete items first (cascades to NewsItemTag), then runs
+    NewsItem.query.filter_by(source_id=source_id).delete(synchronize_session=False)
+    IngestRun.query.filter_by(source_id=source_id).delete(synchronize_session=False)
+    source.last_polled_at = None
+    source.last_status = None
+    db.session.commit()
+    stats = ingest.ingest_source(source)
+    msg = (
+        f"Reset and re-polled '{source.name}': {stats['fetched']} emails fetched, "
+        f"{stats['new_items']} new items, {stats['tagged']} tagged, "
+        f"{stats['skipped']} skipped, {stats['errors']} errors."
+    )
+    flash(msg, "success" if not stats["errors"] else "warning")
+    return redirect(url_for("admin.source_detail", source_id=source_id))
+
+
 @bp.route("/sources/<int:source_id>/toggle", methods=["POST"])
 @admin_required
 def source_toggle(source_id: int):
@@ -124,6 +144,35 @@ def retag():
     count = ingest.retag_all()
     flash(f"Re-tagged {count} items.", "success")
     return redirect(url_for("admin.index"))
+
+
+@bp.route("/sources/<int:source_id>")
+@admin_required
+def source_detail(source_id: int):
+    source = db.session.get(Source, source_id) or abort(404)
+    runs = (
+        IngestRun.query.filter_by(source_id=source_id)
+        .order_by(IngestRun.fetched_at.desc())
+        .all()
+    )
+    # Items without an ingest_run (ingested before IngestRun was added)
+    orphan_items = (
+        NewsItem.query.filter_by(source_id=source_id, ingest_run_id=None)
+        .order_by(NewsItem.fetched_at.desc())
+        .all()
+    )
+    return render_template(
+        "admin/source_detail.html", source=source, runs=runs, orphan_items=orphan_items
+    )
+
+
+@bp.route("/tagging")
+@admin_required
+def tagging_log():
+    items = (
+        NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(500).all()
+    )
+    return render_template("admin/tagging_log.html", items=items)
 
 
 @bp.route("/tags/<int:tag_id>/promote", methods=["POST"])

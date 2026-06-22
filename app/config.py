@@ -32,6 +32,7 @@ class Config:
         "DATABASE_URL", f"sqlite:///{BASE_DIR / 'instance' / 'ainews.db'}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {"connect_args": {"timeout": 30}}
 
     # Admins
     ADMIN_EMAILS = _emails(os.environ.get("ADMIN_EMAILS"))

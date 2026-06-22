@@ -81,6 +81,22 @@ class AuthToken(db.Model):
 
 
 # ─────────────────────────────── Sources ───────────────────────────────
+class IngestRun(db.Model):
+    """One record per raw document (e.g. email) fetched from a Source."""
+
+    __tablename__ = "ingest_runs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=False)
+    fetched_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    subject = db.Column(db.String(500), nullable=True)
+    sender = db.Column(db.String(255), nullable=True)
+    raw_body = db.Column(db.Text, nullable=True)
+
+    source = db.relationship("Source", back_populates="ingest_runs")
+    items = db.relationship("NewsItem", back_populates="ingest_run", lazy="dynamic")
+
+
 class Source(db.Model):
     __tablename__ = "sources"
 
@@ -96,6 +112,10 @@ class Source(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
     items = db.relationship("NewsItem", back_populates="source", lazy="dynamic")
+    ingest_runs = db.relationship(
+        "IngestRun", back_populates="source", lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
 
 
 class NewsItem(db.Model):
@@ -114,7 +134,12 @@ class NewsItem(db.Model):
     fetched_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     status = db.Column(db.String(20), default="parsed", nullable=False)  # parsed|tagged|error
 
+    ingest_run_id = db.Column(
+        db.Integer, db.ForeignKey("ingest_runs.id"), nullable=True, index=True
+    )
+
     source = db.relationship("Source", back_populates="items")
+    ingest_run = db.relationship("IngestRun", back_populates="items")
     tag_links = db.relationship(
         "NewsItemTag", back_populates="item", lazy="dynamic",
         cascade="all, delete-orphan",
@@ -211,6 +236,7 @@ class SummaryRun(db.Model):
 __all__ = [
     "User",
     "AuthToken",
+    "IngestRun",
     "Source",
     "NewsItem",
     "Tag",
