@@ -50,7 +50,7 @@ def via_cli(src: Path, dst: Path, size: int) -> bool:
 def via_pillow(dst: Path, size: int, maskable: bool = False) -> bool:
     """Dependency-light fallback: draw the newsletter icon with Pillow."""
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageFont
     except ImportError:
         return False
 
@@ -75,11 +75,32 @@ def via_pillow(dst: Path, size: int, maskable: bool = False) -> bool:
         [x0 + w * 0.08, y0 + h * 0.08, x1 - w * 0.08, y0 + h * 0.20],
         radius=int(s * 0.012), fill=(31, 58, 95, 255),
     )
-    # Headline image block
-    d.rounded_rectangle(
-        [x0 + w * 0.08, y0 + h * 0.26, x0 + w * 0.46, y0 + h * 0.52],
-        radius=int(s * 0.012), fill=(200, 132, 58, 255),
-    )
+    # Headline image block with "AI" text
+    bx0 = x0 + w * 0.08
+    by0 = y0 + h * 0.26
+    bx1 = x0 + w * 0.46
+    by1 = y0 + h * 0.52
+    d.rounded_rectangle([bx0, by0, bx1, by1], radius=int(s * 0.012), fill=(200, 132, 58, 255))
+
+    # Draw "AI" centered in the orange block
+    font_size = int((by1 - by0) * 0.55)
+    font = None
+    for name in ("DejaVuSans-Bold.ttf", "Arial Bold.ttf", "arialbd.ttf", "Helvetica.ttf"):
+        try:
+            font = ImageFont.truetype(name, font_size)
+            break
+        except (OSError, IOError):
+            continue
+    if font is None:
+        font = ImageFont.load_default(size=font_size) if hasattr(ImageFont, "load_default") and "size" in ImageFont.load_default.__code__.co_varnames else ImageFont.load_default()
+
+    text = "AI"
+    bbox = d.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    cx = (bx0 + bx1) / 2 - tw / 2 - bbox[0]
+    cy = (by0 + by1) / 2 - th / 2 - bbox[1]
+    d.text((cx, cy), text, font=font, fill=(255, 255, 255, 255))
+
     # Text lines
     gray = (154, 166, 178, 255)
     for i, frac in enumerate([0.27, 0.35, 0.43]):
