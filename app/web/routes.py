@@ -240,13 +240,19 @@ def summary_new():
         if type_key not in types:
             flash("Unknown summary type.", "danger")
         else:
+            plugin_cls = types[type_key]
+            scope_mode = (
+                "since_last"
+                if type_key == "debug_window"
+                else request.form.get("scope_mode", "fixed_period")
+            )
             summary = Summary(
                 user_id=current_user.id,
                 name=(request.form.get("name") or "My summary").strip(),
                 type_key=type_key,
-                scope_mode=request.form.get("scope_mode", "fixed_period"),
+                scope_mode=scope_mode,
                 period=request.form.get("period", "day"),
-                params=_collect_params(types[type_key]),
+                params=_collect_params(plugin_cls),
             )
             db.session.add(summary)
             db.session.commit()
@@ -269,7 +275,11 @@ def summary_edit(summary_id: int):
         else:
             summary.name = (request.form.get("name") or summary.name).strip()
             summary.type_key = type_key
-            summary.scope_mode = request.form.get("scope_mode", summary.scope_mode)
+            summary.scope_mode = (
+                "since_last"
+                if type_key == "debug_window"
+                else request.form.get("scope_mode", summary.scope_mode)
+            )
             summary.period = request.form.get("period", summary.period)
             summary.params = _collect_params(types[type_key])
             db.session.commit()

@@ -23,6 +23,17 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
     now = utcnow()
     params = summary.params or {}
 
+    # Explicit override from params (used by debug_window type)
+    rs = params.get("range_start")
+    re = params.get("range_end")
+    if rs and re:
+        try:
+            start = datetime.fromisoformat(rs).replace(tzinfo=timezone.utc)
+            end = datetime.fromisoformat(re).replace(tzinfo=timezone.utc)
+            return start, end
+        except (ValueError, TypeError):
+            pass
+
     if summary.scope_mode == "since_last":
         start = summary.last_consumed_at
         if start and start.tzinfo is None:
@@ -50,6 +61,10 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
 
 
 def _edition_label(summary: Summary, range_start: datetime | None, range_end: datetime, generated_at: datetime) -> str:
+    params = summary.params or {}
+    if params.get("range_start") and params.get("range_end") and range_start:
+        # Debug window: show the explicit range
+        return f"{range_start.strftime('%-d %b %H:%M')} – {range_end.strftime('%-d %b %H:%M')}"
     if summary.scope_mode == "since_last":
         return generated_at.strftime("%-d %B – %H:%M")
     if summary.period == "week":
