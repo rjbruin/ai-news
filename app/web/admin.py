@@ -86,6 +86,26 @@ def source_poll(source_id: int):
     return redirect(url_for("admin.index"))
 
 
+@bp.route("/sources/<int:source_id>/reset", methods=["POST"])
+@admin_required
+def source_reset(source_id: int):
+    source = db.session.get(Source, source_id) or abort(404)
+    # Delete items first (cascades to NewsItemTag), then runs
+    NewsItem.query.filter_by(source_id=source_id).delete(synchronize_session=False)
+    IngestRun.query.filter_by(source_id=source_id).delete(synchronize_session=False)
+    source.last_polled_at = None
+    source.last_status = None
+    db.session.commit()
+    stats = ingest.ingest_source(source)
+    msg = (
+        f"Reset and re-polled '{source.name}': {stats['fetched']} emails fetched, "
+        f"{stats['new_items']} new items, {stats['tagged']} tagged, "
+        f"{stats['skipped']} skipped, {stats['errors']} errors."
+    )
+    flash(msg, "success" if not stats["errors"] else "warning")
+    return redirect(url_for("admin.source_detail", source_id=source_id))
+
+
 @bp.route("/sources/<int:source_id>/toggle", methods=["POST"])
 @admin_required
 def source_toggle(source_id: int):

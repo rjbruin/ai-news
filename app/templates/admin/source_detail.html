@@ -3,8 +3,15 @@
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
   <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary">← Admin</a>
-  <h1 class="h3 mb-0">{{ source.name }}</h1>
+  <h1 class="h3 mb-0 me-auto">{{ source.name }}</h1>
   {% if not source.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}
+  <form method="post" action="{{ url_for('admin.source_poll', source_id=source.id) }}" class="d-inline">
+    <button class="btn btn-sm btn-outline-primary">Poll now</button>
+  </form>
+  <form method="post" action="{{ url_for('admin.source_reset', source_id=source.id) }}" class="d-inline"
+        onsubmit="return confirm('Delete all existing items and re-poll this source?')">
+    <button class="btn btn-sm btn-outline-danger">Clear &amp; re-poll</button>
+  </form>
 </div>
 
 <div class="card shadow-sm mb-4">
