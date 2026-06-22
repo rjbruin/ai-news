@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Source: {{ source.name }} · Admin · AI News{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary">← Admin</a>
+  <h1 class="h3 mb-0">{{ source.name }}</h1>
+  {% if not source.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body row g-2 small">
+    <div class="col-sm-3 text-body-secondary">Type</div>
+    <div class="col-sm-9"><code>{{ source.type_key }}</code></div>
+    <div class="col-sm-3 text-body-secondary">Poll interval</div>
+    <div class="col-sm-9">{{ source.poll_interval_override ~ ' s' if source.poll_interval_override else 'default' }}</div>
+    <div class="col-sm-3 text-body-secondary">Last polled</div>
+    <div class="col-sm-9">{{ source.last_polled_at.strftime('%Y-%m-%d %H:%M UTC') if source.last_polled_at else '—' }}</div>
+    <div class="col-sm-3 text-body-secondary">Status</div>
+    <div class="col-sm-9">
+      {% if source.last_status %}
+        <span class="{{ 'text-danger' if 'error' in source.last_status or 'partial' in source.last_status else 'text-success' }}">
+          {{ source.last_status }}
+        </span>
+      {% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+<h2 class="h5">{{ items|length }} extracted item(s)</h2>
+{% if items %}
+<div class="accordion shadow-sm" id="items-accordion">
+  {% for item in items %}
+  <div class="accordion-item">
+    <h3 class="accordion-header">
+      <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#item-{{ item.id }}">
+        <span class="me-2 text-body-secondary small">{{ item.fetched_at | monthday }}</span>
+        {% if item.item_type %}
+          <span class="badge text-bg-secondary me-2">{{ item.item_type }}</span>
+        {% endif %}
+        {{ item.title }}
+      </button>
+    </h3>
+    <div id="item-{{ item.id }}" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        {% if item.url %}
+          <p><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.url }}</a></p>
+        {% endif %}
+        {% if item.one_liner %}
+          <p class="fw-semibold">{{ item.one_liner }}</p>
+        {% endif %}
+        {% if item.summary_text %}
+          <p>{{ item.summary_text }}</p>
+        {% endif %}
+        {% if item.full_text %}
+          <pre class="bg-body-tertiary p-3 rounded" style="white-space:pre-wrap">{{ item.full_text }}</pre>
+        {% endif %}
+        {% set links = item.tag_links.all() %}
+        {% if links %}
+          <div class="mt-2">
+            {% for link in links %}
+              <span class="badge text-bg-primary me-1">{{ link.tag.name }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <span class="text-body-secondary">No tags</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-body-secondary">No items have been extracted from this source yet.</p>
+{% endif %}
+{% endblock %}

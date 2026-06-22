@@ -15,7 +15,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import Source, Tag, User
+from ..models import NewsItem, NewsItemTag, Source, Tag, User
 from ..services import ingest
 from ..sources import registry as source_registry
 
@@ -124,6 +124,27 @@ def retag():
     count = ingest.retag_all()
     flash(f"Re-tagged {count} items.", "success")
     return redirect(url_for("admin.index"))
+
+
+@bp.route("/sources/<int:source_id>")
+@admin_required
+def source_detail(source_id: int):
+    source = db.session.get(Source, source_id) or abort(404)
+    items = (
+        NewsItem.query.filter_by(source_id=source_id)
+        .order_by(NewsItem.fetched_at.desc())
+        .all()
+    )
+    return render_template("admin/source_detail.html", source=source, items=items)
+
+
+@bp.route("/tagging")
+@admin_required
+def tagging_log():
+    items = (
+        NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(500).all()
+    )
+    return render_template("admin/tagging_log.html", items=items)
 
 
 @bp.route("/tags/<int:tag_id>/promote", methods=["POST"])

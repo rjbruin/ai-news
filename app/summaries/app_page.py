@@ -33,9 +33,14 @@ class AppPageSummary(NewsSummary):
         if group_by_tag:
             grouped = {}
             for item in items:
-                tag_names = [link.tag.name for link in item.tag_links] or ["Untagged"]
-                for name in tag_names:
-                    grouped.setdefault(name, []).append(item)
+                links = list(item.tag_links)
+                if not links:
+                    grouped.setdefault("Untagged", []).append(item)
+                else:
+                    # Place each item under its single highest-confidence tag so
+                    # it appears exactly once in the grouped view.
+                    best = max(links, key=lambda l: l.confidence or 0)
+                    grouped.setdefault(best.tag.name, []).append(item)
             grouped = dict(sorted(grouped.items(), key=lambda kv: kv[0].lower()))
 
         html = render_template(
