@@ -24,6 +24,8 @@ def _emails(value: str | None) -> list[str]:
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-secret")
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = "Lax"
 
     # Database
     SQLALCHEMY_DATABASE_URI = os.environ.get(
@@ -73,10 +75,15 @@ class Config:
     PUBLIC_URL = os.environ.get("PUBLIC_URL", "http://localhost:5090")
 
 
+class DevConfig(Config):
+    SESSION_COOKIE_SECURE = False
+
+
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
+    SESSION_COOKIE_SECURE = False
     WORKER_ENABLED = False
     SECRET_KEY = "test-secret"
     ADMIN_EMAILS = ["admin@example.com"]
