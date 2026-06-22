@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from ..extensions import db
-from ..models import NewsItem, Source, Tag, utcnow
+from ..models import IngestRun, NewsItem, Source, Tag, utcnow
 from ..sources import registry as source_registry
 from ..tagging import engine as tagging_engine
 
@@ -41,6 +41,15 @@ def ingest_source(source: Source) -> dict:
     new_items: list[NewsItem] = []
 
     for doc in docs:
+        run = IngestRun(
+            source_id=source.id,
+            subject=doc.subject,
+            sender=(doc.meta or {}).get("from"),
+            raw_body=doc.text,
+        )
+        db.session.add(run)
+        db.session.flush()  # populate run.id before linking items
+
         try:
             extracted = plugin.extract(doc)
         except Exception as exc:  # noqa: BLE001
@@ -62,6 +71,7 @@ def ingest_source(source: Source) -> dict:
                 continue
             item = NewsItem(
                 source_id=source.id,
+                ingest_run_id=run.id,
                 dedup_hash=dedup,
                 title=ex.title[:500],
                 url=ex.url,

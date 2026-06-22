@@ -26,14 +26,99 @@
   </div>
 </div>
 
-<h2 class="h5">{{ items|length }} extracted item(s)</h2>
-{% if items %}
-<div class="accordion shadow-sm" id="items-accordion">
-  {% for item in items %}
+{% if runs %}
+<h2 class="h5 mb-3">{{ runs|length }} email(s) fetched</h2>
+<div class="accordion shadow-sm mb-4" id="runs-accordion">
+  {% for run in runs %}
+  {% set run_items = run.items.all() %}
   <div class="accordion-item">
     <h3 class="accordion-header">
       <button class="accordion-button collapsed" type="button"
-              data-bs-toggle="collapse" data-bs-target="#item-{{ item.id }}">
+              data-bs-toggle="collapse" data-bs-target="#run-{{ run.id }}">
+        <div class="d-flex flex-wrap align-items-center gap-2 w-100 me-3">
+          <span class="text-body-secondary small">{{ run.fetched_at.strftime('%Y-%m-%d %H:%M') }}</span>
+          {% if run.sender %}
+            <span class="badge text-bg-secondary">{{ run.sender }}</span>
+          {% endif %}
+          <span class="fw-semibold flex-grow-1">{{ run.subject or '(no subject)' }}</span>
+          <span class="badge text-bg-{{ 'primary' if run_items else 'light text-dark border' }} flex-shrink-0">
+            {{ run_items|length }} item{{ 's' if run_items|length != 1 else '' }}
+          </span>
+        </div>
+      </button>
+    </h3>
+    <div id="run-{{ run.id }}" class="accordion-collapse collapse">
+      <div class="accordion-body p-0">
+
+        {# Raw email body #}
+        {% if run.raw_body %}
+        <details class="border-bottom">
+          <summary class="px-3 py-2 small text-body-secondary" style="cursor:pointer">
+            Raw email body
+          </summary>
+          <pre class="bg-body-tertiary px-3 py-2 m-0 small" style="white-space:pre-wrap;max-height:400px;overflow-y:auto">{{ run.raw_body }}</pre>
+        </details>
+        {% endif %}
+
+        {# Extracted items #}
+        {% if run_items %}
+        <div class="px-3 pt-3 pb-2 small text-body-secondary fw-semibold">
+          Extracted items
+        </div>
+        <div class="list-group list-group-flush">
+          {% for item in run_items %}
+          <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="flex-grow-1">
+                <div class="fw-semibold">
+                  {% if item.url %}
+                    <a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+                  {% else %}
+                    {{ item.title }}
+                  {% endif %}
+                </div>
+                {% if item.one_liner %}
+                  <div class="text-body-secondary small">{{ item.one_liner }}</div>
+                {% endif %}
+                {% if item.summary_text %}
+                  <div class="small mt-1">{{ item.summary_text }}</div>
+                {% endif %}
+              </div>
+              <div class="d-flex flex-column align-items-end gap-1 flex-shrink-0">
+                {% if item.item_type %}
+                  <span class="badge text-bg-secondary">{{ item.item_type }}</span>
+                {% endif %}
+                {% set links = item.tag_links.all() %}
+                {% for link in links %}
+                  <span class="badge text-bg-primary">{{ link.tag.name }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-3 py-2 small text-body-secondary fst-italic">
+          No items extracted from this email.
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if orphan_items %}
+<h2 class="h5 mb-3">{{ orphan_items|length }} item(s) without email record</h2>
+<p class="small text-body-secondary">These were ingested before email tracking was added.</p>
+<div class="accordion shadow-sm" id="orphan-accordion">
+  {% for item in orphan_items %}
+  <div class="accordion-item">
+    <h3 class="accordion-header">
+      <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#orphan-{{ item.id }}">
         <span class="me-2 text-body-secondary small">{{ item.fetched_at | monthday }}</span>
         {% if item.item_type %}
           <span class="badge text-bg-secondary me-2">{{ item.item_type }}</span>
@@ -41,7 +126,7 @@
         {{ item.title }}
       </button>
     </h3>
-    <div id="item-{{ item.id }}" class="accordion-collapse collapse">
+    <div id="orphan-{{ item.id }}" class="accordion-collapse collapse">
       <div class="accordion-body small">
         {% if item.url %}
           <p><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.url }}</a></p>
@@ -51,9 +136,6 @@
         {% endif %}
         {% if item.summary_text %}
           <p>{{ item.summary_text }}</p>
-        {% endif %}
-        {% if item.full_text %}
-          <pre class="bg-body-tertiary p-3 rounded" style="white-space:pre-wrap">{{ item.full_text }}</pre>
         {% endif %}
         {% set links = item.tag_links.all() %}
         {% if links %}
@@ -70,7 +152,9 @@
   </div>
   {% endfor %}
 </div>
-{% else %}
+{% endif %}
+
+{% if not runs and not orphan_items %}
 <p class="text-body-secondary">No items have been extracted from this source yet.</p>
 {% endif %}
 {% endblock %}

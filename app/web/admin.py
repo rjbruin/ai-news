@@ -15,7 +15,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import NewsItem, NewsItemTag, Source, Tag, User
+from ..models import IngestRun, NewsItem, NewsItemTag, Source, Tag, User
 from ..services import ingest
 from ..sources import registry as source_registry
 
@@ -130,12 +130,20 @@ def retag():
 @admin_required
 def source_detail(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
-    items = (
-        NewsItem.query.filter_by(source_id=source_id)
+    runs = (
+        IngestRun.query.filter_by(source_id=source_id)
+        .order_by(IngestRun.fetched_at.desc())
+        .all()
+    )
+    # Items without an ingest_run (ingested before IngestRun was added)
+    orphan_items = (
+        NewsItem.query.filter_by(source_id=source_id, ingest_run_id=None)
         .order_by(NewsItem.fetched_at.desc())
         .all()
     )
-    return render_template("admin/source_detail.html", source=source, items=items)
+    return render_template(
+        "admin/source_detail.html", source=source, runs=runs, orphan_items=orphan_items
+    )
 
 
 @bp.route("/tagging")
