@@ -73,6 +73,9 @@ if [[ -d migrations ]]; then
 else
   "$TARGET/venv/bin/python" manage.py init-db
 fi
+
+echo "==> Seeding global tags"
+"$TARGET/venv/bin/python" manage.py seed-tags
 popd >/dev/null
 
 echo "==> Switching symlink and restarting $SERVICE"
