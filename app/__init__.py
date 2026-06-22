@@ -58,6 +58,12 @@ def create_app(config_object: type | None = None) -> Flask:
 
     register_template_helpers(app)
 
+    # Purge editions that have no displayable content (e.g. created before
+    # the content column was added).
+    if not app.config.get("TESTING"):
+        with app.app_context():
+            _purge_empty_editions()
+
     # Background scheduler (skipped under tests / when disabled).
     if app.config.get("WORKER_ENABLED") and not app.config.get("TESTING"):
         from .scheduler.jobs import start_scheduler
@@ -65,6 +71,29 @@ def create_app(config_object: type | None = None) -> Flask:
         start_scheduler(app)
 
     return app
+
+
+def _purge_empty_editions() -> None:
+    """Delete SummaryRun rows that have neither HTML content nor a file artifact."""
+    import logging
+    from .extensions import db
+    from .models import SummaryRun
+
+    try:
+        result = (
+            SummaryRun.query
+            .filter(SummaryRun.content.is_(None))
+            .filter(SummaryRun.artifact_ref.is_(None))
+            .delete(synchronize_session=False)
+        )
+        if result:
+            db.session.commit()
+            logging.getLogger(__name__).info(
+                "Startup: purged %d content-less edition(s)", result
+            )
+    except Exception:
+        db.session.rollback()
+        logging.getLogger(__name__).exception("Startup: failed to purge empty editions")
 
 
 def _ensure_dirs(app: Flask) -> None:

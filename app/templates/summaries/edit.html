@@ -30,7 +30,7 @@
       <div class="form-text">More formats drop in as plugins.</div>
     </div>
 
-    <div class="mb-3">
+    <div class="mb-3" id="scope_wrap">
       <label class="form-label">News in scope</label>
       <select name="scope_mode" class="form-select" id="scope_mode">
         <option value="fixed_period"
@@ -84,6 +84,11 @@
         <input type="time" name="param_{{ field }}" class="form-control"
                value="{{ cur_val if cur_val else spec.get('default','08:00') }}">
 
+        {% elif spec.type == 'datetime-local' %}
+        <label class="form-label">{{ spec.label }}</label>
+        <input type="datetime-local" name="param_{{ field }}" class="form-control"
+               value="{{ cur_val }}">
+
         {% else %}
         <label class="form-label">{{ spec.label }}</label>
         <input name="param_{{ field }}" class="form-control"
@@ -110,6 +115,7 @@
 
   function sync() {
     const key = typeSelect ? typeSelect.value : '{{ summary.type_key if summary else "" }}';
+    const isDebug = key === 'debug_window';
     const scope = scopeSelect.value;
     const period = periodSelect ? periodSelect.value : '{{ summary.period if summary else "day" }}';
 
@@ -122,8 +128,11 @@
       el.style.display = '';
     });
 
+    // Debug window has its own range params; hide generic scope/period controls
+    const scopeWrap = document.getElementById('scope_wrap');
     const periodWrap = document.getElementById('period_wrap');
-    if (periodWrap) periodWrap.style.display = (scope === 'fixed_period') ? '' : 'none';
+    if (scopeWrap) scopeWrap.style.display = isDebug ? 'none' : '';
+    if (periodWrap) periodWrap.style.display = (isDebug || scope !== 'fixed_period') ? 'none' : '';
   }
 
   if (typeSelect) typeSelect.addEventListener('change', sync);
