@@ -37,8 +37,9 @@ a[target="_blank"]:not(.btn)::after {
   content: "\00a0⤴";
   font-size: .6em;
   vertical-align: 0.2em;
-  font-weight: 700;
-  opacity: .6;
+  opacity: .75;
+  text-shadow: 0.4px 0 0 currentColor, -0.4px 0 0 currentColor,
+               0 0.4px 0 currentColor, 0 -0.4px 0 currentColor;
 }
 
 @media print {
