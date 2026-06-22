@@ -34,7 +34,7 @@ a { color: var(--brand); }
 a:hover { color: var(--brand-dark); }
 
 a[target="_blank"]:not(.btn)::after {
-  content: "\00a0↗";
+  content: "\00a0⤴";
   font-size: .75em;
   vertical-align: super;
   opacity: .6;
