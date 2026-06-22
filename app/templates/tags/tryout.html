@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Tag try-out · AI News{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Try out a tag</h1>
+<p class="text-body-secondary">Enter a candidate tag and see which existing news items it would match — before saving it.</p>
+<form method="post" class="card shadow-sm mb-4">
+  <div class="card-body row g-3">
+    <div class="col-md-4">
+      <label class="form-label">Name</label>
+      <input name="name" class="form-control" value="{{ form_data.name }}">
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Keywords (comma-separated)</label>
+      <input name="keywords" class="form-control" value="{{ form_data.keywords }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Explanation</label>
+      <textarea name="explanation" class="form-control" rows="2">{{ form_data.explanation }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer text-end"><button class="btn btn-primary">Preview matches</button></div>
+</form>
+
+{% if matches is not none %}
+<h2 class="h5">{{ matches|length }} matching item(s)</h2>
+<div class="list-group shadow-sm">
+  {% for m in matches %}
+  <div class="list-group-item d-flex justify-content-between">
+    <div>
+      <div class="fw-semibold">{{ m.item.title }}</div>
+      <div class="small text-body-secondary">{{ m.item.summary_text }}</div>
+    </div>
+    <span class="badge text-bg-primary align-self-start">{{ m.confidence }}</span>
+  </div>
+  {% else %}
+  <div class="list-group-item text-body-secondary">No items matched above the confidence threshold.</div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

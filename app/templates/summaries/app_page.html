@@ -1,0 +1,30 @@
+{# Rendered fragment for the app_page summary plugin. #}
+<div class="text-body-secondary mb-3 small">
+  {% if range_start %}{{ range_start.strftime('%Y-%m-%d %H:%M') }} → {% endif %}
+  {{ range_end.strftime('%Y-%m-%d %H:%M') if range_end else 'now' }} ·
+  {{ items|length }} item(s)
+</div>
+
+{% macro item_row(item) %}
+<div class="list-group-item">
+  <div class="fw-semibold">
+    {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+    {% else %}{{ item.title }}{% endif %}
+  </div>
+  <div class="small text-body-secondary">{{ item.summary_text }}</div>
+</div>
+{% endmacro %}
+
+{% if grouped is not none %}
+  {% for tag_name, tag_items in grouped.items() %}
+  <h2 class="h5 mt-4">{{ tag_name }}</h2>
+  <div class="list-group shadow-sm">
+    {% for item in tag_items %}{{ item_row(item) }}{% endfor %}
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="list-group shadow-sm">
+    {% for item in items %}{{ item_row(item) }}
+    {% else %}<div class="list-group-item text-body-secondary">No items in scope.</div>{% endfor %}
+  </div>
+{% endif %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Summaries · AI News{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Your summaries</h1>
+  <a href="{{ url_for('web.summary_new') }}" class="btn btn-primary">New summary</a>
+</div>
+<div class="list-group shadow-sm">
+  {% for s in summaries %}
+  <div class="list-group-item d-flex justify-content-between align-items-center">
+    <div>
+      <span class="fw-semibold">{{ s.name }}</span>
+      <span class="badge text-bg-light border">{{ types[s.type_key].label if s.type_key in types else s.type_key }}</span>
+      <div class="small text-body-secondary">
+        {% if s.scope_mode == 'since_last' %}Since last viewed{% else %}Last {{ s.period }}{% endif %}
+      </div>
+    </div>
+    <div class="text-nowrap">
+      <a href="{{ url_for('web.summary_view', summary_id=s.id) }}" class="btn btn-sm btn-primary">Open</a>
+      <form method="post" action="{{ url_for('web.summary_delete', summary_id=s.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <div class="list-group-item text-body-secondary">No summaries yet.</div>
+  {% endfor %}
+</div>
+{% endblock %}

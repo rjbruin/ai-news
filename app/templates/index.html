@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-5 mb-4 bg-white rounded-3 shadow-sm border">
+  <div class="container-fluid py-3">
+    <h1 class="display-6 fw-bold"><span class="brand-mark">📰</span> AI News</h1>
+    <p class="col-md-9 fs-5 text-body-secondary">
+      Collects AI news from your sources, tags it against a shared taxonomy,
+      and delivers it the way you want — an overview page, a printable
+      collection, or an AI-generated podcast.
+    </p>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('auth.register') }}">Get started</a>
+    <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('auth.login') }}">Sign in</a>
+  </div>
+</div>
+<div class="row g-4">
+  <div class="col-md-4"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h5 class="card-title">Pluggable sources</h5>
+    <p class="card-text text-body-secondary">Subscribe a mailbox to newsletters and let the system extract discrete stories.</p>
+  </div></div></div>
+  <div class="col-md-4"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h5 class="card-title">Smart tagging</h5>
+    <p class="card-text text-body-secondary">A shared taxonomy with your own tags. Try a tag and preview its matches before saving.</p>
+  </div></div></div>
+  <div class="col-md-4"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h5 class="card-title">Flexible summaries</h5>
+    <p class="card-text text-body-secondary">Choose a format and a time window. New formats drop in as plugins.</p>
+  </div></div></div>
+</div>
+{% endblock %}

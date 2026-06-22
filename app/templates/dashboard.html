@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · AI News{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Dashboard</h1>
+<div class="row g-3 mb-4">
+  <div class="col-sm-4"><div class="card text-center shadow-sm"><div class="card-body">
+    <div class="display-6">{{ counts.items }}</div><div class="text-body-secondary">News items</div>
+  </div></div></div>
+  <div class="col-sm-4"><div class="card text-center shadow-sm"><div class="card-body">
+    <div class="display-6">{{ counts.tags }}</div><div class="text-body-secondary">Tags</div>
+  </div></div></div>
+  <div class="col-sm-4"><div class="card text-center shadow-sm"><div class="card-body">
+    <div class="display-6">{{ counts.summaries }}</div><div class="text-body-secondary">Your summaries</div>
+  </div></div></div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">Latest news</span>
+    <a href="{{ url_for('web.news') }}" class="btn btn-sm btn-outline-primary">View all</a>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for item in recent %}
+    <li class="list-group-item">
+      <div class="fw-semibold">
+        {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+        {% else %}{{ item.title }}{% endif %}
+      </div>
+      <div class="small text-body-secondary">{{ item.summary_text }}</div>
+      {% for link in item.tag_links %}<span class="badge text-bg-light border">{{ link.tag.name }}</span>{% endfor %}
+    </li>
+    {% else %}
+    <li class="list-group-item text-body-secondary">No news yet. An admin can add a source and poll it.</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

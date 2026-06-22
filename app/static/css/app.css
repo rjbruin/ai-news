@@ -1,0 +1,38 @@
+:root {
+  --brand: #1f3a5f;
+  --brand-dark: #16293f;
+  --accent: #c8843a;
+}
+
+body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+.app-navbar {
+  background: linear-gradient(90deg, var(--brand-dark), var(--brand));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+}
+.app-navbar .navbar-brand { letter-spacing: .2px; }
+.brand-mark { filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+
+.btn-primary {
+  --bs-btn-bg: var(--brand);
+  --bs-btn-border-color: var(--brand);
+  --bs-btn-hover-bg: var(--brand-dark);
+  --bs-btn-hover-border-color: var(--brand-dark);
+  --bs-btn-active-bg: var(--brand-dark);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--brand);
+  --bs-btn-border-color: var(--brand);
+  --bs-btn-hover-bg: var(--brand);
+  --bs-btn-hover-border-color: var(--brand);
+}
+
+.card { border-color: rgba(0,0,0,.07); }
+.badge { font-weight: 500; }
+
+a { color: var(--brand); }
+a:hover { color: var(--brand-dark); }
+
+@media print {
+  .app-navbar, footer, .btn { display: none !important; }
+}

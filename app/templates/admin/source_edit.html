@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Add source · AI News{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-7">
+<h1 class="h3 mb-3">Add source</h1>
+<form method="post" class="card shadow-sm">
+  <div class="card-body">
+    <div class="mb-3">
+      <label class="form-label">Name</label>
+      <input name="name" class="form-control" placeholder="e.g. AI newsletters mailbox">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Type</label>
+      <select name="type_key" class="form-select" id="type_key">
+        {% for key, cls in types.items() %}
+        <option value="{{ key }}">{{ cls.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Poll interval override (seconds)</label>
+      <input name="poll_interval_override" type="number" class="form-control" placeholder="leave blank for global default">
+    </div>
+    <hr>
+    {% for key, cls in types.items() %}
+      {% for field, spec in (cls.config_schema or {}).items() %}
+      <div class="mb-3 cfg-group cfg-{{ key }}" style="display:none">
+        {% if spec.type == 'checkbox' %}
+        <div class="form-check">
+          <input type="checkbox" name="cfg_{{ field }}" class="form-check-input" id="c_{{ key }}_{{ field }}">
+          <label class="form-check-label" for="c_{{ key }}_{{ field }}">{{ spec.label }}</label>
+        </div>
+        {% else %}
+        <label class="form-label">{{ spec.label }}{% if not spec.required %} <span class="text-body-secondary small">(optional — falls back to server config)</span>{% endif %}</label>
+        <input name="cfg_{{ field }}" type="{{ 'password' if spec.type == 'password' else spec.type }}" class="form-control">
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <a href="{{ url_for('admin.index') }}" class="btn btn-outline-secondary">Cancel</a>
+    <button class="btn btn-primary">Add</button>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function syncCfg() {
+    const key = document.getElementById('type_key').value;
+    document.querySelectorAll('.cfg-group').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.cfg-' + key).forEach(el => el.style.display = '');
+  }
+  document.getElementById('type_key').addEventListener('change', syncCfg);
+  syncCfg();
+</script>
+{% endblock %}

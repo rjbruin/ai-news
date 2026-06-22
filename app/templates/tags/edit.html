@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if tag else 'New' }} tag · AI News{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-7">
+  <h1 class="h3 mb-3">{{ 'Edit tag' if tag else 'New tag' }}</h1>
+  <form method="post" class="card shadow-sm">
+    <div class="card-body">
+      <div class="mb-3">
+        <label class="form-label">Name</label>
+        <input name="name" class="form-control" value="{{ tag.name if tag else '' }}" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Keywords <span class="text-body-secondary small">(comma-separated)</span></label>
+        <input name="keywords" class="form-control" value="{{ tag.keyword_list|join(', ') if tag else '' }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Explanation</label>
+        <textarea name="explanation" class="form-control" rows="3">{{ tag.explanation if tag else '' }}</textarea>
+      </div>
+      {% if current_user.is_admin %}
+      <div class="form-check mb-3">
+        <input type="checkbox" name="make_global" class="form-check-input" id="mg"
+               {{ 'checked' if tag and tag.scope == 'global' else '' }}>
+        <label class="form-check-label" for="mg">Global tag (visible to everyone)</label>
+      </div>
+      {% endif %}
+    </div>
+    <div class="card-footer d-flex justify-content-between">
+      <a href="{{ url_for('web.tags') }}" class="btn btn-outline-secondary">Cancel</a>
+      <div>
+        {% if tag %}
+        <button form="del" class="btn btn-outline-danger">Delete</button>
+        {% endif %}
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </form>
+  {% if tag %}
+  <form id="del" method="post" action="{{ url_for('web.tag_delete', tag_id=tag.id) }}"></form>
+  {% endif %}
+</div></div>
+{% endblock %}

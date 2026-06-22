@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Tags · AI News{% endblock %}
+{% macro tag_card(tag, can_edit) %}
+<div class="list-group-item">
+  <div class="d-flex justify-content-between align-items-start">
+    <div>
+      <span class="fw-semibold">{{ tag.name }}</span>
+      {% if tag.scope == 'global' %}<span class="badge text-bg-info">global</span>{% endif %}
+      <div class="small text-body-secondary">{{ tag.explanation }}</div>
+      <div class="mt-1">
+        {% for kw in tag.keyword_list %}<span class="badge text-bg-light border">{{ kw }}</span>{% endfor %}
+      </div>
+    </div>
+    <div class="text-nowrap">
+      {% if can_edit %}
+      <a href="{{ url_for('web.tag_edit', tag_id=tag.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+      {% endif %}
+      {% if current_user.is_admin and tag.scope != 'global' %}
+      <form method="post" action="{{ url_for('admin.tag_promote', tag_id=tag.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-info">Make global</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endmacro %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Tags</h1>
+  <div>
+    <a href="{{ url_for('web.tag_tryout') }}" class="btn btn-outline-primary">Try out a tag</a>
+    <a href="{{ url_for('web.tag_new') }}" class="btn btn-primary">New tag</a>
+  </div>
+</div>
+
+<h2 class="h5">Global taxonomy</h2>
+<div class="list-group shadow-sm mb-4">
+  {% for tag in global_tags %}{{ tag_card(tag, current_user.is_admin) }}
+  {% else %}<div class="list-group-item text-body-secondary">No global tags yet.</div>{% endfor %}
+</div>
+
+<h2 class="h5">Your tags</h2>
+<div class="list-group shadow-sm">
+  {% for tag in my_tags %}{{ tag_card(tag, true) }}
+  {% else %}<div class="list-group-item text-body-secondary">You haven't created any tags.</div>{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+[Unit]
+Description=AI News background worker (scheduler/polling)
+After=network.target
+
+# Optional: only needed if you run gunicorn with multiple workers and set
+# WORKER_ENABLED=false for the web service. This process runs the scheduler.
+
+[Service]
+Type=simple
+User=ainews
+Group=ainews
+WorkingDirectory=/opt/ainews/current
+EnvironmentFile=/opt/ainews/shared/.env
+Environment=WORKER_ENABLED=true
+ExecStart=/opt/ainews/current/venv/bin/python -c "import time; from app import create_app; create_app(); \
+    [time.sleep(3600) for _ in iter(int, 1)]"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

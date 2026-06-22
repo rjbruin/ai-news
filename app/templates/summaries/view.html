@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ summary.name }} · AI News{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ summary.name }}</h1>
+  <a href="{{ url_for('web.summaries') }}" class="btn btn-outline-secondary btn-sm">Back</a>
+</div>
+{% if artifact.kind == 'html' %}
+  {{ artifact.html | safe }}
+{% elif artifact.kind == 'file' %}
+  <a class="btn btn-primary" href="{{ artifact.file_path }}">Download {{ artifact.title }}</a>
+{% elif artifact.kind == 'audio' %}
+  <audio controls src="{{ artifact.file_path }}" class="w-100"></audio>
+{% endif %}
+{% endblock %}

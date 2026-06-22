@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}News · AI News{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">News</h1>
+</div>
+<div class="mb-3">
+  <a href="{{ url_for('web.news') }}" class="badge {{ 'text-bg-primary' if not active_tag else 'text-bg-light border' }} text-decoration-none">All</a>
+  {% for tag in tags %}
+  <a href="{{ url_for('web.news', tag=tag.id) }}"
+     class="badge {{ 'text-bg-primary' if active_tag == tag.id else 'text-bg-light border' }} text-decoration-none">{{ tag.name }}</a>
+  {% endfor %}
+</div>
+
+<div class="list-group shadow-sm">
+  {% for item in items %}
+  <div class="list-group-item">
+    <div class="d-flex justify-content-between">
+      <h5 class="mb-1">
+        {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+        {% else %}{{ item.title }}{% endif %}
+      </h5>
+      <small class="text-body-secondary">{{ item.fetched_at.strftime('%Y-%m-%d') }}</small>
+    </div>
+    <p class="mb-1 text-body-secondary">{{ item.summary_text }}</p>
+    {% for link in item.tag_links %}
+      <span class="badge text-bg-light border" title="{{ link.method }} · {{ '%.2f'|format(link.confidence) }}">{{ link.tag.name }}</span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="list-group-item text-body-secondary">No news items match.</div>
+  {% endfor %}
+</div>
+{% endblock %}
