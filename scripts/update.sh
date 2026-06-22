@@ -50,6 +50,9 @@ else
   rm -rf "$tmp"
 fi
 
+echo "==> Stamping VERSION"
+echo "$VERSION" > "$TARGET/VERSION"
+
 echo "==> Linking shared config + data"
 ln -sfn "$SHARED/.env" "$TARGET/.env"
 rm -rf "$TARGET/instance"
