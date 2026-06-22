@@ -1,13 +1,17 @@
 """Main web UI: dashboard, news, tags, tag try-out, summaries."""
 from __future__ import annotations
 
+import json
+
 from flask import (
     Blueprint,
+    Response,
     abort,
     flash,
     redirect,
     render_template,
     request,
+    stream_with_context,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -135,7 +139,6 @@ def tag_delete(tag_id: int):
 @bp.route("/tags/try-out", methods=["GET", "POST"])
 @login_required
 def tag_tryout():
-    matches = None
     form_data = {"name": "", "keywords": "", "explanation": ""}
     if request.method == "POST":
         form_data = {
@@ -143,33 +146,46 @@ def tag_tryout():
             "keywords": request.form.get("keywords") or "",
             "explanation": (request.form.get("explanation") or "").strip(),
         }
-        action = request.form.get("action", "preview")
-        if action == "save":
-            name = form_data["name"]
-            if not name:
-                flash("A tag needs a name.", "danger")
-            elif Tag.query.filter_by(name=name).first():
-                flash("A tag with that name already exists.", "danger")
-            else:
-                make_global = bool(request.form.get("make_global")) and current_user.is_admin
-                tag = Tag(
-                    name=name,
-                    keywords=_parse_keywords(form_data["keywords"]),
-                    explanation=form_data["explanation"],
-                    scope="global" if make_global else "user",
-                    owner_user_id=current_user.id,
-                )
-                db.session.add(tag)
-                db.session.commit()
-                flash(f'Tag "{name}" created.', "success")
-                return redirect(url_for("web.tags"))
+        name = form_data["name"]
+        if not name:
+            flash("A tag needs a name.", "danger")
+        elif Tag.query.filter_by(name=name).first():
+            flash("A tag with that name already exists.", "danger")
         else:
-            matches = tagging_engine.preview(
-                form_data["name"],
-                _parse_keywords(form_data["keywords"]),
-                form_data["explanation"],
+            make_global = bool(request.form.get("make_global")) and current_user.is_admin
+            tag = Tag(
+                name=name,
+                keywords=_parse_keywords(form_data["keywords"]),
+                explanation=form_data["explanation"],
+                scope="global" if make_global else "user",
+                owner_user_id=current_user.id,
             )
-    return render_template("tags/tryout.html", matches=matches, form_data=form_data)
+            db.session.add(tag)
+            db.session.commit()
+            flash(f'Tag "{name}" created.', "success")
+            return redirect(url_for("web.tags"))
+    return render_template("tags/tryout.html", form_data=form_data)
+
+
+@bp.route("/tags/try-out/stream")
+@login_required
+def tag_tryout_stream():
+    name = (request.args.get("name") or "").strip()
+    keywords = _parse_keywords(request.args.get("keywords"))
+    explanation = (request.args.get("explanation") or "").strip()
+
+    def generate():
+        if not name:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Name is required'})}\n\n"
+            return
+        for event in tagging_engine.preview_iter(name, keywords, explanation):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ───────────────────────── Summaries ─────────────────────────

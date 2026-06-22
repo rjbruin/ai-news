@@ -8,7 +8,7 @@ Modes (global, TAGGING_MODE):
 Exposes:
   classify(item_text, tags, mode=None, threshold=None) -> {tag_id: (confidence, method)}
   apply_to_item(item) — compute tags for a NewsItem and persist NewsItemTag rows.
-  preview(name, keywords, explanation, limit) — dry-run a candidate tag.
+  preview_iter(name, keywords, explanation) — generator yielding SSE-ready dicts.
 """
 from __future__ import annotations
 
@@ -116,13 +116,19 @@ def apply_to_item(item: NewsItem, tags: list[Tag] | None = None) -> int:
     return applied
 
 
-def preview(
-    name: str, keywords: list[str], explanation: str, limit: int = 50
-) -> list[dict]:
-    """Dry-run a candidate tag using the same nb_then_llm logic as classify.
+def preview_iter(name: str, keywords: list[str], explanation: str):
+    """Generator that yields SSE-ready dicts, one per item processed.
 
-    Runs NB on all recent items, then LLM on items NB doesn't match —
-    identical to how a newly saved tag would behave at ingest time.
+    Mirrors the nb_then_llm classify loop exactly so preview behaviour
+    matches what a newly saved tag would do at ingest time.
+
+    Event types:
+      start    — {"type": "start", "total": N}
+      checking — {"type": "checking", "current": i, "title": "…"}  (before LLM call)
+      match    — {"type": "match", "current": i, "item_id": …, "title": …,
+                  "summary": …, "confidence": …, "method": "nb"|"llm"}
+      no_match — {"type": "no_match", "current": i}
+      done     — {"type": "done"}
     """
     mode = current_app.config.get("TAGGING_MODE", "nb_then_llm")
     threshold = current_app.config.get("NB_CONFIDENCE_THRESHOLD", 0.30)
@@ -131,27 +137,40 @@ def preview(
         tag_id=-1, name=name, keywords=keywords, explanation=explanation, examples=[]
     )
     all_docs = _tag_docs(Tag.query.all()) + [candidate_doc]
-    background = _background_corpus()
-    scorer = nb.Scorer(all_docs, background_corpus=background)
-
+    scorer = nb.Scorer(all_docs, background_corpus=_background_corpus())
     candidate_dict = {"name": name, "keywords": keywords, "explanation": explanation}
 
-    matches = []
-    for item in NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(100):
+    items = NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(100).all()
+    yield {"type": "start", "total": len(items)}
+
+    for i, item in enumerate(items, 1):
         text = _item_text(item)
         nb_hit = False
 
         if mode in ("nb_only", "nb_then_llm"):
             score = scorer.score(text).get(-1, 0.0)
             if score >= threshold:
-                matches.append({"item": item, "confidence": round(score, 3), "method": "nb"})
                 nb_hit = True
+                yield {
+                    "type": "match", "current": i,
+                    "item_id": item.id, "title": item.title,
+                    "summary": item.summary_text or "",
+                    "confidence": round(score, 3), "method": "nb",
+                }
 
         if not nb_hit and mode in ("nb_then_llm", "llm_only"):
-            llm_scores = llm.score_item(text, [candidate_dict])
-            conf = llm_scores.get(name, 0.0)
+            yield {"type": "checking", "current": i, "title": item.title}
+            conf = llm.score_item(text, [candidate_dict]).get(name, 0.0)
             if conf >= 0.5:
-                matches.append({"item": item, "confidence": round(conf, 3), "method": "llm"})
+                yield {
+                    "type": "match", "current": i,
+                    "item_id": item.id, "title": item.title,
+                    "summary": item.summary_text or "",
+                    "confidence": round(conf, 3), "method": "llm",
+                }
+            else:
+                yield {"type": "no_match", "current": i}
+        elif not nb_hit:
+            yield {"type": "no_match", "current": i}
 
-    matches.sort(key=lambda m: m["confidence"], reverse=True)
-    return matches[:limit]
+    yield {"type": "done"}
