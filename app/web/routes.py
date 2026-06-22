@@ -36,12 +36,27 @@ def index():
 @login_required
 def dashboard():
     recent = NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(10).all()
-    counts = {
-        "news": NewsItem.query.count(),
-        "tags": Tag.query.count(),
-        "summaries": Summary.query.filter_by(user_id=current_user.id).count(),
+    my_summaries = (
+        Summary.query.filter_by(user_id=current_user.id)
+        .order_by(Summary.created_at)
+        .all()
+    )
+    latest_editions = {
+        s.id: (
+            SummaryRun.query
+            .filter_by(summary_id=s.id)
+            .order_by(SummaryRun.generated_at.desc())
+            .first()
+        )
+        for s in my_summaries
     }
-    return render_template("dashboard.html", recent=recent, counts=counts)
+    return render_template(
+        "dashboard.html",
+        recent=recent,
+        my_summaries=my_summaries,
+        latest_editions=latest_editions,
+        summary_types=summary_registry.all_types(),
+    )
 
 
 # ───────────────────────── News ─────────────────────────

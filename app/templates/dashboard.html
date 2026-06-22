@@ -9,17 +9,40 @@
   </form>
   {% endif %}
 </div>
+{% if my_summaries %}
 <div class="row g-3 mb-4">
-  <div class="col-sm-4"><div class="card text-center shadow-sm"><div class="card-body">
-    <div class="display-6">{{ counts.news }}</div><div class="text-body-secondary">News items</div>
-  </div></div></div>
-  <div class="col-sm-4"><div class="card text-center shadow-sm"><div class="card-body">
-    <div class="display-6">{{ counts.tags }}</div><div class="text-body-secondary">Tags</div>
-  </div></div></div>
-  <div class="col-sm-4"><div class="card text-center shadow-sm"><div class="card-body">
-    <div class="display-6">{{ counts.summaries }}</div><div class="text-body-secondary">Your summaries</div>
-  </div></div></div>
+  {% for s in my_summaries %}
+  {% set run = latest_editions[s.id] %}
+  <div class="col-sm-6 col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <span class="fw-semibold">{{ s.name }}</span>
+          <span class="badge text-bg-light border ms-2 flex-shrink-0 small">
+            {{ summary_types[s.type_key].label if s.type_key in summary_types else s.type_key }}
+          </span>
+        </div>
+        {% if run %}
+          <div class="text-body-secondary small mb-3">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+          <div class="mt-auto">
+            <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
+               class="btn btn-sm btn-primary w-100">Open</a>
+          </div>
+        {% elif s.scope_mode == 'since_last' %}
+          <div class="text-body-secondary small mb-3 fst-italic">No editions yet</div>
+          <div class="mt-auto">
+            <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
+               class="btn btn-sm btn-outline-primary w-100">Open now</a>
+          </div>
+        {% else %}
+          <div class="text-body-secondary small fst-italic">No editions cut yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
 </div>
+{% endif %}
 
 <div class="card shadow-sm">
   <div class="card-header d-flex justify-content-between align-items-center">
