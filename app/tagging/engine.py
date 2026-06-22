@@ -46,6 +46,10 @@ def _tag_docs(tags: list[Tag]) -> list[nb.TagDoc]:
     return docs
 
 
+def _background_corpus() -> list[str]:
+    return [_item_text(item) for item in NewsItem.query.limit(2000).all()]
+
+
 def classify(
     item_text: str,
     tags: list[Tag],
@@ -67,7 +71,8 @@ def classify(
     result: dict[int, tuple[float, str]] = {}
 
     if mode in ("nb_only", "nb_then_llm"):
-        nb_scores = nb.score_item(item_text, _tag_docs(tags))
+        scorer = nb.Scorer(_tag_docs(tags), background_corpus=_background_corpus())
+        nb_scores = scorer.score(item_text)
         for tag_id, score in nb_scores.items():
             if score >= threshold:
                 result[tag_id] = (score, "nb")
@@ -114,28 +119,22 @@ def apply_to_item(item: NewsItem, tags: list[Tag] | None = None) -> int:
 def preview(
     name: str, keywords: list[str], explanation: str, limit: int = 50
 ) -> list[dict]:
-    """Dry-run a candidate tag against existing items. Returns matching items.
-
-    Existing tags are included in the TF-IDF corpus so that IDF weights are
-    realistic — without them a single-document corpus gives IDF=0 for any
-    term that appears in both the tag doc and the item text, making cosine
-    similarity always zero.
-    """
-    # Preview uses a low threshold — it's for exploration, not auto-tagging.
-    # With a small corpus, NB cosine similarity is inherently low, so the
-    # production threshold (0.35) would hide all relevant results.
-    threshold = 0.05
+    """Dry-run a candidate tag against existing items. Returns matching items."""
+    threshold = current_app.config.get("NB_CONFIDENCE_THRESHOLD", 0.35)
     candidate = nb.TagDoc(
         tag_id=-1, name=name, keywords=keywords, explanation=explanation, examples=[]
     )
-    # All existing tag docs provide IDF context; only the candidate's score is used.
     existing_docs = _tag_docs(Tag.query.all())
     all_docs = existing_docs + [candidate]
+
+    # Build scorer once with background corpus for realistic IDF weights.
+    background = _background_corpus()
+    scorer = nb.Scorer(all_docs, background_corpus=background)
 
     matches = []
     for item in NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(500):
         text = _item_text(item)
-        scores = nb.score_item(text, all_docs)
+        scores = scorer.score(text)
         score = scores.get(-1, 0.0)
         if score >= threshold:
             matches.append({"item": item, "confidence": round(score, 3)})
