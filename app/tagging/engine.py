@@ -119,24 +119,39 @@ def apply_to_item(item: NewsItem, tags: list[Tag] | None = None) -> int:
 def preview(
     name: str, keywords: list[str], explanation: str, limit: int = 50
 ) -> list[dict]:
-    """Dry-run a candidate tag against existing items. Returns matching items."""
-    threshold = current_app.config.get("NB_CONFIDENCE_THRESHOLD", 0.35)
-    candidate = nb.TagDoc(
+    """Dry-run a candidate tag using the same nb_then_llm logic as classify.
+
+    Runs NB on all recent items, then LLM on items NB doesn't match —
+    identical to how a newly saved tag would behave at ingest time.
+    """
+    mode = current_app.config.get("TAGGING_MODE", "nb_then_llm")
+    threshold = current_app.config.get("NB_CONFIDENCE_THRESHOLD", 0.30)
+
+    candidate_doc = nb.TagDoc(
         tag_id=-1, name=name, keywords=keywords, explanation=explanation, examples=[]
     )
-    existing_docs = _tag_docs(Tag.query.all())
-    all_docs = existing_docs + [candidate]
-
-    # Build scorer once with background corpus for realistic IDF weights.
+    all_docs = _tag_docs(Tag.query.all()) + [candidate_doc]
     background = _background_corpus()
     scorer = nb.Scorer(all_docs, background_corpus=background)
 
+    candidate_dict = {"name": name, "keywords": keywords, "explanation": explanation}
+
     matches = []
-    for item in NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(500):
+    for item in NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(100):
         text = _item_text(item)
-        scores = scorer.score(text)
-        score = scores.get(-1, 0.0)
-        if score >= threshold:
-            matches.append({"item": item, "confidence": round(score, 3)})
+        nb_hit = False
+
+        if mode in ("nb_only", "nb_then_llm"):
+            score = scorer.score(text).get(-1, 0.0)
+            if score >= threshold:
+                matches.append({"item": item, "confidence": round(score, 3), "method": "nb"})
+                nb_hit = True
+
+        if not nb_hit and mode in ("nb_then_llm", "llm_only"):
+            llm_scores = llm.score_item(text, [candidate_dict])
+            conf = llm_scores.get(name, 0.0)
+            if conf >= 0.5:
+                matches.append({"item": item, "confidence": round(conf, 3), "method": "llm"})
+
     matches.sort(key=lambda m: m["confidence"], reverse=True)
     return matches[:limit]

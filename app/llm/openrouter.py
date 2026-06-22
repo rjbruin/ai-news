@@ -47,11 +47,19 @@ def chat_json(
     base_url = current_app.config["OPENROUTER_BASE_URL"].rstrip("/")
     model = model or current_app.config["OPENROUTER_MODEL"]
 
+    if schema is not None:
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {"name": "result", "strict": True, "schema": schema},
+        }
+    else:
+        response_format = {"type": "json_object"}
+
     payload = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
-        "response_format": {"type": "json_object"},
+        "response_format": response_format,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",

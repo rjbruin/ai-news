@@ -36,12 +36,15 @@
 <h2 class="h5">{{ matches|length }} matching item(s)</h2>
 <div class="list-group shadow-sm">
   {% for m in matches %}
-  <div class="list-group-item d-flex justify-content-between">
+  <div class="list-group-item d-flex justify-content-between align-items-start">
     <div>
       <div class="fw-semibold">{{ m.item.title }}</div>
       <div class="small text-body-secondary">{{ m.item.summary_text }}</div>
     </div>
-    <span class="badge text-bg-primary align-self-start">{{ m.confidence }}</span>
+    <div class="d-flex gap-1 ms-2 flex-shrink-0">
+      <span class="badge text-bg-secondary">{{ m.method }}</span>
+      <span class="badge text-bg-primary">{{ m.confidence }}</span>
+    </div>
   </div>
   {% else %}
   <div class="list-group-item text-body-secondary">No items matched above the confidence threshold.</div>

@@ -67,6 +67,7 @@ def score_item(item_text: str, tags: list[dict]) -> dict[str, float]:
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": user},
             ],
+            schema=_schema(names),
         )
     except openrouter.LLMError as exc:
         logger.error("LLM tagging failed: %s", exc)
