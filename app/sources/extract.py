@@ -1,8 +1,5 @@
 """Natural-language extraction: turn a raw document (e.g. a newsletter email)
 into a list of discrete news items using the LLM with structured output.
-
-Per project decision Q7, we keep only the newsletter-provided summary text and
-the URL to the source article — no full-article scraping.
 """
 from __future__ import annotations
 
@@ -13,34 +10,22 @@ from .base import ExtractedItem, RawDocument
 
 logger = logging.getLogger(__name__)
 
-_EXTRACTION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "items": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "summary": {"type": "string"},
-                    "url": {"type": "string"},
-                },
-                "required": ["title", "summary", "url"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["items"],
-    "additionalProperties": False,
-}
+_ITEM_TYPES = "paper, announcement, blog, news, tool, opinion, other"
 
 _SYSTEM = (
     "You extract distinct AI/tech news items from a newsletter email. "
-    "For each story, return its headline as `title`, a 1-3 sentence neutral "
-    "`summary` drawn ONLY from the newsletter text (do not invent facts), and "
-    "the `url` linking to the original source article (empty string if none). "
+    "For each story return:\n"
+    "  - title: the headline\n"
+    "  - summary: 1-3 sentence neutral summary drawn ONLY from the newsletter text\n"
+    "  - one_liner: a single sentence (max 20 words) capturing the key point\n"
+    f"  - item_type: one of [{_ITEM_TYPES}]\n"
+    "  - url: link to the original source article (empty string if none)\n"
+    "  - text: full verbatim text of the item ONLY when url is empty (opinion pieces, "
+    "editorials, etc.); otherwise empty string\n\n"
     "Ignore ads, sponsorships, job listings, and unsubscribe/footer boilerplate.\n\n"
-    'Respond ONLY with valid JSON in this exact format: {"items": [{"title": "...", "summary": "...", "url": "..."}, ...]}'
+    'Respond ONLY with valid JSON in this exact format: '
+    '{"items": [{"title": "...", "summary": "...", "one_liner": "...", '
+    '"item_type": "news", "url": "...", "text": ""}, ...]}'
 )
 
 
@@ -65,16 +50,22 @@ def extract_items(doc: RawDocument) -> list[ExtractedItem]:
         logger.error("Extraction failed for %s: %s", doc.external_id, exc)
         return []
 
+    valid_types = set(_ITEM_TYPES.replace(" ", "").split(","))
     items: list[ExtractedItem] = []
     for raw in (result or {}).get("items", []):
         title = (raw.get("title") or "").strip()
         if not title:
             continue
+        raw_type = (raw.get("item_type") or "other").strip().lower()
+        url = (raw.get("url") or "").strip() or None
         items.append(
             ExtractedItem(
                 title=title,
                 summary=(raw.get("summary") or "").strip(),
-                url=(raw.get("url") or "").strip() or None,
+                one_liner=(raw.get("one_liner") or "").strip() or None,
+                item_type=raw_type if raw_type in valid_types else "other",
+                url=url,
+                full_text=(raw.get("text") or "").strip() if not url else None,
                 published_at=doc.received_at,
             )
         )

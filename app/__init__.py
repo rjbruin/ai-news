@@ -79,3 +79,9 @@ def register_template_helpers(app: Flask) -> None:
     @app.context_processor
     def inject_globals():
         return {"app_version": get_version()}
+
+    @app.template_filter("monthday")
+    def monthday_filter(dt):
+        if dt is None:
+            return ""
+        return dt.strftime("%-d %B") if hasattr(dt, "strftime") else str(dt)

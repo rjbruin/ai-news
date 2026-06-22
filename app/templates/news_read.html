@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title }} · AI News{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('web.news') }}">News</a></li>
+        <li class="breadcrumb-item active">Read</li>
+      </ol>
+    </nav>
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h1 class="h3 mb-0">{{ item.title }}</h1>
+          <small class="text-body-secondary text-nowrap ms-3">{{ (item.published_at or item.fetched_at)|monthday }}</small>
+        </div>
+        {% if item.source %}
+        <p class="text-body-secondary small mb-3">{{ item.source.name }}</p>
+        {% endif %}
+        {% if item.one_liner %}
+        <p class="lead">{{ item.one_liner }}</p>
+        {% endif %}
+        <hr>
+        <div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7;">{{ item.full_text }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

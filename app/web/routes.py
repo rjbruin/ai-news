@@ -53,6 +53,15 @@ def news():
     return render_template("news.html", items=items, tags=tags, active_tag=tag_id)
 
 
+@bp.route("/news/<int:item_id>/read")
+@login_required
+def news_read(item_id: int):
+    item = db.session.get(NewsItem, item_id) or abort(404)
+    if not item.full_text:
+        abort(404)
+    return render_template("news_read.html", item=item)
+
+
 # ───────────────────────── Tags / taxonomy ─────────────────────────
 @bp.route("/tags")
 @login_required

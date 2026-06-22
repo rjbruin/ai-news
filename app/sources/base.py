@@ -25,6 +25,9 @@ class ExtractedItem:
     summary: str
     url: str | None = None
     published_at: datetime | None = None
+    item_type: str | None = None       # paper|announcement|blog|news|tool|opinion|other
+    one_liner: str | None = None       # single-sentence LLM summary
+    full_text: str | None = None       # full text when no URL (offline items)
 
 
 class NewsSource(ABC):
