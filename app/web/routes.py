@@ -17,7 +17,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import NewsItem, Summary, Tag
+from ..models import NewsItem, Summary, SummaryRun, Tag
 from ..services import summarize
 from ..summaries import registry as summary_registry
 from ..tagging import engine as tagging_engine
@@ -197,8 +197,22 @@ def summaries():
         .order_by(Summary.created_at.desc())
         .all()
     )
+    # Pre-fetch recent editions per summary so the template stays simple
+    editions = {
+        s.id: (
+            SummaryRun.query
+            .filter_by(summary_id=s.id)
+            .order_by(SummaryRun.generated_at.desc())
+            .limit(20)
+            .all()
+        )
+        for s in mine
+    }
     return render_template(
-        "summaries/list.html", summaries=mine, types=summary_registry.all_types()
+        "summaries/list.html",
+        summaries=mine,
+        editions=editions,
+        types=summary_registry.all_types(),
     )
 
 
@@ -226,6 +240,29 @@ def summary_new():
     return render_template("summaries/edit.html", summary=None, types=types)
 
 
+@bp.route("/summaries/<int:summary_id>/edit", methods=["GET", "POST"])
+@login_required
+def summary_edit(summary_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    types = summary_registry.all_types()
+    if request.method == "POST":
+        type_key = request.form.get("type_key", summary.type_key)
+        if type_key not in types:
+            flash("Unknown summary type.", "danger")
+        else:
+            summary.name = (request.form.get("name") or summary.name).strip()
+            summary.type_key = type_key
+            summary.scope_mode = request.form.get("scope_mode", summary.scope_mode)
+            summary.period = request.form.get("period", summary.period)
+            summary.params = _collect_params(types[type_key])
+            db.session.commit()
+            flash("Summary updated.", "success")
+            return redirect(url_for("web.summaries"))
+    return render_template("summaries/edit.html", summary=summary, types=types)
+
+
 @bp.route("/summaries/<int:summary_id>/delete", methods=["POST"])
 @login_required
 def summary_delete(summary_id: int):
@@ -238,16 +275,42 @@ def summary_delete(summary_id: int):
     return redirect(url_for("web.summaries"))
 
 
-@bp.route("/summaries/<int:summary_id>/view")
+@bp.route("/summaries/<int:summary_id>/open")
 @login_required
-def summary_view(summary_id: int):
+def summary_open(summary_id: int):
+    """For since_last summaries: cut a new edition now and show it."""
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
-    artifact, items = summarize.build_summary(summary, mark_consumed=True)
-    return render_template(
-        "summaries/view.html", summary=summary, artifact=artifact, items=items
-    )
+    _, _items, run = summarize.build_summary(summary, record_run=True, mark_consumed=True)
+    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>")
+@login_required
+def edition_view(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    return render_template("summaries/view.html", summary=summary, run=run)
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])
+@login_required
+def edition_delete(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    db.session.delete(run)
+    db.session.commit()
+    flash("Edition deleted.", "info")
+    return redirect(url_for("web.summaries"))
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -271,4 +334,6 @@ def _collect_params(plugin_cls) -> dict:
             val = request.form.get(f"param_{field}")
             if val is not None:
                 params[field] = val
+            elif "default" in spec:
+                params[field] = spec["default"]
     return params

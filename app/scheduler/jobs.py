@@ -37,11 +37,30 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
             except Exception:  # noqa: BLE001
                 logger.exception("Scheduled poll failed")
 
+    def _editions_job():
+        with app.app_context():
+            from ..services import summarize
+
+            try:
+                n = summarize.cut_due_editions()
+                if n:
+                    logger.info("Cut %d edition(s)", n)
+            except Exception:  # noqa: BLE001
+                logger.exception("Edition cutting failed")
+
     scheduler.add_job(
         _poll_job,
         "interval",
         seconds=tick,
         id="poll_sources",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _editions_job,
+        "interval",
+        seconds=60,
+        id="cut_editions",
         max_instances=1,
         coalesce=True,
     )

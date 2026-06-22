@@ -1,15 +1,22 @@
 {% extends "base.html" %}
-{% block title %}{{ summary.name }} · AI News{% endblock %}
+{% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · AI News{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3 mb-0">{{ summary.name }}</h1>
-  <a href="{{ url_for('web.summaries') }}" class="btn btn-outline-secondary btn-sm">Back</a>
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{{ url_for('web.summaries') }}" class="btn btn-sm btn-outline-secondary">← Summaries</a>
+  <div class="flex-grow-1">
+    <h1 class="h3 mb-0">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</h1>
+    <div class="small text-body-secondary">{{ summary.name }}</div>
+  </div>
+  <form method="post"
+        action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
+        class="d-inline">
+    <button class="btn btn-sm btn-outline-danger">Delete edition</button>
+  </form>
 </div>
-{% if artifact.kind == 'html' %}
-  {{ artifact.html | safe }}
-{% elif artifact.kind == 'file' %}
-  <a class="btn btn-primary" href="{{ artifact.file_path }}">Download {{ artifact.title }}</a>
-{% elif artifact.kind == 'audio' %}
-  <audio controls src="{{ artifact.file_path }}" class="w-100"></audio>
+
+{% if run.content %}
+  {{ run.content | safe }}
+{% else %}
+  <p class="text-body-secondary">This edition has no stored content.</p>
 {% endif %}
 {% endblock %}

@@ -1,75 +1,134 @@
 {% extends "base.html" %}
-{% block title %}New summary · AI News{% endblock %}
+{% block title %}{{ 'Edit' if summary else 'New' }} summary · AI News{% endblock %}
 {% block content %}
 <div class="row justify-content-center"><div class="col-md-7">
-<h1 class="h3 mb-3">New summary</h1>
+<h1 class="h3 mb-3">{{ 'Edit summary' if summary else 'New summary' }}</h1>
 <form method="post" class="card shadow-sm">
   <div class="card-body">
+
     <div class="mb-3">
       <label class="form-label">Name</label>
-      <input name="name" class="form-control" value="My summary" required>
+      <input name="name" class="form-control"
+             value="{{ summary.name if summary else 'My summary' }}" required>
     </div>
+
     <div class="mb-3">
       <label class="form-label">Type</label>
-      <select name="type_key" class="form-select" id="type_key">
+      <select name="type_key" class="form-select" id="type_key"
+              {{ 'disabled' if summary }}>
         {% for key, cls in types.items() %}
-        <option value="{{ key }}">{{ cls.label }}</option>
+        <option value="{{ key }}"
+                {{ 'selected' if summary and summary.type_key == key else '' }}>
+          {{ cls.label }}
+        </option>
         {% endfor %}
       </select>
-      <div class="form-text">More formats (printable, podcast) drop in as plugins.</div>
+      {% if summary %}
+        {# Keep hidden value so the disabled select still submits #}
+        <input type="hidden" name="type_key" value="{{ summary.type_key }}">
+      {% endif %}
+      <div class="form-text">More formats drop in as plugins.</div>
     </div>
+
     <div class="mb-3">
       <label class="form-label">News in scope</label>
       <select name="scope_mode" class="form-select" id="scope_mode">
-        <option value="fixed_period">A fixed period</option>
-        <option value="since_last">Everything since I last viewed it</option>
-      </select>
-    </div>
-    <div class="mb-3" id="period_wrap">
-      <label class="form-label">Period</label>
-      <select name="period" class="form-select">
-        <option value="day">Last day</option>
-        <option value="week">Last week</option>
+        <option value="fixed_period"
+                {{ 'selected' if summary and summary.scope_mode == 'fixed_period' else '' }}>
+          Fixed period (automatic edition cutting)
+        </option>
+        <option value="since_last"
+                {{ 'selected' if summary and summary.scope_mode == 'since_last' else '' }}>
+          Everything since I last opened it
+        </option>
       </select>
     </div>
 
+    <div class="mb-3" id="period_wrap">
+      <label class="form-label">Period</label>
+      <select name="period" class="form-select" id="period_select">
+        <option value="day"
+                {{ 'selected' if summary and summary.period == 'day' else '' }}>Daily</option>
+        <option value="week"
+                {{ 'selected' if summary and summary.period == 'week' else '' }}>Weekly</option>
+      </select>
+    </div>
+
+    {# Per-type params rendered generically #}
     {% for key, cls in types.items() %}
       {% for field, spec in (cls.param_schema or {}).items() %}
-      <div class="mb-3 param-group param-{{ key }}" style="display:none">
+      {% set cur_val = (summary.params or {}).get(field, spec.get('default', '')) if summary else spec.get('default', '') %}
+      <div class="mb-3 param-group param-{{ key }}
+                  {%- if spec.get('scope') == 'day' %} scope-day{% endif %}
+                  {%- if spec.get('scope') == 'week' %} scope-week{% endif %}"
+           style="display:none">
+
         {% if spec.type == 'checkbox' %}
         <div class="form-check">
-          <input type="checkbox" name="param_{{ field }}" class="form-check-input" id="p_{{ key }}_{{ field }}"
-                 {{ 'checked' if spec.default else '' }}>
+          <input type="checkbox" name="param_{{ field }}" class="form-check-input"
+                 id="p_{{ key }}_{{ field }}"
+                 {{ 'checked' if cur_val else '' }}>
           <label class="form-check-label" for="p_{{ key }}_{{ field }}">{{ spec.label }}</label>
         </div>
+
+        {% elif spec.type == 'select' %}
+        <label class="form-label">{{ spec.label }}</label>
+        <select name="param_{{ field }}" class="form-select">
+          {% for val, lbl in spec.options %}
+          <option value="{{ val }}" {{ 'selected' if cur_val|string == val|string else '' }}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+
+        {% elif spec.type == 'time' %}
+        <label class="form-label">{{ spec.label }}</label>
+        <input type="time" name="param_{{ field }}" class="form-control"
+               value="{{ cur_val if cur_val else spec.get('default','08:00') }}">
+
         {% else %}
         <label class="form-label">{{ spec.label }}</label>
-        <input name="param_{{ field }}" class="form-control" value="{{ spec.default if spec.default is not none else '' }}">
+        <input name="param_{{ field }}" class="form-control"
+               value="{{ cur_val }}">
         {% endif %}
+
       </div>
       {% endfor %}
     {% endfor %}
+
   </div>
   <div class="card-footer d-flex justify-content-between">
     <a href="{{ url_for('web.summaries') }}" class="btn btn-outline-secondary">Cancel</a>
-    <button class="btn btn-primary">Create</button>
+    <button class="btn btn-primary">{{ 'Save' if summary else 'Create' }}</button>
   </div>
 </form>
 </div></div>
 {% endblock %}
 {% block scripts %}
 <script>
-  function syncParams() {
-    const key = document.getElementById('type_key').value;
+  const typeSelect = document.getElementById('type_key');
+  const scopeSelect = document.getElementById('scope_mode');
+  const periodSelect = document.getElementById('period_select');
+
+  function sync() {
+    const key = typeSelect ? typeSelect.value : '{{ summary.type_key if summary else "" }}';
+    const scope = scopeSelect.value;
+    const period = periodSelect ? periodSelect.value : '{{ summary.period if summary else "day" }}';
+
     document.querySelectorAll('.param-group').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('.param-' + key).forEach(el => el.style.display = '');
+    document.querySelectorAll('.param-' + key).forEach(el => {
+      const isDay = el.classList.contains('scope-day');
+      const isWeek = el.classList.contains('scope-week');
+      if (isDay && period !== 'day') return;
+      if (isWeek && period !== 'week') return;
+      el.style.display = '';
+    });
+
+    const periodWrap = document.getElementById('period_wrap');
+    if (periodWrap) periodWrap.style.display = (scope === 'fixed_period') ? '' : 'none';
   }
-  function syncScope() {
-    const mode = document.getElementById('scope_mode').value;
-    document.getElementById('period_wrap').style.display = (mode === 'fixed_period') ? '' : 'none';
-  }
-  document.getElementById('type_key').addEventListener('change', syncParams);
-  document.getElementById('scope_mode').addEventListener('change', syncScope);
-  syncParams(); syncScope();
+
+  if (typeSelect) typeSelect.addEventListener('change', sync);
+  scopeSelect.addEventListener('change', sync);
+  if (periodSelect) periodSelect.addEventListener('change', sync);
+  sync();
 </script>
 {% endblock %}

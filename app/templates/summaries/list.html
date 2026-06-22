@@ -5,25 +5,72 @@
   <h1 class="h3 mb-0">Your summaries</h1>
   <a href="{{ url_for('web.summary_new') }}" class="btn btn-primary">New summary</a>
 </div>
-<div class="list-group shadow-sm">
-  {% for s in summaries %}
-  <div class="list-group-item d-flex justify-content-between align-items-center">
-    <div>
-      <span class="fw-semibold">{{ s.name }}</span>
-      <span class="badge text-bg-light border">{{ types[s.type_key].label if s.type_key in types else s.type_key }}</span>
-      <div class="small text-body-secondary">
-        {% if s.scope_mode == 'since_last' %}Since last viewed{% else %}Last {{ s.period }}{% endif %}
+
+{% if not summaries %}
+<p class="text-body-secondary">No summaries yet.</p>
+{% endif %}
+
+{% for s in summaries %}
+{% set runs = editions[s.id] %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <div class="flex-grow-1">
+      <span class="fw-semibold fs-6">{{ s.name }}</span>
+      <span class="badge text-bg-light border ms-1">
+        {{ types[s.type_key].label if s.type_key in types else s.type_key }}
+      </span>
+      <div class="small text-body-secondary mt-1">
+        {% if s.scope_mode == 'since_last' %}
+          Cut on open
+        {% elif s.period == 'day' %}
+          Daily at {{ (s.params or {}).get('release_time', '08:00') }} UTC
+        {% else %}
+          {% set day_names = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}
+          Weekly on {{ day_names[(s.params or {}).get('release_day', '0')|int] }}s at 08:00 UTC
+        {% endif %}
+        {% if (s.params or {}).get('send_email') %}
+          · <span class="text-success">email on cut</span>
+        {% endif %}
       </div>
     </div>
-    <div class="text-nowrap">
-      <a href="{{ url_for('web.summary_view', summary_id=s.id) }}" class="btn btn-sm btn-primary">Open</a>
+    <div class="d-flex gap-2 flex-shrink-0">
+      {% if s.scope_mode == 'since_last' %}
+        <a href="{{ url_for('web.summary_open', summary_id=s.id) }}" class="btn btn-sm btn-primary">Open now</a>
+      {% endif %}
+      <a href="{{ url_for('web.summary_edit', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
       <form method="post" action="{{ url_for('web.summary_delete', summary_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-danger">Delete</button>
       </form>
     </div>
   </div>
+
+  {% if runs %}
+  <div class="list-group list-group-flush">
+    {% for run in runs %}
+    <div class="list-group-item d-flex align-items-center gap-2 py-2">
+      <span class="flex-grow-1">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      <span class="badge text-bg-light border text-body-secondary small">
+        {{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}
+      </span>
+      <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
+         class="btn btn-sm btn-outline-primary">Open</a>
+      <form method="post"
+            action="{{ url_for('web.edition_delete', summary_id=s.id, run_id=run.id) }}"
+            class="d-inline">
+        <button class="btn btn-sm btn-outline-danger">Delete</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
   {% else %}
-  <div class="list-group-item text-body-secondary">No summaries yet.</div>
-  {% endfor %}
+  <div class="card-body text-body-secondary small fst-italic">
+    {% if s.scope_mode == 'since_last' %}
+      No editions yet — click "Open now" to cut one.
+    {% else %}
+      No editions cut yet. The next one will be cut automatically at the scheduled time.
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
+{% endfor %}
 {% endblock %}
