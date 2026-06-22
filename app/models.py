@@ -226,7 +226,9 @@ class SummaryRun(db.Model):
     range_start = db.Column(db.DateTime, nullable=True)
     range_end = db.Column(db.DateTime, nullable=True)
     item_count = db.Column(db.Integer, default=0)
-    artifact_ref = db.Column(db.String(500), nullable=True)  # file path / url
+    label = db.Column(db.String(120), nullable=True)   # e.g. "Tuesday June 22"
+    content = db.Column(db.Text, nullable=True)         # rendered HTML artifact
+    artifact_ref = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default="ok")
 
     summary = db.relationship("Summary", back_populates="runs")

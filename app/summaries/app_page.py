@@ -18,6 +18,27 @@ class AppPageSummary(NewsSummary):
             "label": "Group items by tag",
             "default": True,
         },
+        "release_time": {
+            "type": "time",
+            "label": "Daily release time (HH:MM, UTC)",
+            "default": "08:00",
+            "scope": "day",   # only shown for daily summaries
+        },
+        "release_day": {
+            "type": "select",
+            "label": "Weekly release day",
+            "default": "0",
+            "scope": "week",  # only shown for weekly summaries
+            "options": [
+                ("0", "Monday"), ("1", "Tuesday"), ("2", "Wednesday"),
+                ("3", "Thursday"), ("4", "Friday"), ("5", "Saturday"), ("6", "Sunday"),
+            ],
+        },
+        "send_email": {
+            "type": "checkbox",
+            "label": "Send as email newsletter when edition is cut",
+            "default": False,
+        },
     }
 
     def build(
@@ -37,8 +58,6 @@ class AppPageSummary(NewsSummary):
                 if not links:
                     grouped.setdefault("Untagged", []).append(item)
                 else:
-                    # Place each item under its single highest-confidence tag so
-                    # it appears exactly once in the grouped view.
                     best = max(links, key=lambda l: l.confidence or 0)
                     grouped.setdefault(best.tag.name, []).append(item)
             grouped = dict(sorted(grouped.items(), key=lambda kv: kv[0].lower()))

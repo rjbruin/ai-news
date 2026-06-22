@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ainews",
+      "runtimeExecutable": "./venv/bin/gunicorn",
+      "runtimeArgs": ["--workers", "1", "--threads", "4", "--bind", "127.0.0.1:5090", "wsgi:app"],
+      "port": 5090,
+      "autoPort": false
+    }
+  ]
+}
