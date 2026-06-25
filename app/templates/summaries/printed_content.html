@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+  @page {
+    margin: 2cm 2.5cm;
+    @bottom-right { content: counter(page) " / " counter(pages); font-size: 9pt; color: #888; }
+  }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: #1a1a1a;
+  }
+  header {
+    border-bottom: 2px solid #1f3a5f;
+    padding-bottom: 6pt;
+    margin-bottom: 18pt;
+  }
+  header h1 { font-size: 18pt; margin: 0 0 2pt; color: #1f3a5f; }
+  header p  { font-size: 9pt; color: #555; margin: 0; }
+  h2.tag-heading {
+    font-size: 11pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #1f3a5f;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 2pt;
+    margin: 20pt 0 8pt;
+  }
+  .item { margin-bottom: 14pt; page-break-inside: avoid; }
+  .item-title { font-size: 11pt; font-weight: bold; margin: 0 0 2pt; }
+  .item-title a { color: #1a1a1a; text-decoration: none; }
+  .item-url { font-size: 8pt; color: #1f3a5f; margin: 0 0 3pt; word-break: break-all; }
+  .item-one-liner { font-style: italic; margin: 2pt 0; }
+  .item-summary { font-size: 9.5pt; color: #333; margin: 2pt 0 0; }
+  .item-tags { font-size: 8pt; color: #777; margin-top: 3pt; }
+  .meta { font-size: 8pt; color: #999; }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ title }}</h1>
+  <p>
+    {% if range_start %}{{ range_start.strftime('%d %B %Y %H:%M') }} – {% endif %}
+    {% if range_end %}{{ range_end.strftime('%d %B %Y %H:%M') }} UTC{% endif %}
+    · {{ items|length }} item(s)
+  </p>
+</header>
+
+{% if grouped is not none %}
+  {% for tag_name, tag_items in grouped.items() %}
+  <h2 class="tag-heading">{{ tag_name }}</h2>
+  {% for item in tag_items %}
+  <div class="item">
+    <p class="item-title">{{ item.title }}</p>
+    {% if item.url %}<p class="item-url">{{ item.url }}</p>{% endif %}
+    {% if item.one_liner %}<p class="item-one-liner">{{ item.one_liner }}</p>{% endif %}
+    {% if item.summary_text %}<p class="item-summary">{{ item.summary_text }}</p>{% endif %}
+  </div>
+  {% endfor %}
+  {% endfor %}
+{% else %}
+  {% for item in items %}
+  <div class="item">
+    <p class="item-title">{{ item.title }}</p>
+    {% if item.url %}<p class="item-url">{{ item.url }}</p>{% endif %}
+    {% if item.one_liner %}<p class="item-one-liner">{{ item.one_liner }}</p>{% endif %}
+    {% if item.summary_text %}<p class="item-summary">{{ item.summary_text }}</p>{% endif %}
+  </div>
+  {% endfor %}
+{% endif %}
+</body>
+</html>

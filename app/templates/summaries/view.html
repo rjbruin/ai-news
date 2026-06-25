@@ -14,7 +14,21 @@
   </form>
 </div>
 
-{% if run.content %}
+{% if run.artifact_ref and run.artifact_ref.endswith('.pdf') %}
+  {% set pdf_url = url_for('static', filename=run.artifact_ref) %}
+  <div class="d-flex gap-2 mb-3">
+    <a href="{{ pdf_url }}" download class="btn btn-sm btn-primary">Download PDF</a>
+    <button class="btn btn-sm btn-outline-secondary"
+            onclick="var w=window.open('{{ pdf_url }}','_blank');w.onload=function(){w.print();}">
+      Print
+    </button>
+  </div>
+  <iframe src="{{ pdf_url }}" id="pdf-viewer"
+          style="width:100%;height:80vh;border:1px solid #dee2e6;border-radius:.375rem">
+    <p>Your browser does not support inline PDFs.
+       <a href="{{ pdf_url }}">Download the PDF</a> to view it.</p>
+  </iframe>
+{% elif run.content %}
   {{ run.content | safe }}
 {% else %}
   <p class="text-body-secondary">This edition has no stored content.</p>
