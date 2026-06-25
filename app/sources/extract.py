@@ -15,16 +15,20 @@ _ITEM_TYPES = "paper, announcement, blog, news, tool, opinion, other"
 _SYSTEM = (
     "You extract distinct AI/tech news items from a newsletter email. "
     "For each story return:\n"
-    "  - title: the headline\n"
-    "  - summary: 1-3 sentence neutral summary drawn ONLY from the newsletter text\n"
-    "  - one_liner: a single sentence (max 20 words) capturing the key point\n"
+    "  - title: the headline (concise, factual)\n"
+    "  - one_liner: a single sentence (max 20 words) capturing the single most important "
+    "takeaway — must add information NOT already obvious from the title\n"
+    "  - summary: 2-4 sentences drawn ONLY from the newsletter text. Do NOT restate the "
+    "title or one_liner. Provide context, background, implications, or details that "
+    "complement the headline — think of it as the paragraph a reader skims after the title "
+    "to decide whether to click through\n"
     f"  - item_type: one of [{_ITEM_TYPES}]\n"
     "  - url: link to the original source article (empty string if none)\n"
     "  - text: full verbatim text of the item ONLY when url is empty (opinion pieces, "
     "editorials, etc.); otherwise empty string\n\n"
     "Ignore ads, sponsorships, job listings, and unsubscribe/footer boilerplate.\n\n"
     'Respond ONLY with valid JSON in this exact format: '
-    '{"items": [{"title": "...", "summary": "...", "one_liner": "...", '
+    '{"items": [{"title": "...", "one_liner": "...", "summary": "...", '
     '"item_type": "news", "url": "...", "text": ""}, ...]}'
 )
 

@@ -1,0 +1,43 @@
+{% macro news_item(item) %}
+{% set type_colors = {
+  'paper': 'text-bg-info',
+  'announcement': 'text-bg-primary',
+  'blog': 'text-bg-secondary',
+  'news': 'text-bg-success',
+  'tool': 'text-bg-warning',
+  'opinion': 'text-bg-danger',
+  'other': 'text-bg-light border',
+} %}
+<div class="list-group-item">
+  <div class="d-flex justify-content-between align-items-start gap-2">
+    <h5 class="mb-1">
+      {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+      {% elif item.full_text %}<a href="{{ url_for('web.news_read', item_id=item.id) }}">{{ item.title }}</a>
+      {% else %}{{ item.title }}{% endif %}
+    </h5>
+    <div class="text-nowrap text-end small text-body-secondary" style="min-width:7rem">
+      {% if item.item_type %}
+      <span class="badge {{ type_colors.get(item.item_type, 'text-bg-light border') }} me-1">{{ item.item_type }}</span>
+      {% endif %}
+      {{ (item.published_at or item.fetched_at)|monthday }}
+    </div>
+  </div>
+  {% if item.one_liner %}
+  <p class="mb-1 fw-semibold">{{ item.one_liner }}</p>
+  {% endif %}
+  {% if item.summary_text %}
+  <p class="mb-1 text-body-secondary small">{{ item.summary_text }}</p>
+  {% endif %}
+  <div class="d-flex align-items-center gap-2 flex-wrap mt-1">
+    {% if item.source %}
+    <small class="text-body-secondary">{{ item.source.name }}</small>
+    {% endif %}
+    {% if item.full_text and not item.url %}
+    <a href="{{ url_for('web.news_read', item_id=item.id) }}" class="small">Read full text →</a>
+    {% endif %}
+    {% for link in item.tag_links %}
+      <span class="badge text-bg-light border" title="{{ link.method }} · {{ '%.2f'|format(link.confidence) }}">{{ link.tag.name }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
