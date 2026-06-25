@@ -62,6 +62,6 @@ def test_build_summary_records_run(app, db, sample_items):
     )
     db.session.add(summary)
     db.session.commit()
-    artifact, items = summarize.build_summary(summary)
+    artifact, items, run = summarize.build_summary(summary)
     assert artifact.kind == "html"
     assert summary.runs.count() == 1

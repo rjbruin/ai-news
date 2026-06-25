@@ -88,6 +88,23 @@ class DebugConfig(DevConfig):
     DEBUG_SEED = True
 
 
+class IntegrationTestConfig(Config):
+    """Like TestConfig but keeps the real OPENROUTER_API_KEY so LLM calls work.
+
+    Used by tests/test_extraction_integration.py — the tests skip themselves
+    when the key is absent, so this config is safe to use unconditionally.
+    """
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    WTF_CSRF_ENABLED = False
+    SESSION_COOKIE_SECURE = False
+    WORKER_ENABLED = False
+    SECRET_KEY = "test-secret"
+    ADMIN_EMAILS = ["admin@example.com"]
+    TAGGING_MODE = "nb_only"
+    # OPENROUTER_API_KEY is intentionally NOT overridden — inherits from Config
+
+
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
