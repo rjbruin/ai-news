@@ -64,6 +64,10 @@ def create_app(config_object: type | None = None) -> Flask:
         with app.app_context():
             _purge_empty_editions()
 
+    if app.config.get("DEBUG_SEED") and not app.config.get("TESTING"):
+        with app.app_context():
+            _seed_debug_data(app)
+
     # Background scheduler (skipped under tests / when disabled).
     if app.config.get("WORKER_ENABLED") and not app.config.get("TESTING"):
         from .scheduler.jobs import start_scheduler
@@ -71,6 +75,52 @@ def create_app(config_object: type | None = None) -> Flask:
         start_scheduler(app)
 
     return app
+
+
+def _seed_debug_data(app: Flask) -> None:
+    """Populate the database with fixture items and cut any missing summary editions.
+
+    Safe to call on every startup — item insertion is idempotent via dedup_hash,
+    and edition cutting only creates editions that are absent for the current window.
+    """
+    import logging
+
+    from .extensions import db
+    from .models import Source
+    from .services import ingest as ingest_svc
+    from .services import summarize as summarize_svc
+
+    log = logging.getLogger(__name__)
+
+    # 1. Ensure the seed source record exists.
+    source = Source.query.filter_by(type_key="seed").first()
+    if source is None:
+        source = Source(
+            name="Debug Seed Data",
+            type_key="seed",
+            enabled=True,
+            config={},
+        )
+        db.session.add(source)
+        db.session.commit()
+        log.info("Debug seed: created seed source")
+
+    # 2. Ingest fixture items (skips existing via dedup_hash).
+    stats = ingest_svc.ingest_source(source)
+    log.info(
+        "Debug seed: %d new items ingested, %d skipped (already present)",
+        stats["new_items"],
+        stats["skipped"],
+    )
+
+    # 3. Force-cut editions for all enabled fixed-period summaries that are missing
+    #    an edition for the current window.
+    try:
+        n = summarize_svc.cut_due_editions(force=True)
+        if n:
+            log.info("Debug seed: cut %d edition(s) at startup", n)
+    except Exception:
+        log.exception("Debug seed: failed to cut editions at startup")
 
 
 def _purge_empty_editions() -> None:

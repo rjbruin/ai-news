@@ -128,8 +128,11 @@ def build_summary(summary: Summary, *, record_run: bool = True, mark_consumed: b
 
 # ─────────────────────────── scheduled edition cutting ────────────────────────────
 
-def cut_due_editions() -> int:
+def cut_due_editions(force: bool = False) -> int:
     """Cut new editions for all fixed_period summaries whose release time has arrived.
+
+    When ``force`` is True the time-has-passed guard is skipped, which is useful
+    for debug-mode startup so editions are generated immediately.
 
     Returns the number of editions cut.
     """
@@ -148,8 +151,8 @@ def cut_due_editions() -> int:
                 continue  # Edition already exists for this period
 
             now = utcnow()
-            # Only cut if the cutoff time has actually passed
-            if now.replace(tzinfo=None) < expected_naive:
+            # Only cut if the cutoff time has actually passed (skipped when force=True)
+            if not force and now.replace(tzinfo=None) < expected_naive:
                 continue
 
             artifact, items, run = build_summary(summary, record_run=True)
