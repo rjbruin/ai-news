@@ -88,6 +88,7 @@ class IngestRun(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=False)
+    external_id = db.Column(db.String(500), nullable=True, index=True)
     fetched_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     subject = db.Column(db.String(500), nullable=True)
     sender = db.Column(db.String(255), nullable=True)

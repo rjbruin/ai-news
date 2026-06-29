@@ -40,9 +40,9 @@ def test_apply_to_item_persists_links(app, db, sample_tags, sample_items):
 
 def test_preview_returns_matches(app, sample_items):
     app.config["NB_CONFIDENCE_THRESHOLD"] = 0.05
-    matches = engine.preview("Robots", ["robot", "humanoid"], "Robot news")
-    titles = [m["item"].title for m in matches]
-    assert any("robot" in t.lower() for t in titles)
+    events = list(engine.preview_iter("Robots", ["robot", "humanoid"], "Robot news"))
+    matches = [e for e in events if e.get("type") == "match"]
+    assert any("robot" in e["title"].lower() for e in matches)
 
 
 def test_llm_only_mode_without_key_returns_empty(app, sample_tags, sample_items):

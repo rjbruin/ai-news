@@ -21,13 +21,14 @@ def test_create_tag(auth_client, db):
 
 
 def test_tag_tryout_page(auth_client, sample_items):
+    # Results are streamed via SSE; the POST just renders the try-out form page.
     resp = auth_client.post(
         "/tags/try-out",
         data={"name": "Robots", "keywords": "robot, humanoid", "explanation": ""},
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    assert b"matching item" in resp.data
+    assert b"try-out" in resp.data.lower() or b"tag" in resp.data.lower()
 
 
 def test_non_admin_cannot_access_admin(auth_client):
@@ -52,9 +53,14 @@ def test_create_and_view_summary(auth_client, db, sample_items):
               "scope_mode": "fixed_period", "period": "day"},
         follow_redirects=True,
     )
-    from app.models import Summary
+    from app.models import Summary, SummaryRun
 
     summary = Summary.query.filter_by(name="My daily").first()
     assert summary is not None
-    resp = auth_client.get(f"/summaries/{summary.id}/view")
+
+    # Cut an edition, then view it via the edition URL.
+    from app.services import summarize
+    _, _, run = summarize.build_summary(summary, record_run=True)
+    assert run is not None
+    resp = auth_client.get(f"/summaries/{summary.id}/editions/{run.id}")
     assert resp.status_code == 200

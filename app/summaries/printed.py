@@ -26,6 +26,16 @@ class PrintedSummary(NewsSummary):
             "default": "08:00",
             "scope": "day",
         },
+        "release_days": {
+            "type": "checkboxes",
+            "label": "Release days",
+            "default": [0, 1, 2, 3, 4],
+            "scope": "day",
+            "options": [
+                (0, "Mon"), (1, "Tue"), (2, "Wed"),
+                (3, "Thu"), (4, "Fri"), (5, "Sat"), (6, "Sun"),
+            ],
+        },
         "release_day": {
             "type": "select",
             "label": "Weekly release day",

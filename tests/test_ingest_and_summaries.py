@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.models import NewsItem, Source, Summary
 from app.services import ingest, summarize
@@ -44,6 +44,12 @@ def test_ingest_dedups(app, db):
 
 
 def test_summary_fixed_period_scope(app, db, sample_items):
+    # Backdate items to yesterday so they fall before the daily release cutoff (08:00 UTC).
+    yesterday = datetime.now(timezone.utc) - timedelta(hours=20)
+    for item in sample_items:
+        item.fetched_at = yesterday.replace(tzinfo=None)
+    db.session.commit()
+
     summary = Summary(
         user_id=1, name="Daily", type_key="app_page",
         scope_mode="fixed_period", period="day", params={"group_by_tag": False},
@@ -51,7 +57,6 @@ def test_summary_fixed_period_scope(app, db, sample_items):
     db.session.add(summary)
     db.session.commit()
     items = summarize.items_in_scope(summary)
-    # sample_items were just fetched (now), so they fall in the last-day window.
     assert len(items) == 2
 
 
