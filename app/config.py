@@ -24,6 +24,9 @@ def _emails(value: str | None) -> list[str]:
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-secret")
+    # Secret for encrypting stored secrets (per-user API keys). Defaults to
+    # SECRET_KEY; set independently in production so key rotation is decoupled.
+    FERNET_SECRET = os.environ.get("FERNET_SECRET", "")
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = "Lax"
 

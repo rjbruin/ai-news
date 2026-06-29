@@ -59,6 +59,32 @@ def dashboard():
     )
 
 
+# ───────────────────────── Settings ─────────────────────────
+@bp.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    if request.method == "POST":
+        current_user.openrouter_model = (
+            request.form.get("openrouter_model") or ""
+        ).strip() or None
+
+        if request.form.get("clear_key"):
+            current_user.set_openrouter_key(None)
+            flash("OpenRouter API key removed.", "info")
+        else:
+            new_key = (request.form.get("openrouter_api_key") or "").strip()
+            if new_key:
+                current_user.set_openrouter_key(new_key)
+                flash("OpenRouter API key saved.", "success")
+            else:
+                flash("Settings updated.", "success")
+
+        db.session.commit()
+        return redirect(url_for("web.settings"))
+
+    return render_template("settings.html")
+
+
 # ───────────────────────── News ─────────────────────────
 @bp.route("/news")
 @login_required

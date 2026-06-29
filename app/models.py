@@ -43,11 +43,33 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
 
+    # Per-user OpenRouter credentials for the agentic summary pipeline.
+    # The global OPENROUTER_API_KEY still powers extraction/tagging/deterministic
+    # summaries; only the agent uses these.
+    openrouter_api_key_enc = db.Column(db.Text, nullable=True)
+    openrouter_model = db.Column(db.String(120), nullable=True)
+
     tags = db.relationship("Tag", back_populates="owner", lazy="dynamic")
     summaries = db.relationship("Summary", back_populates="user", lazy="dynamic")
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
+
+    def set_openrouter_key(self, plaintext: str | None) -> None:
+        """Store (encrypted) or clear the user's OpenRouter API key."""
+        from .crypto import encrypt
+
+        self.openrouter_api_key_enc = encrypt(plaintext) if plaintext else None
+
+    def get_openrouter_key(self) -> str | None:
+        """Return the decrypted OpenRouter API key, or None if unset."""
+        from .crypto import decrypt
+
+        return decrypt(self.openrouter_api_key_enc) if self.openrouter_api_key_enc else None
+
+    @property
+    def has_openrouter_key(self) -> bool:
+        return bool(self.openrouter_api_key_enc)
 
     def check_password(self, password: str) -> bool:
         if not self.password_hash:

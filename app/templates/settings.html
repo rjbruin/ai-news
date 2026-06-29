@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Settings · AI News{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-7">
+<h1 class="h3 mb-3">Settings</h1>
+
+<form method="post" class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5">Agentic summaries — OpenRouter</h2>
+    <p class="text-body-secondary small">
+      The agentic summary pipeline runs on <strong>your</strong> OpenRouter key and
+      model. Other features (newsletter extraction, tagging, the deterministic
+      summary types) continue to use the system's global key.
+    </p>
+
+    <div class="mb-3">
+      <label class="form-label">OpenRouter API key</label>
+      <input type="password" name="openrouter_api_key" class="form-control"
+             autocomplete="off"
+             placeholder="{{ 'A key is set — type a new one to replace it' if current_user.has_openrouter_key else 'sk-or-...' }}">
+      <div class="form-text">
+        {% if current_user.has_openrouter_key %}
+          <span class="text-success">✓ A key is currently stored (encrypted).</span>
+          Leave blank to keep it.
+        {% else %}
+          No key stored yet. Required for agentic summaries.
+        {% endif %}
+      </div>
+      {% if current_user.has_openrouter_key %}
+      <div class="form-check mt-2">
+        <input type="checkbox" name="clear_key" value="1" class="form-check-input" id="clear_key">
+        <label class="form-check-label" for="clear_key">Remove the stored key</label>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Model</label>
+      <input name="openrouter_model" class="form-control"
+             value="{{ current_user.openrouter_model or '' }}"
+             placeholder="anthropic/claude-sonnet-4.6">
+      <div class="form-text">An OpenRouter model id. Leave blank to use the system default.</div>
+    </div>
+  </div>
+  <div class="card-footer text-end">
+    <button class="btn btn-primary">Save</button>
+  </div>
+</form>
+</div></div>
+{% endblock %}
