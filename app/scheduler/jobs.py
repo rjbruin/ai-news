@@ -48,6 +48,18 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
             except Exception:  # noqa: BLE001
                 logger.exception("Edition cutting failed")
 
+    def _agent_maintenance_job():
+        with app.app_context():
+            from ..agent import memory as agent_memory
+
+            try:
+                days = app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+                pruned = agent_memory.prune_headlines(days=days)
+                if pruned:
+                    logger.info("Pruned %d old headline file(s)", pruned)
+            except Exception:  # noqa: BLE001
+                logger.exception("Agent memory maintenance failed")
+
     scheduler.add_job(
         _poll_job,
         "interval",
@@ -61,6 +73,14 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
         "interval",
         seconds=60,
         id="cut_editions",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _agent_maintenance_job,
+        "interval",
+        seconds=3600,
+        id="agent_maintenance",
         max_instances=1,
         coalesce=True,
     )

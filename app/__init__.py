@@ -63,6 +63,7 @@ def create_app(config_object: type | None = None) -> Flask:
     if not app.config.get("TESTING"):
         with app.app_context():
             _purge_empty_editions()
+            _prune_agent_headlines(app)
 
     if app.config.get("DEBUG_SEED") and not app.config.get("TESTING"):
         with app.app_context():
@@ -144,6 +145,24 @@ def _purge_empty_editions() -> None:
     except Exception:
         db.session.rollback()
         logging.getLogger(__name__).exception("Startup: failed to purge empty editions")
+
+
+def _prune_agent_headlines(app: Flask) -> None:
+    """Prune agent HEADLINES memory older than the configured retention window."""
+    import logging
+    from .agent import memory as agent_memory
+
+    try:
+        days = app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+        pruned = agent_memory.prune_headlines(days=days)
+        if pruned:
+            logging.getLogger(__name__).info(
+                "Startup: pruned %d old headline file(s)", pruned
+            )
+    except Exception:
+        from .extensions import db
+        db.session.rollback()
+        logging.getLogger(__name__).exception("Startup: failed to prune headlines")
 
 
 def _ensure_dirs(app: Flask) -> None:

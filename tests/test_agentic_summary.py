@@ -97,3 +97,56 @@ def test_defaults_seeded_on_first_run(monkeypatch, db, keyed_user, agentic_summa
     # compose_system_prompt seeds interests + content_config lazily.
     assert memory.read(keyed_user, agentic_summary, "interests")
     assert memory.read(keyed_user, agentic_summary, "content_config")
+
+
+def _scripted_chat_with_history():
+    """Agent builds a doc, appends HISTORY, then writes HEADLINES."""
+    state = {"n": 0}
+
+    def chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        state["n"] += 1
+        if state["n"] == 1:
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c1", "type": "function",
+                "function": {"name": "set_document", "arguments": json.dumps({"blocks": [
+                    {"type": "edition_header", "title": "AI Daily"},
+                    {"type": "story", "headline": "Reasoning models surge", "emphasis": "lead"},
+                ]})},
+            }], "_usage": {}}
+        if state["n"] == 2:
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c2", "type": "function",
+                "function": {"name": "append_history",
+                             "arguments": json.dumps({"note": "Trend: reasoning models gaining ground."})},
+            }], "_usage": {}}
+        if state["n"] == 3:
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c3", "type": "function",
+                "function": {"name": "write_headlines",
+                             "arguments": json.dumps({"notes": "- Reasoning models surge"})},
+            }], "_usage": {}}
+        return {"role": "assistant", "content": "done", "_usage": {}}
+
+    return chat
+
+
+def test_agent_writes_history_and_headlines(monkeypatch, db, keyed_user, agentic_summary):
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _scripted_chat_with_history())
+    summarize.build_summary(agentic_summary, record_run=True)
+
+    history = memory.read(keyed_user, agentic_summary, "history")
+    assert "reasoning models gaining ground" in history.lower()
+    headlines = memory.recent_headlines(keyed_user, agentic_summary, days=7)
+    assert len(headlines) == 1
+
+
+def test_prune_respects_retention_window(db, keyed_user, agentic_summary):
+    from datetime import timedelta
+    from app.models import utcnow
+    now = utcnow().replace(tzinfo=None)
+    memory.write_headlines(keyed_user, agentic_summary, now - timedelta(days=2), "recent")
+    memory.write_headlines(keyed_user, agentic_summary, now - timedelta(days=8), "stale")
+    # Default 7-day window removes only the 8-day-old row.
+    assert memory.prune_headlines(days=7) == 1
+    remaining = memory.recent_headlines(keyed_user, agentic_summary, days=30)
+    assert [r.content for r in remaining] == ["recent"]
