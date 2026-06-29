@@ -41,8 +41,16 @@ def ingest_source(source: Source) -> dict:
     new_items: list[NewsItem] = []
 
     for doc in docs:
+        # Server-side dedup: skip documents whose external_id we have seen before.
+        if doc.external_id and IngestRun.query.filter_by(
+            source_id=source.id, external_id=doc.external_id
+        ).first():
+            stats["skipped"] += 1
+            continue
+
         run = IngestRun(
             source_id=source.id,
+            external_id=doc.external_id or None,
             subject=doc.subject,
             sender=(doc.meta or {}).get("from"),
             raw_body=doc.text,

@@ -2,11 +2,15 @@
 
 Config keys (fall back to app-level IMAP_* config when omitted):
   host, port, username, password, folder, mark_seen
+
+Deduplication is handled server-side via IngestRun.external_id (the email's
+Message-ID header).  The seen/unseen flag is no longer used for tracking —
+mark_seen is kept as an optional inbox-housekeeping courtesy only.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import bleach
 from bs4 import BeautifulSoup
@@ -15,6 +19,8 @@ from flask import current_app
 from .base import NewsSource, RawDocument
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_LOOKBACK_DAYS = 30
 
 
 def html_to_text(html: str) -> str:
@@ -38,7 +44,12 @@ class ImapNewsletterSource(NewsSource):
         "username": {"type": "text", "label": "Username", "required": False},
         "password": {"type": "password", "label": "Password", "required": False, "secret": True},
         "folder": {"type": "text", "label": "Folder", "required": False},
-        "mark_seen": {"type": "checkbox", "label": "Mark messages as seen after fetching (recommended)", "required": False, "default": True},
+        "mark_seen": {
+            "type": "checkbox",
+            "label": "Mark messages as seen after fetching (inbox housekeeping only)",
+            "required": False,
+            "default": False,
+        },
     }
 
     def _conn_params(self) -> dict:
@@ -49,26 +60,25 @@ class ImapNewsletterSource(NewsSource):
             "username": self.config.get("username") or cfg.get("IMAP_USERNAME"),
             "password": self.config.get("password") or cfg.get("IMAP_PASSWORD"),
             "folder": self.config.get("folder") or cfg.get("IMAP_FOLDER", "INBOX"),
-            "mark_seen": bool(self.config.get("mark_seen", True)),
+            "mark_seen": bool(self.config.get("mark_seen", False)),
         }
 
     def fetch(self, since: datetime | None) -> list[RawDocument]:
-        # Imported lazily so the dependency is only needed when polling.
         from imap_tools import AND, MailBox
 
         p = self._conn_params()
         if not (p["host"] and p["username"] and p["password"]):
             raise RuntimeError("IMAP source is not configured (host/username/password).")
 
-        docs: list[RawDocument] = []
-        # Always filter unseen only. When mark_seen=True (default), processed
-        # emails are marked read and won't appear again — no date filter needed.
-        # When mark_seen=False, use a date floor to avoid reprocessing old mail.
-        if p["mark_seen"] or since is None:
-            criteria = AND(seen=False)
+        # Use a date floor for efficiency — the server-side external_id check in
+        # ingest_source() is the real dedup guard, so a small overlap is fine.
+        if since is not None:
+            floor = since.date()
         else:
-            criteria = AND(date_gte=since.date(), seen=False)
+            floor = (datetime.utcnow() - timedelta(days=_DEFAULT_LOOKBACK_DAYS)).date()
+        criteria = AND(date_gte=floor)
 
+        docs: list[RawDocument] = []
         with MailBox(p["host"], port=p["port"]).login(
             p["username"], p["password"], initial_folder=p["folder"]
         ) as mailbox:
@@ -76,9 +86,12 @@ class ImapNewsletterSource(NewsSource):
                 body = msg.text or html_to_text(msg.html or "")
                 if not body.strip():
                     continue
+                # Prefer the stable Message-ID header; fall back to IMAP UID.
+                message_id = (msg.headers.get("message-id") or [""])[0].strip()
+                external_id = message_id or msg.uid
                 docs.append(
                     RawDocument(
-                        external_id=msg.uid or msg.headers.get("message-id", [""])[0],
+                        external_id=external_id,
                         text=body,
                         subject=msg.subject,
                         received_at=msg.date,
