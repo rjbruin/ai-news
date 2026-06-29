@@ -138,6 +138,7 @@ def build_summary(
     seed_document: list | None = None,
     extra_instruction: str | None = None,
     parent_run_id: int | None = None,
+    log_fn=None,
 ):
     """Build the artifact for a summary config and optionally persist it.
 
@@ -160,7 +161,7 @@ def build_summary(
     if getattr(plugin, "is_agentic", False):
         artifact, document, pending_headlines = _build_agentic(
             summary, plugin, items, start, end,
-            seed_document=seed_document, extra_instruction=extra_instruction,
+            seed_document=seed_document, extra_instruction=extra_instruction, log_fn=log_fn,
         )
     else:
         artifact = plugin.build(
@@ -204,7 +205,7 @@ def build_summary(
     return artifact, items, run
 
 
-def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_instruction):
+def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_instruction, log_fn=None):
     """Run the agent to produce a document, then render it via the plugin.
 
     Returns (artifact, document, pending_headlines).
@@ -226,7 +227,7 @@ def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_i
     )
     document = runner.run_agent(
         session, api_key=api_key, model=model,
-        seed_document=seed_document, extra_instruction=extra_instruction,
+        seed_document=seed_document, extra_instruction=extra_instruction, log_fn=log_fn,
     )
     artifact = plugin.build(
         items, {**(summary.params or {}), "_document": document},

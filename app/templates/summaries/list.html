@@ -37,6 +37,9 @@
       {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
         <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
            class="btn btn-sm btn-primary btn-generate">Open now</a>
+      {% elif s.type_key in types and types[s.type_key].is_agentic %}
+        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
+           class="btn btn-sm btn-primary">Generate now</a>
       {% else %}
         <form method="post" action="{{ url_for('web.summary_generate', summary_id=s.id) }}" class="d-inline">
           <button class="btn btn-sm btn-primary btn-generate">Generate now</button>

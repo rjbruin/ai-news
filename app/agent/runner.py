@@ -67,11 +67,13 @@ def run_agent(
     model: str,
     extra_instruction: str | None = None,
     seed_document: list[dict] | None = None,
+    log_fn=None,
 ) -> list[dict]:
     """Run the agent loop and return the final block document.
 
     ``seed_document`` pre-loads the draft (used for feedback revisions so the
     agent edits the existing edition rather than starting from scratch).
+    ``log_fn`` receives event dicts as the run progresses (used for live UI).
     """
     if seed_document is not None:
         session.document = list(seed_document)
@@ -79,23 +81,32 @@ def run_agent(
     max_steps = current_app.config.get("AGENT_MAX_STEPS", 24)
     max_tokens = current_app.config.get("AGENT_MAX_TOKENS", 0)
 
+    def emit(event: dict) -> None:
+        if log_fn:
+            log_fn(event)
+
+    emit({"type": "start", "items": len(session.items), "model": model})
+
     messages = [
         {"role": "system", "content": compose_system_prompt(session.user, session.summary)},
         {"role": "user", "content": _opening_user_message(session, extra_instruction)},
     ]
 
     for step in range(max_steps):
+        emit({"type": "llm_call", "step": step + 1})
         message = openrouter.chat(
             messages, tools=tools.TOOL_SPECS, api_key=api_key, model=model
         )
         usage = message.get("_usage") or {}
-        session.tokens_used += int(usage.get("total_tokens") or 0)
+        step_tokens = int(usage.get("total_tokens") or 0)
+        session.tokens_used += step_tokens
 
         messages.append(_clean_assistant_message(message))
         tool_calls = message.get("tool_calls") or []
 
         if not tool_calls:
-            # No more tool calls → the agent considers the edition done.
+            emit({"type": "stop", "reason": "no_tool_calls", "step": step + 1,
+                  "total_tokens": session.tokens_used})
             break
 
         for call in tool_calls:
@@ -105,7 +116,16 @@ def run_agent(
                 args = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
                 args = {}
+
+            args_parts = [f"{k}={repr(v)[:60]}" for k, v in list(args.items())[:6]]
+            emit({"type": "tool_call", "step": step + 1, "name": name,
+                  "args_preview": ", ".join(args_parts) or "(no args)"})
+
             result = tools.dispatch(name, args, session)
+
+            emit({"type": "tool_result", "step": step + 1, "name": name,
+                  "preview": result[:300] if len(result) > 300 else result})
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.get("id"),
@@ -113,12 +133,16 @@ def run_agent(
             })
 
         if max_tokens and session.tokens_used >= max_tokens:
+            emit({"type": "stop", "reason": "token_limit", "step": step + 1,
+                  "total_tokens": session.tokens_used})
             logger.warning(
                 "Agent token budget reached (%d) for summary %d; stopping.",
                 session.tokens_used, session.summary.id,
             )
             break
     else:
+        emit({"type": "stop", "reason": "max_steps", "step": max_steps,
+              "total_tokens": session.tokens_used})
         logger.warning(
             "Agent hit max steps (%d) for summary %d.", max_steps, session.summary.id
         )
