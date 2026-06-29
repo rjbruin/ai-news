@@ -31,6 +31,10 @@ data/
 .coverage
 htmlcov/
 
+# Newsletter fixture emails (may contain personal/subscription data)
+tests/fixtures/newsletters/*.eml
+tests/fixtures/newsletters/*.txt
+
 # OS / editor
 .DS_Store
 .idea/

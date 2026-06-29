@@ -75,9 +75,34 @@ class Config:
     PORT = int(os.environ.get("PORT", "5090"))
     PUBLIC_URL = os.environ.get("PUBLIC_URL", "http://localhost:5090")
 
+    # Debug / local dev
+    DEBUG_SEED = _bool(os.environ.get("DEBUG_SEED"), False)
+
 
 class DevConfig(Config):
     SESSION_COOKIE_SECURE = False
+
+
+class DebugConfig(DevConfig):
+    """Local debug mode: seeds fake news items and force-cuts summary editions at startup."""
+    DEBUG_SEED = True
+
+
+class IntegrationTestConfig(Config):
+    """Like TestConfig but keeps the real OPENROUTER_API_KEY so LLM calls work.
+
+    Used by tests/test_extraction_integration.py — the tests skip themselves
+    when the key is absent, so this config is safe to use unconditionally.
+    """
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    WTF_CSRF_ENABLED = False
+    SESSION_COOKIE_SECURE = False
+    WORKER_ENABLED = False
+    SECRET_KEY = "test-secret"
+    ADMIN_EMAILS = ["admin@example.com"]
+    TAGGING_MODE = "nb_only"
+    # OPENROUTER_API_KEY is intentionally NOT overridden — inherits from Config
 
 
 class TestConfig(Config):
