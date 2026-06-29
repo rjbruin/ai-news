@@ -20,7 +20,7 @@
         {{ types[s.type_key].label if s.type_key in types else s.type_key }}
       </span>
       <div class="small text-body-secondary mt-1">
-        {% if s.scope_mode == 'since_last' %}
+        {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
           Cut on open
         {% elif s.period == 'day' %}
           Daily at {{ (s.params or {}).get('release_time', '08:00') }} UTC
@@ -34,11 +34,15 @@
       </div>
     </div>
     <div class="d-flex gap-2 flex-shrink-0">
-      {% if s.scope_mode == 'since_last' %}
-        <a href="{{ url_for('web.summary_open', summary_id=s.id) }}" class="btn btn-sm btn-primary">Open now</a>
+      {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
+        <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
+           class="btn btn-sm btn-primary btn-generate">Open now</a>
+      {% elif s.type_key in types and types[s.type_key].is_agentic %}
+        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
+           class="btn btn-sm btn-primary">Generate now</a>
       {% else %}
         <form method="post" action="{{ url_for('web.summary_generate', summary_id=s.id) }}" class="d-inline">
-          <button class="btn btn-sm btn-primary">Generate now</button>
+          <button class="btn btn-sm btn-primary btn-generate">Generate now</button>
         </form>
       {% endif %}
       {% if s.type_key in types and types[s.type_key].is_agentic %}
@@ -71,13 +75,37 @@
   </div>
   {% else %}
   <div class="card-body text-body-secondary small fst-italic">
-    {% if s.scope_mode == 'since_last' %}
+    {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
       No editions yet — click "Open now" to cut one.
     {% else %}
-      No editions cut yet. The next one will be cut automatically at the scheduled time.
+      No editions cut yet.
+      {% if s.type_key in types and types[s.type_key].is_agentic %}
+        Click "Generate now" to run the agent.
+      {% else %}
+        The next one will be cut automatically at the scheduled time.
+      {% endif %}
     {% endif %}
   </div>
   {% endif %}
 </div>
 {% endfor %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-generate').forEach(function(btn) {
+  const form = btn.closest('form');
+  const SPINNER = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating…';
+  if (form) {
+    form.addEventListener('submit', function() {
+      btn.disabled = true;
+      btn.innerHTML = SPINNER;
+    });
+  } else {
+    btn.addEventListener('click', function() {
+      btn.classList.add('disabled');
+      btn.innerHTML = SPINNER;
+    });
+  }
+});
+</script>
 {% endblock %}

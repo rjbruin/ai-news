@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import queue
+import threading
 
 from flask import (
     Blueprint,
@@ -261,7 +263,7 @@ def summary_new():
             plugin_cls = types[type_key]
             scope_mode = (
                 "since_last"
-                if type_key == "debug_window"
+                if type_key in {"debug_window", "debug_agentic"}
                 else request.form.get("scope_mode", "fixed_period")
             )
             summary = Summary(
@@ -295,7 +297,7 @@ def summary_edit(summary_id: int):
             summary.type_key = type_key
             summary.scope_mode = (
                 "since_last"
-                if type_key == "debug_window"
+                if type_key in {"debug_window", "debug_agentic"}
                 else request.form.get("scope_mode", summary.scope_mode)
             )
             summary.period = request.form.get("period", summary.period)
@@ -347,6 +349,66 @@ def summary_generate(summary_id: int):
         flash(f"Could not generate edition: {exc}", "danger")
         return redirect(url_for("web.summaries"))
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
+
+
+@bp.route("/summaries/<int:summary_id>/generate/debug")
+@login_required
+def generate_debug(summary_id: int):
+    """Landing page for an agentic generation run — streams the agent log live."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    plugin_cls = summary_registry.get(summary.type_key)
+    if not getattr(plugin_cls, "is_agentic", False):
+        abort(400)
+    return render_template("summaries/generate_debug.html", summary=summary)
+
+
+@bp.route("/summaries/<int:summary_id>/generate/stream")
+@login_required
+def generate_stream(summary_id: int):
+    """SSE endpoint that runs the agent and streams its log events."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    plugin_cls = summary_registry.get(summary.type_key)
+    if not getattr(plugin_cls, "is_agentic", False):
+        abort(400)
+
+    app = current_app._get_current_object()
+    event_queue: queue.Queue = queue.Queue()
+
+    def _run():
+        with app.app_context():
+            try:
+                s = db.session.get(Summary, summary_id)
+
+                def log_fn(event: dict) -> None:
+                    event_queue.put(event)
+
+                _, _items, run = summarize.build_summary(s, record_run=True, log_fn=log_fn)
+                event_queue.put({"type": "done", "run_id": run.id})
+            except Exception as exc:  # noqa: BLE001
+                event_queue.put({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _stream():
+        while True:
+            try:
+                event = event_queue.get(timeout=30)
+            except queue.Empty:
+                yield ": heartbeat\n\n"
+                continue
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") in ("done", "error"):
+                break
+
+    return Response(
+        stream_with_context(_stream()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @bp.route("/summaries/<int:summary_id>/memory", methods=["GET", "POST"])
