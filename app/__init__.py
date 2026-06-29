@@ -164,3 +164,24 @@ def register_template_helpers(app: Flask) -> None:
         if dt is None:
             return ""
         return dt.strftime("%-d %B") if hasattr(dt, "strftime") else str(dt)
+
+    @app.template_filter("md")
+    def markdown_filter(text):
+        """Render Markdown to sanitized HTML (for agent-authored block content)."""
+        import bleach
+        import markdown as md
+        from markupsafe import Markup
+
+        if not text:
+            return ""
+        raw = md.markdown(str(text), extensions=["extra", "sane_lists"])
+        allowed_tags = set(bleach.sanitizer.ALLOWED_TAGS) | {
+            "p", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "span", "br", "hr",
+            "table", "thead", "tbody", "tr", "th", "td", "img",
+        }
+        allowed_attrs = {
+            "a": ["href", "title", "target", "rel"],
+            "img": ["src", "alt", "title"],
+        }
+        clean = bleach.clean(raw, tags=allowed_tags, attributes=allowed_attrs, strip=True)
+        return Markup(clean)

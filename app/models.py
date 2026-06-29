@@ -232,7 +232,19 @@ class SummaryRun(db.Model):
     artifact_ref = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default="ok")
 
+    # Agentic pipeline: structured block document (IR) + revision chain.
+    document = db.Column(JSONEncodedDict, nullable=True)
+    revision = db.Column(db.Integer, default=1, nullable=False)
+    parent_run_id = db.Column(
+        db.Integer, db.ForeignKey("summary_runs.id"), nullable=True, index=True
+    )
+
     summary = db.relationship("Summary", back_populates="runs")
+    revisions = db.relationship(
+        "SummaryRun",
+        backref=db.backref("parent", remote_side=[id]),
+        lazy="dynamic",
+    )
 
 
 # Convenience export used by the factory.

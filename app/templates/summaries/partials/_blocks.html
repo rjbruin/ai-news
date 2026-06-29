@@ -1,0 +1,83 @@
+{# Renders an agentic summary document (list of block dicts) to HTML.
+   Each block type maps to a system-defined layout element. The agent only
+   produces these block types; all styling lives here. #}
+
+{% macro render_blocks(blocks) %}
+<div class="agentic-summary">
+  {% for block in blocks %}{{ render_block(block) }}{% endfor %}
+</div>
+{% endmacro %}
+
+
+{% macro render_block(block) %}
+{%- set t = block.type -%}
+{%- if t == 'edition_header' -%}
+  <header class="mb-4 pb-2 border-bottom">
+    <h1 class="h2 mb-1">{{ block.title }}</h1>
+    {% if block.subtitle %}<p class="lead text-body-secondary mb-1">{{ block.subtitle }}</p>{% endif %}
+    {% if block.date %}<p class="small text-body-secondary mb-0">{{ block.date }}</p>{% endif %}
+  </header>
+
+{%- elif t == 'intro' -%}
+  <div class="agentic-intro fs-5 mb-4">{{ block.markdown | md }}</div>
+
+{%- elif t == 'section' -%}
+  <div class="mt-4 mb-2">
+    <h2 class="h4 border-bottom pb-1">{{ block.title }}</h2>
+    {% if block.description %}<p class="text-body-secondary">{{ block.description }}</p>{% endif %}
+  </div>
+
+{%- elif t == 'story' -%}
+  {%- set lead = block.emphasis == 'lead' -%}
+  {%- set brief = block.emphasis == 'brief' -%}
+  {%- set head_class = 'h3 mb-1' if lead else ('h6 mb-0' if brief else 'h5 mb-1') -%}
+  <article class="agentic-story mb-{{ 4 if lead else 3 }} {{ 'p-3 bg-body-tertiary rounded' if lead else '' }}">
+    <h3 class="{{ head_class }}">
+      {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
+      {% else %}{{ block.headline }}{% endif %}
+    </h3>
+    {% if block.dek and not brief %}<p class="fw-semibold mb-1">{{ block.dek }}</p>{% endif %}
+    {% if block.body and not brief %}<div class="mb-1">{{ block.body | md }}</div>{% endif %}
+    {% if block.source %}<p class="small text-body-secondary mb-0">{{ block.source }}</p>{% endif %}
+  </article>
+
+{%- elif t == 'cluster' -%}
+  <article class="agentic-cluster mb-3 ps-3 border-start border-3">
+    <h3 class="h5 mb-1">{{ block.headline }}</h3>
+    {% if block.body %}<div>{{ block.body | md }}</div>{% endif %}
+  </article>
+
+{%- elif t == 'callout' -%}
+  {%- set variant_class = {
+        'trend': 'border-primary',
+        'connection': 'border-info',
+        'watch': 'border-warning',
+        'note': 'border-secondary',
+      }.get(block.variant, 'border-secondary') -%}
+  <aside class="agentic-callout my-3 p-3 border-start border-4 {{ variant_class }} bg-body-tertiary rounded-end">
+    <div class="text-uppercase small fw-bold text-body-secondary mb-1">{{ block.variant }}</div>
+    <h4 class="h6 mb-1">{{ block.title }}</h4>
+    <div>{{ block.markdown | md }}</div>
+  </aside>
+
+{%- elif t == 'quote' -%}
+  <blockquote class="blockquote my-3 ps-3 border-start border-3">
+    <p class="mb-1">{{ block.text }}</p>
+    {% if block.attribution %}<footer class="blockquote-footer">{{ block.attribution }}</footer>{% endif %}
+  </blockquote>
+
+{%- elif t == 'quick_hits' -%}
+  <div class="agentic-quick-hits my-3">
+    {% if block.title %}<h4 class="h6 text-uppercase text-body-secondary">{{ block.title }}</h4>{% endif %}
+    <ul class="mb-0">
+      {% for it in block['items'] %}
+      <li>{% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.text }}</a>{% else %}{{ it.text }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+{%- elif t == 'divider' -%}
+  <hr class="my-4">
+
+{%- endif -%}
+{% endmacro %}
