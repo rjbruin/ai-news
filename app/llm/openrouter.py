@@ -108,3 +108,73 @@ def chat_json(
         return json.loads(stripped)
     except json.JSONDecodeError as exc:
         raise LLMError(f"LLM did not return valid JSON: {content[:500]}") from exc
+
+
+def chat(
+    messages: list[dict],
+    *,
+    tools: list[dict] | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    temperature: float = 0.3,
+    timeout: float = 120.0,
+) -> dict:
+    """Call OpenRouter chat completions for an agentic (tool-calling) turn.
+
+    Returns the raw assistant message dict (which may contain ``tool_calls``).
+    Unlike ``chat_json`` this supports the OpenAI tool-calling protocol and
+    accepts a per-call ``api_key`` (the agentic pipeline uses the user's key,
+    not the global one) and ``model``.
+
+    Usage tokens are reported in the returned dict under ``_usage`` when the
+    provider supplies them.
+    """
+    api_key = api_key or current_app.config.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise LLMNotConfigured("No OpenRouter API key available for this request")
+
+    base_url = current_app.config["OPENROUTER_BASE_URL"].rstrip("/")
+    model = model or current_app.config["OPENROUTER_MODEL"]
+
+    payload: dict = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "X-Title": "AI News",
+    }
+    pub = current_app.config.get("PUBLIC_URL")
+    if pub:
+        headers["HTTP-Referer"] = pub
+
+    try:
+        resp = httpx.post(
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        try:
+            body = exc.response.json()
+        except Exception:
+            body = exc.response.text[:500]
+        raise LLMError(f"OpenRouter HTTP {exc.response.status_code}: {body}") from exc
+    except httpx.HTTPError as exc:
+        raise LLMError(f"OpenRouter request failed: {exc}") from exc
+
+    data = resp.json()
+    try:
+        message = data["choices"][0]["message"]
+    except (KeyError, IndexError) as exc:
+        raise LLMError(f"Unexpected OpenRouter response: {data}") from exc
+    message["_usage"] = data.get("usage", {})
+    return message

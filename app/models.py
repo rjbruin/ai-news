@@ -247,6 +247,36 @@ class SummaryRun(db.Model):
     )
 
 
+class AgentMemory(db.Model):
+    """File-like memory for the agentic summary pipeline.
+
+    Stored in the DB (not on disk) so the system stays multi-server safe.
+    Kinds:
+      interests       — per-user (summary_id NULL); evolving user interests
+      content_config  — per-summary; structure/content prefs for that type
+      history         — per-summary; running notes for trend-spotting
+      headlines       — per-summary, one row per edition (edition_ts set);
+                        brief notes on items covered, to avoid duplicate reporting
+    """
+
+    __tablename__ = "agent_memory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    summary_id = db.Column(
+        db.Integer, db.ForeignKey("summaries.id"), nullable=True, index=True
+    )
+    kind = db.Column(db.String(32), nullable=False)  # interests|content_config|history|headlines
+    edition_ts = db.Column(db.DateTime, nullable=True)  # set only for headlines
+    content = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        db.Index("ix_agent_memory_lookup", "user_id", "summary_id", "kind"),
+    )
+
+
 # Convenience export used by the factory.
 __all__ = [
     "User",
@@ -258,4 +288,5 @@ __all__ = [
     "NewsItemTag",
     "Summary",
     "SummaryRun",
+    "AgentMemory",
 ]
