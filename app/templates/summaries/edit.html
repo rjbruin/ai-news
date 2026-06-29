@@ -129,7 +129,7 @@
 
   function sync() {
     const key = typeSelect ? typeSelect.value : '{{ summary.type_key if summary else "" }}';
-    const isDebug = key === 'debug_window';
+    const isDebug = key === 'debug_window' || key === 'debug_agentic';
     const scope = scopeSelect.value;
     const period = periodSelect ? periodSelect.value : '{{ summary.period if summary else "day" }}';
 

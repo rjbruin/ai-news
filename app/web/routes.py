@@ -261,7 +261,7 @@ def summary_new():
             plugin_cls = types[type_key]
             scope_mode = (
                 "since_last"
-                if type_key == "debug_window"
+                if type_key in {"debug_window", "debug_agentic"}
                 else request.form.get("scope_mode", "fixed_period")
             )
             summary = Summary(
@@ -295,7 +295,7 @@ def summary_edit(summary_id: int):
             summary.type_key = type_key
             summary.scope_mode = (
                 "since_last"
-                if type_key == "debug_window"
+                if type_key in {"debug_window", "debug_agentic"}
                 else request.form.get("scope_mode", summary.scope_mode)
             )
             summary.period = request.form.get("period", summary.period)
