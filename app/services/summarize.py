@@ -23,7 +23,7 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
     now = utcnow()
     params = summary.params or {}
 
-    # Explicit override from params (used by debug_window type)
+    # Explicit override from params (used by debug_window / debug_agentic types)
     rs = params.get("range_start")
     re = params.get("range_end")
     if rs and re:
@@ -33,6 +33,12 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
             return start, end
         except (ValueError, TypeError):
             pass
+
+    # debug_agentic with no explicit range: return all items up to now
+    from ..summaries import registry as summary_registry
+    plugin = summary_registry.get(summary.type_key)
+    if getattr(plugin, "type_key", None) == "debug_agentic":
+        return None, now
 
     if summary.scope_mode == "since_last":
         start = summary.last_consumed_at
@@ -205,6 +211,13 @@ def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_i
     """
     from ..agent import creds, runner
     from ..agent.context import AgentSession
+
+    if not items and summary.type_key == "debug_agentic":
+        raise ValueError(
+            "No items in scope. For a debug agentic summary, set an explicit "
+            "Start and End window (Edit the summary, fill in the date fields, "
+            "then save) that covers items already in the system."
+        )
 
     api_key, model = creds.resolve(summary.user)
     session = AgentSession(
