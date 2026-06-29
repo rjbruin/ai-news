@@ -4,7 +4,12 @@
 <div class="d-flex align-items-center gap-3 mb-3">
   <a href="{{ url_for('web.summaries') }}" class="btn btn-sm btn-outline-secondary">← Summaries</a>
   <div class="flex-grow-1">
-    <h1 class="h3 mb-0">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</h1>
+    <h1 class="h3 mb-0">
+      {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if is_agentic and run.revision and run.revision > 1 %}
+      <span class="badge text-bg-secondary align-middle">rev {{ run.revision }}</span>
+      {% endif %}
+    </h1>
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
   <form method="post"
@@ -13,6 +18,18 @@
     <button class="btn btn-sm btn-outline-danger">Delete edition</button>
   </form>
 </div>
+
+{% if is_agentic and revisions and revisions|length > 1 %}
+<div class="mb-3">
+  <span class="small text-body-secondary me-2">Revisions:</span>
+  {% for r in revisions %}
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=r.id) }}"
+     class="badge text-decoration-none {{ 'text-bg-primary' if r.id == run.id else 'text-bg-light border' }}">
+    rev {{ r.revision }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if run.artifact_ref and run.artifact_ref.endswith('.pdf') %}
   {% set pdf_url = url_for('static', filename=run.artifact_ref) %}
@@ -32,5 +49,26 @@
   {{ run.content | safe }}
 {% else %}
   <p class="text-body-secondary">This edition has no stored content.</p>
+{% endif %}
+
+{% if is_agentic %}
+<div class="card shadow-sm mt-4">
+  <div class="card-body">
+    <h2 class="h6">Give feedback to the editor</h2>
+    <p class="small text-body-secondary mb-2">
+      Ask for changes to this edition, or state a lasting preference (topics to
+      include/exclude, how much of each, structure). A new revision is created;
+      lasting preferences are remembered for future editions.
+    </p>
+    <form method="post"
+          action="{{ url_for('web.edition_feedback', summary_id=summary.id, run_id=run.id) }}">
+      <textarea name="feedback" class="form-control mb-2" rows="3"
+                placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
+      <div class="text-end">
+        <button class="btn btn-primary btn-sm">Submit feedback &amp; revise</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endif %}
 {% endblock %}

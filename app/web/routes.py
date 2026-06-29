@@ -238,17 +238,8 @@ def summaries():
         .order_by(Summary.created_at.desc())
         .all()
     )
-    # Pre-fetch recent editions per summary so the template stays simple
-    editions = {
-        s.id: (
-            SummaryRun.query
-            .filter_by(summary_id=s.id)
-            .order_by(SummaryRun.generated_at.desc())
-            .limit(20)
-            .all()
-        )
-        for s in mine
-    }
+    # Show the latest revision of each edition chain (heads), newest first.
+    editions = {s.id: summarize.edition_heads(s)[:20] for s in mine}
     return render_template(
         "summaries/list.html",
         summaries=mine,
@@ -366,7 +357,41 @@ def edition_view(summary_id: int, run_id: int):
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    return render_template("summaries/view.html", summary=summary, run=run)
+    plugin = summary_registry.get(summary.type_key)
+    is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
+    chain = summarize.revision_chain(run) if is_agentic else [run]
+    return render_template(
+        "summaries/view.html",
+        summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
+    )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback", methods=["POST"])
+@login_required
+def edition_feedback(summary_id: int, run_id: int):
+    from ..agent.creds import MissingCredentials
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    text = (request.form.get("feedback") or "").strip()
+    if not text:
+        flash("Enter some feedback first.", "warning")
+        return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+    try:
+        new_run = summarize.revise_edition(run, text)
+    except MissingCredentials as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("web.settings"))
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not revise edition: {exc}", "danger")
+        return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+    flash("Revision created from your feedback.", "success")
+    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=new_run.id))
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])

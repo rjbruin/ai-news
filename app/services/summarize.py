@@ -101,13 +101,25 @@ def _edition_label(summary: Summary, range_start: datetime | None, range_end: da
 
 # ─────────────────────────── item scoping ────────────────────────────
 
-def items_in_scope(summary: Summary) -> list[NewsItem]:
-    start, end = resolve_range(summary)
+def items_in_window(start: datetime | None, end: datetime | None) -> list[NewsItem]:
+    """Return news items fetched within [start, end] (naive-UTC aware inputs)."""
     q = NewsItem.query
     if start is not None:
         q = q.filter(NewsItem.fetched_at >= start.replace(tzinfo=None))
-    q = q.filter(NewsItem.fetched_at <= end.replace(tzinfo=None))
+    if end is not None:
+        q = q.filter(NewsItem.fetched_at <= end.replace(tzinfo=None))
     return q.order_by(NewsItem.fetched_at.desc()).all()
+
+
+def items_in_scope(summary: Summary) -> list[NewsItem]:
+    start, end = resolve_range(summary)
+    return items_in_window(start, end)
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 # ─────────────────────────── building ────────────────────────────
@@ -208,6 +220,104 @@ def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_i
         range_start=start, range_end=end,
     )
     return artifact, document, session.pending_headlines
+
+
+# ─────────────────────────── feedback revisions ────────────────────────────
+
+def _feedback_instruction(feedback: str) -> str:
+    return (
+        "The reader gave feedback on the previous edition, which is loaded as your "
+        "current draft document. Revise the draft to address it. If the feedback "
+        "expresses a LASTING preference (topics to include or exclude, how much of "
+        "each, structural changes), also consolidate it into the appropriate memory "
+        "file via write_memory (interests for topic preferences; content_config for "
+        "structure/counts). If it is a one-off request about this edition only, just "
+        f"edit the document.\n\nReader feedback:\n{feedback}"
+    )
+
+
+def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
+    """Create a new revision of an agentic edition that applies reader feedback.
+
+    Scopes items to the parent edition's window so the revision works from the
+    same material; links the new run via parent_run_id with revision bumped.
+    """
+    summary = parent_run.summary
+    plugin = summary_registry.create(summary.type_key)
+    if plugin is None or not getattr(plugin, "is_agentic", False):
+        raise ValueError("Only agentic summaries support feedback revisions.")
+
+    start = _aware(parent_run.range_start)
+    end = _aware(parent_run.range_end) or utcnow()
+    items = items_in_window(start, end)
+
+    artifact, document, _headlines = _build_agentic(
+        summary, plugin, items, start, end,
+        seed_document=parent_run.document or [],
+        extra_instruction=_feedback_instruction(feedback),
+    )
+
+    run = SummaryRun(
+        summary_id=summary.id,
+        range_start=parent_run.range_start,
+        range_end=parent_run.range_end,
+        item_count=len(items),
+        label=parent_run.label,
+        content=artifact.html,
+        document=document,
+        parent_run_id=parent_run.id,
+        revision=(parent_run.revision or 1) + 1,
+        status="ok",
+    )
+    db.session.add(run)
+    db.session.commit()
+    return run
+
+
+def revision_chain(run: SummaryRun) -> list[SummaryRun]:
+    """Return all revisions of the edition ``run`` belongs to, oldest first.
+
+    Walks to the root (parent_run_id is None) then collects all descendants.
+    """
+    root = run
+    seen = set()
+    while root.parent_run_id and root.parent_run_id not in seen:
+        seen.add(root.id)
+        parent = db.session.get(SummaryRun, root.parent_run_id)
+        if parent is None:
+            break
+        root = parent
+
+    chain = [root]
+    frontier = [root]
+    while frontier:
+        nxt = []
+        for r in frontier:
+            children = (
+                SummaryRun.query.filter_by(parent_run_id=r.id)
+                .order_by(SummaryRun.revision.asc(), SummaryRun.generated_at.asc())
+                .all()
+            )
+            nxt.extend(children)
+        chain.extend(nxt)
+        frontier = nxt
+
+    chain.sort(key=lambda r: (r.revision or 1, r.generated_at or utcnow()))
+    return chain
+
+
+def edition_heads(summary: Summary):
+    """Return the latest revision of each edition chain for a summary, newest first."""
+    child_ids = [
+        r.parent_run_id
+        for r in SummaryRun.query.filter_by(summary_id=summary.id)
+        .filter(SummaryRun.parent_run_id.isnot(None))
+        .all()
+    ]
+    q = SummaryRun.query.filter_by(summary_id=summary.id)
+    if child_ids:
+        q = q.filter(~SummaryRun.id.in_(child_ids))
+    return q.order_by(SummaryRun.generated_at.desc()).all()
 
 
 # ─────────────────────────── scheduled edition cutting ────────────────────────────

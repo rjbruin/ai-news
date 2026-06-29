@@ -140,6 +140,67 @@ def test_agent_writes_history_and_headlines(monkeypatch, db, keyed_user, agentic
     assert len(headlines) == 1
 
 
+def test_revise_edition_creates_linked_revision(monkeypatch, db, keyed_user, agentic_summary):
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _scripted_chat())
+    _, _items, run = summarize.build_summary(agentic_summary, record_run=True)
+    assert run.revision == 1
+
+    # Feedback turn: agent edits the (seeded) draft, then stops.
+    def feedback_chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        # The opening user message should carry the feedback instruction.
+        assert any("feedback" in (m.get("content") or "").lower() for m in messages)
+        return {"role": "assistant", "content": None, "tool_calls": [{
+            "id": "f1", "type": "function",
+            "function": {"name": "add_block", "arguments": json.dumps({"block": {
+                "type": "callout", "variant": "note", "title": "Per feedback",
+                "markdown": "Adjusted."}})},
+        }], "_usage": {}}
+
+    state = {"done": False}
+
+    def chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        if not state["done"]:
+            state["done"] = True
+            return feedback_chat(messages, tools=tools, api_key=api_key, model=model)
+        return {"role": "assistant", "content": "ok", "_usage": {}}
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", chat)
+    rev = summarize.revise_edition(run, "Add a note about the feedback.")
+
+    assert rev.id != run.id
+    assert rev.parent_run_id == run.id
+    assert rev.revision == 2
+    assert rev.range_start == run.range_start and rev.range_end == run.range_end
+    # Revision seeded from the parent's document, then extended.
+    assert any(b["type"] == "callout" for b in rev.document)
+
+
+def test_revision_chain_and_heads(monkeypatch, db, keyed_user, agentic_summary):
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _scripted_chat())
+    _, _items, run = summarize.build_summary(agentic_summary, record_run=True)
+
+    # Deterministic two-call revision script: add a divider, then stop.
+    calls = {"n": 0}
+
+    def chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "d", "type": "function",
+                "function": {"name": "add_block", "arguments": json.dumps({"block": {"type": "divider"}})},
+            }], "_usage": {}}
+        return {"role": "assistant", "content": "done", "_usage": {}}
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", chat)
+    rev = summarize.revise_edition(run, "tweak")
+
+    chain = summarize.revision_chain(rev)
+    assert [r.revision for r in chain] == [1, 2]
+    heads = summarize.edition_heads(agentic_summary)
+    assert len(heads) == 1
+    assert heads[0].id == rev.id  # head is the latest revision
+
+
 def test_prune_respects_retention_window(db, keyed_user, agentic_summary):
     from datetime import timedelta
     from app.models import utcnow
