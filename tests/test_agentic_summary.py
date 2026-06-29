@@ -61,6 +61,8 @@ def test_plugin_registered_and_agentic(app):
     types = summary_registry.all_types()
     assert "agentic_page" in types
     assert types["agentic_page"].is_agentic is True
+    assert "debug_agentic" in types
+    assert types["debug_agentic"].is_agentic is True
 
 
 def test_build_agentic_summary_end_to_end(monkeypatch, db, keyed_user, agentic_summary):
