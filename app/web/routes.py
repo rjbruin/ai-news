@@ -337,6 +337,26 @@ def summary_open(summary_id: int):
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
 
 
+@bp.route("/summaries/<int:summary_id>/generate", methods=["POST"])
+@login_required
+def summary_generate(summary_id: int):
+    """Generate a new edition on demand (useful for agentic summaries)."""
+    from ..agent.creds import MissingCredentials
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    try:
+        _, _items, run = summarize.build_summary(summary, record_run=True)
+    except MissingCredentials as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("web.settings"))
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not generate edition: {exc}", "danger")
+        return redirect(url_for("web.summaries"))
+    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
+
+
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>")
 @login_required
 def edition_view(summary_id: int, run_id: int):

@@ -36,6 +36,10 @@
     <div class="d-flex gap-2 flex-shrink-0">
       {% if s.scope_mode == 'since_last' %}
         <a href="{{ url_for('web.summary_open', summary_id=s.id) }}" class="btn btn-sm btn-primary">Open now</a>
+      {% else %}
+        <form method="post" action="{{ url_for('web.summary_generate', summary_id=s.id) }}" class="d-inline">
+          <button class="btn btn-sm btn-primary">Generate now</button>
+        </form>
       {% endif %}
       <a href="{{ url_for('web.summary_edit', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
       <form method="post" action="{{ url_for('web.summary_delete', summary_id=s.id) }}" class="d-inline">

@@ -31,6 +31,9 @@ class NewsSummary(ABC):
     description: str = ""
     # Declarative param schema for the config form.
     param_schema: dict = {}
+    # Agentic types are produced by the LLM agent runner (see services.summarize)
+    # rather than rendered deterministically from items.
+    is_agentic: bool = False
 
     @abstractmethod
     def build(

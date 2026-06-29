@@ -112,22 +112,52 @@ def items_in_scope(summary: Summary) -> list[NewsItem]:
 
 # ─────────────────────────── building ────────────────────────────
 
-def build_summary(summary: Summary, *, record_run: bool = True, mark_consumed: bool = False):
-    """Build the artifact for a summary config and optionally persist it."""
+def build_summary(
+    summary: Summary,
+    *,
+    record_run: bool = True,
+    mark_consumed: bool = False,
+    seed_document: list | None = None,
+    extra_instruction: str | None = None,
+    parent_run_id: int | None = None,
+):
+    """Build the artifact for a summary config and optionally persist it.
+
+    For agentic summary types the LLM agent runner produces a block document
+    (using the user's OpenRouter credentials); the plugin then renders it. For
+    deterministic types the plugin builds the artifact directly.
+
+    ``seed_document`` / ``extra_instruction`` / ``parent_run_id`` support
+    feedback revisions (see Phase 5).
+    """
     plugin = summary_registry.create(summary.type_key)
     if plugin is None:
         raise ValueError(f"Unknown summary type: {summary.type_key}")
 
     start, end = resolve_range(summary)
     items = items_in_scope(summary)
-    artifact = plugin.build(
-        items, summary.params or {}, range_start=start, range_end=end
-    )
+
+    document = None
+    pending_headlines = None
+    if getattr(plugin, "is_agentic", False):
+        artifact, document, pending_headlines = _build_agentic(
+            summary, plugin, items, start, end,
+            seed_document=seed_document, extra_instruction=extra_instruction,
+        )
+    else:
+        artifact = plugin.build(
+            items, summary.params or {}, range_start=start, range_end=end
+        )
 
     run = None
     if record_run:
         now = utcnow()
         label = _edition_label(summary, start, end, now)
+        revision = 1
+        if parent_run_id is not None:
+            parent = db.session.get(SummaryRun, parent_run_id)
+            if parent is not None:
+                revision = (parent.revision or 1) + 1
         run = SummaryRun(
             summary_id=summary.id,
             range_start=start.replace(tzinfo=None) if start else None,
@@ -136,14 +166,48 @@ def build_summary(summary: Summary, *, record_run: bool = True, mark_consumed: b
             label=label,
             content=artifact.html,
             artifact_ref=artifact.file_path,
+            document=document,
+            parent_run_id=parent_run_id,
+            revision=revision,
             status="ok",
         )
         db.session.add(run)
+        db.session.flush()  # populate run.id / generated_at
+
+        if pending_headlines:
+            from ..agent import memory as agent_memory
+            agent_memory.write_headlines(
+                summary.user, summary, run.generated_at, pending_headlines
+            )
 
     if mark_consumed:
         summary.last_consumed_at = utcnow()
     db.session.commit()
     return artifact, items, run
+
+
+def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_instruction):
+    """Run the agent to produce a document, then render it via the plugin.
+
+    Returns (artifact, document, pending_headlines).
+    """
+    from ..agent import creds, runner
+    from ..agent.context import AgentSession
+
+    api_key, model = creds.resolve(summary.user)
+    session = AgentSession(
+        user=summary.user, summary=summary, items=items,
+        range_start=start, range_end=end,
+    )
+    document = runner.run_agent(
+        session, api_key=api_key, model=model,
+        seed_document=seed_document, extra_instruction=extra_instruction,
+    )
+    artifact = plugin.build(
+        items, {**(summary.params or {}), "_document": document},
+        range_start=start, range_end=end,
+    )
+    return artifact, document, session.pending_headlines
 
 
 # ─────────────────────────── scheduled edition cutting ────────────────────────────
