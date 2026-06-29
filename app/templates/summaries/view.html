@@ -12,6 +12,10 @@
     </h1>
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
+  {% if is_agentic %}
+  <a href="{{ url_for('web.summary_memory', summary_id=summary.id) }}"
+     class="btn btn-sm btn-outline-secondary">Memory</a>
+  {% endif %}
   <form method="post"
         action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
         class="d-inline">

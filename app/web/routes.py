@@ -7,6 +7,7 @@ from flask import (
     Blueprint,
     Response,
     abort,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -346,6 +347,39 @@ def summary_generate(summary_id: int):
         flash(f"Could not generate edition: {exc}", "danger")
         return redirect(url_for("web.summaries"))
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
+
+
+@bp.route("/summaries/<int:summary_id>/memory", methods=["GET", "POST"])
+@login_required
+def summary_memory(summary_id: int):
+    """View/edit the agent's Markdown memory files for a summary."""
+    from ..agent import memory as agent_memory
+    from ..agent.prompt import DEFAULT_DAILY_CONTENT_CONFIG, DEFAULT_INTERESTS
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+
+    if request.method == "POST":
+        for kind in ("interests", "content_config", "history"):
+            if f"mem_{kind}" in request.form:
+                agent_memory.write(current_user, summary, kind, request.form.get(f"mem_{kind}", ""))
+        flash("Memory updated.", "success")
+        return redirect(url_for("web.summary_memory", summary_id=summary.id))
+
+    files = {
+        "interests": agent_memory.ensure_default(
+            current_user, summary, "interests", DEFAULT_INTERESTS),
+        "content_config": agent_memory.ensure_default(
+            current_user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG),
+        "history": agent_memory.read(current_user, summary, "history"),
+    }
+    retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+    headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
+    return render_template(
+        "summaries/memory.html",
+        summary=summary, files=files, headlines=headlines, retention=retention,
+    )
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>")
