@@ -71,6 +71,20 @@
           <label class="form-check-label" for="p_{{ key }}_{{ field }}">{{ spec.label }}</label>
         </div>
 
+        {% elif spec.type == 'checkboxes' %}
+        <label class="form-label">{{ spec.label }}</label>
+        <div class="d-flex flex-wrap gap-3">
+          {% for val, lbl in spec.options %}
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox"
+                   name="param_{{ field }}" value="{{ val }}"
+                   id="p_{{ key }}_{{ field }}_{{ val }}"
+                   {{ 'checked' if val in (cur_val if cur_val is iterable and cur_val is not string else spec.get('default', [])) }}>
+            <label class="form-check-label" for="p_{{ key }}_{{ field }}_{{ val }}">{{ lbl }}</label>
+          </div>
+          {% endfor %}
+        </div>
+
         {% elif spec.type == 'select' %}
         <label class="form-label">{{ spec.label }}</label>
         <select name="param_{{ field }}" class="form-select">

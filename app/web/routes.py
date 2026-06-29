@@ -355,6 +355,9 @@ def _collect_params(plugin_cls) -> dict:
     for field, spec in (plugin_cls.param_schema or {}).items():
         if spec.get("type") == "checkbox":
             params[field] = bool(request.form.get(f"param_{field}"))
+        elif spec.get("type") == "checkboxes":
+            vals = request.form.getlist(f"param_{field}")
+            params[field] = [int(v) for v in vals if v.lstrip("-").isdigit()]
         else:
             val = request.form.get(f"param_{field}")
             if val is not None:

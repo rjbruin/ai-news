@@ -54,10 +54,30 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
         h, m = map(int, release_time.split(":"))
     except (ValueError, AttributeError):
         h, m = 8, 0
+
+    release_days_raw = params.get("release_days", [0, 1, 2, 3, 4])
+    release_days = set(int(d) for d in release_days_raw) if release_days_raw else {0, 1, 2, 3, 4}
+
+    # Walk back from now to the most recent release-day cutoff
     cutoff = now.replace(hour=h, minute=m, second=0, microsecond=0)
     if now < cutoff:
         cutoff -= timedelta(days=1)
-    return cutoff - timedelta(days=1), cutoff
+    for _ in range(7):
+        if cutoff.weekday() in release_days:
+            break
+        cutoff -= timedelta(days=1)
+
+    # Start from the end of the last edition so we never miss or repeat items
+    latest_run = (
+        SummaryRun.query
+        .filter_by(summary_id=summary.id)
+        .order_by(SummaryRun.range_end.desc())
+        .first()
+    )
+    start = None
+    if latest_run and latest_run.range_end:
+        start = latest_run.range_end.replace(tzinfo=timezone.utc)
+    return start, cutoff
 
 
 def _edition_label(summary: Summary, range_start: datetime | None, range_end: datetime, generated_at: datetime) -> str:
