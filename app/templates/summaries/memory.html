@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Memory · {{ summary.name }} · AI News{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{{ url_for('web.summaries') }}" class="btn btn-sm btn-outline-secondary">← Summaries</a>
+  <div class="flex-grow-1">
+    <h1 class="h3 mb-0">Editor memory</h1>
+    <div class="small text-body-secondary">{{ summary.name }}</div>
+  </div>
+</div>
+
+<p class="text-body-secondary">
+  These Markdown files steer how the agent curates this summary. You can edit them
+  directly; the agent also updates them when you give feedback.
+</p>
+
+<form method="post">
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <label class="form-label fw-semibold">INTERESTS.md</label>
+      <div class="form-text mb-2">
+        Your evolving interests. <strong>Shared across all your agentic summaries.</strong>
+      </div>
+      <textarea name="mem_interests" class="form-control font-monospace" rows="10"
+                spellcheck="false">{{ files.interests }}</textarea>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <label class="form-label fw-semibold">Content configuration</label>
+      <div class="form-text mb-2">
+        Structure and content preferences for this summary (sections, how many items, etc.).
+        Time scope and delivery channels are configured separately.
+      </div>
+      <textarea name="mem_content_config" class="form-control font-monospace" rows="14"
+                spellcheck="false">{{ files.content_config }}</textarea>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <label class="form-label fw-semibold">HISTORY.md</label>
+      <div class="form-text mb-2">
+        Running notes the agent keeps for trend-spotting across editions.
+      </div>
+      <textarea name="mem_history" class="form-control font-monospace" rows="8"
+                spellcheck="false">{{ files.history }}</textarea>
+    </div>
+  </div>
+
+  <div class="text-end mb-4">
+    <button class="btn btn-primary">Save memory</button>
+  </div>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h6">Recent headlines <span class="text-body-secondary fw-normal">(last {{ retention }} days)</span></h2>
+    <p class="form-text">
+      Auto-generated per edition and pruned automatically — used so the agent doesn't
+      re-report the same news. Read-only.
+    </p>
+    {% if headlines %}
+    {% for h in headlines %}
+    <div class="mb-2">
+      <div class="small text-body-secondary">{{ h.edition_ts.strftime('%Y-%m-%d %H:%M') if h.edition_ts else '' }}</div>
+      <pre class="small bg-body-tertiary p-2 rounded mb-0">{{ h.content }}</pre>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-body-secondary small mb-0">No headline notes yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

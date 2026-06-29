@@ -24,6 +24,9 @@ def _emails(value: str | None) -> list[str]:
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-secret")
+    # Secret for encrypting stored secrets (per-user API keys). Defaults to
+    # SECRET_KEY; set independently in production so key rotation is decoupled.
+    FERNET_SECRET = os.environ.get("FERNET_SECRET", "")
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = "Lax"
 
@@ -77,6 +80,14 @@ class Config:
 
     # Debug / local dev
     DEBUG_SEED = _bool(os.environ.get("DEBUG_SEED"), False)
+
+    # Agentic summary pipeline
+    AGENT_ENABLED = _bool(os.environ.get("AGENT_ENABLED"), True)
+    AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "24"))
+    AGENT_MAX_TOKENS = int(os.environ.get("AGENT_MAX_TOKENS", "0"))  # 0 = no cap
+    AGENT_HEADLINES_RETENTION_DAYS = int(
+        os.environ.get("AGENT_HEADLINES_RETENTION_DAYS", "7")
+    )
 
 
 class DevConfig(Config):

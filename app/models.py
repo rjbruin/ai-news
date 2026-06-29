@@ -43,11 +43,33 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
 
+    # Per-user OpenRouter credentials for the agentic summary pipeline.
+    # The global OPENROUTER_API_KEY still powers extraction/tagging/deterministic
+    # summaries; only the agent uses these.
+    openrouter_api_key_enc = db.Column(db.Text, nullable=True)
+    openrouter_model = db.Column(db.String(120), nullable=True)
+
     tags = db.relationship("Tag", back_populates="owner", lazy="dynamic")
     summaries = db.relationship("Summary", back_populates="user", lazy="dynamic")
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
+
+    def set_openrouter_key(self, plaintext: str | None) -> None:
+        """Store (encrypted) or clear the user's OpenRouter API key."""
+        from .crypto import encrypt
+
+        self.openrouter_api_key_enc = encrypt(plaintext) if plaintext else None
+
+    def get_openrouter_key(self) -> str | None:
+        """Return the decrypted OpenRouter API key, or None if unset."""
+        from .crypto import decrypt
+
+        return decrypt(self.openrouter_api_key_enc) if self.openrouter_api_key_enc else None
+
+    @property
+    def has_openrouter_key(self) -> bool:
+        return bool(self.openrouter_api_key_enc)
 
     def check_password(self, password: str) -> bool:
         if not self.password_hash:
@@ -232,7 +254,49 @@ class SummaryRun(db.Model):
     artifact_ref = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default="ok")
 
+    # Agentic pipeline: structured block document (IR) + revision chain.
+    document = db.Column(JSONEncodedDict, nullable=True)
+    revision = db.Column(db.Integer, default=1, nullable=False)
+    parent_run_id = db.Column(
+        db.Integer, db.ForeignKey("summary_runs.id"), nullable=True, index=True
+    )
+
     summary = db.relationship("Summary", back_populates="runs")
+    revisions = db.relationship(
+        "SummaryRun",
+        backref=db.backref("parent", remote_side=[id]),
+        lazy="dynamic",
+    )
+
+
+class AgentMemory(db.Model):
+    """File-like memory for the agentic summary pipeline.
+
+    Stored in the DB (not on disk) so the system stays multi-server safe.
+    Kinds:
+      interests       — per-user (summary_id NULL); evolving user interests
+      content_config  — per-summary; structure/content prefs for that type
+      history         — per-summary; running notes for trend-spotting
+      headlines       — per-summary, one row per edition (edition_ts set);
+                        brief notes on items covered, to avoid duplicate reporting
+    """
+
+    __tablename__ = "agent_memory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    summary_id = db.Column(
+        db.Integer, db.ForeignKey("summaries.id"), nullable=True, index=True
+    )
+    kind = db.Column(db.String(32), nullable=False)  # interests|content_config|history|headlines
+    edition_ts = db.Column(db.DateTime, nullable=True)  # set only for headlines
+    content = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        db.Index("ix_agent_memory_lookup", "user_id", "summary_id", "kind"),
+    )
 
 
 # Convenience export used by the factory.
@@ -246,4 +310,5 @@ __all__ = [
     "NewsItemTag",
     "Summary",
     "SummaryRun",
+    "AgentMemory",
 ]

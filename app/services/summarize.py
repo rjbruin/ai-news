@@ -101,33 +101,75 @@ def _edition_label(summary: Summary, range_start: datetime | None, range_end: da
 
 # ─────────────────────────── item scoping ────────────────────────────
 
-def items_in_scope(summary: Summary) -> list[NewsItem]:
-    start, end = resolve_range(summary)
+def items_in_window(start: datetime | None, end: datetime | None) -> list[NewsItem]:
+    """Return news items fetched within [start, end] (naive-UTC aware inputs)."""
     q = NewsItem.query
     if start is not None:
         q = q.filter(NewsItem.fetched_at >= start.replace(tzinfo=None))
-    q = q.filter(NewsItem.fetched_at <= end.replace(tzinfo=None))
+    if end is not None:
+        q = q.filter(NewsItem.fetched_at <= end.replace(tzinfo=None))
     return q.order_by(NewsItem.fetched_at.desc()).all()
+
+
+def items_in_scope(summary: Summary) -> list[NewsItem]:
+    start, end = resolve_range(summary)
+    return items_in_window(start, end)
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 # ─────────────────────────── building ────────────────────────────
 
-def build_summary(summary: Summary, *, record_run: bool = True, mark_consumed: bool = False):
-    """Build the artifact for a summary config and optionally persist it."""
+def build_summary(
+    summary: Summary,
+    *,
+    record_run: bool = True,
+    mark_consumed: bool = False,
+    seed_document: list | None = None,
+    extra_instruction: str | None = None,
+    parent_run_id: int | None = None,
+):
+    """Build the artifact for a summary config and optionally persist it.
+
+    For agentic summary types the LLM agent runner produces a block document
+    (using the user's OpenRouter credentials); the plugin then renders it. For
+    deterministic types the plugin builds the artifact directly.
+
+    ``seed_document`` / ``extra_instruction`` / ``parent_run_id`` support
+    feedback revisions (see Phase 5).
+    """
     plugin = summary_registry.create(summary.type_key)
     if plugin is None:
         raise ValueError(f"Unknown summary type: {summary.type_key}")
 
     start, end = resolve_range(summary)
     items = items_in_scope(summary)
-    artifact = plugin.build(
-        items, summary.params or {}, range_start=start, range_end=end
-    )
+
+    document = None
+    pending_headlines = None
+    if getattr(plugin, "is_agentic", False):
+        artifact, document, pending_headlines = _build_agentic(
+            summary, plugin, items, start, end,
+            seed_document=seed_document, extra_instruction=extra_instruction,
+        )
+    else:
+        artifact = plugin.build(
+            items, summary.params or {}, range_start=start, range_end=end
+        )
 
     run = None
     if record_run:
         now = utcnow()
         label = _edition_label(summary, start, end, now)
+        revision = 1
+        if parent_run_id is not None:
+            parent = db.session.get(SummaryRun, parent_run_id)
+            if parent is not None:
+                revision = (parent.revision or 1) + 1
         run = SummaryRun(
             summary_id=summary.id,
             range_start=start.replace(tzinfo=None) if start else None,
@@ -136,14 +178,146 @@ def build_summary(summary: Summary, *, record_run: bool = True, mark_consumed: b
             label=label,
             content=artifact.html,
             artifact_ref=artifact.file_path,
+            document=document,
+            parent_run_id=parent_run_id,
+            revision=revision,
             status="ok",
         )
         db.session.add(run)
+        db.session.flush()  # populate run.id / generated_at
+
+        if pending_headlines:
+            from ..agent import memory as agent_memory
+            agent_memory.write_headlines(
+                summary.user, summary, run.generated_at, pending_headlines
+            )
 
     if mark_consumed:
         summary.last_consumed_at = utcnow()
     db.session.commit()
     return artifact, items, run
+
+
+def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_instruction):
+    """Run the agent to produce a document, then render it via the plugin.
+
+    Returns (artifact, document, pending_headlines).
+    """
+    from ..agent import creds, runner
+    from ..agent.context import AgentSession
+
+    api_key, model = creds.resolve(summary.user)
+    session = AgentSession(
+        user=summary.user, summary=summary, items=items,
+        range_start=start, range_end=end,
+    )
+    document = runner.run_agent(
+        session, api_key=api_key, model=model,
+        seed_document=seed_document, extra_instruction=extra_instruction,
+    )
+    artifact = plugin.build(
+        items, {**(summary.params or {}), "_document": document},
+        range_start=start, range_end=end,
+    )
+    return artifact, document, session.pending_headlines
+
+
+# ─────────────────────────── feedback revisions ────────────────────────────
+
+def _feedback_instruction(feedback: str) -> str:
+    return (
+        "The reader gave feedback on the previous edition, which is loaded as your "
+        "current draft document. Revise the draft to address it. If the feedback "
+        "expresses a LASTING preference (topics to include or exclude, how much of "
+        "each, structural changes), also consolidate it into the appropriate memory "
+        "file via write_memory (interests for topic preferences; content_config for "
+        "structure/counts). If it is a one-off request about this edition only, just "
+        f"edit the document.\n\nReader feedback:\n{feedback}"
+    )
+
+
+def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
+    """Create a new revision of an agentic edition that applies reader feedback.
+
+    Scopes items to the parent edition's window so the revision works from the
+    same material; links the new run via parent_run_id with revision bumped.
+    """
+    summary = parent_run.summary
+    plugin = summary_registry.create(summary.type_key)
+    if plugin is None or not getattr(plugin, "is_agentic", False):
+        raise ValueError("Only agentic summaries support feedback revisions.")
+
+    start = _aware(parent_run.range_start)
+    end = _aware(parent_run.range_end) or utcnow()
+    items = items_in_window(start, end)
+
+    artifact, document, _headlines = _build_agentic(
+        summary, plugin, items, start, end,
+        seed_document=parent_run.document or [],
+        extra_instruction=_feedback_instruction(feedback),
+    )
+
+    run = SummaryRun(
+        summary_id=summary.id,
+        range_start=parent_run.range_start,
+        range_end=parent_run.range_end,
+        item_count=len(items),
+        label=parent_run.label,
+        content=artifact.html,
+        document=document,
+        parent_run_id=parent_run.id,
+        revision=(parent_run.revision or 1) + 1,
+        status="ok",
+    )
+    db.session.add(run)
+    db.session.commit()
+    return run
+
+
+def revision_chain(run: SummaryRun) -> list[SummaryRun]:
+    """Return all revisions of the edition ``run`` belongs to, oldest first.
+
+    Walks to the root (parent_run_id is None) then collects all descendants.
+    """
+    root = run
+    seen = set()
+    while root.parent_run_id and root.parent_run_id not in seen:
+        seen.add(root.id)
+        parent = db.session.get(SummaryRun, root.parent_run_id)
+        if parent is None:
+            break
+        root = parent
+
+    chain = [root]
+    frontier = [root]
+    while frontier:
+        nxt = []
+        for r in frontier:
+            children = (
+                SummaryRun.query.filter_by(parent_run_id=r.id)
+                .order_by(SummaryRun.revision.asc(), SummaryRun.generated_at.asc())
+                .all()
+            )
+            nxt.extend(children)
+        chain.extend(nxt)
+        frontier = nxt
+
+    chain.sort(key=lambda r: (r.revision or 1, r.generated_at or utcnow()))
+    return chain
+
+
+def edition_heads(summary: Summary):
+    """Return the latest revision of each edition chain for a summary, newest first."""
+    child_ids = [
+        r.parent_run_id
+        for r in SummaryRun.query.filter_by(summary_id=summary.id)
+        .filter(SummaryRun.parent_run_id.isnot(None))
+        .all()
+    ]
+    q = SummaryRun.query.filter_by(summary_id=summary.id)
+    if child_ids:
+        q = q.filter(~SummaryRun.id.in_(child_ids))
+    return q.order_by(SummaryRun.generated_at.desc()).all()
 
 
 # ─────────────────────────── scheduled edition cutting ────────────────────────────

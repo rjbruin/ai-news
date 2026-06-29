@@ -7,6 +7,7 @@ from flask import (
     Blueprint,
     Response,
     abort,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -57,6 +58,32 @@ def dashboard():
         latest_editions=latest_editions,
         summary_types=summary_registry.all_types(),
     )
+
+
+# ───────────────────────── Settings ─────────────────────────
+@bp.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    if request.method == "POST":
+        current_user.openrouter_model = (
+            request.form.get("openrouter_model") or ""
+        ).strip() or None
+
+        if request.form.get("clear_key"):
+            current_user.set_openrouter_key(None)
+            flash("OpenRouter API key removed.", "info")
+        else:
+            new_key = (request.form.get("openrouter_api_key") or "").strip()
+            if new_key:
+                current_user.set_openrouter_key(new_key)
+                flash("OpenRouter API key saved.", "success")
+            else:
+                flash("Settings updated.", "success")
+
+        db.session.commit()
+        return redirect(url_for("web.settings"))
+
+    return render_template("settings.html")
 
 
 # ───────────────────────── News ─────────────────────────
@@ -212,17 +239,8 @@ def summaries():
         .order_by(Summary.created_at.desc())
         .all()
     )
-    # Pre-fetch recent editions per summary so the template stays simple
-    editions = {
-        s.id: (
-            SummaryRun.query
-            .filter_by(summary_id=s.id)
-            .order_by(SummaryRun.generated_at.desc())
-            .limit(20)
-            .all()
-        )
-        for s in mine
-    }
+    # Show the latest revision of each edition chain (heads), newest first.
+    editions = {s.id: summarize.edition_heads(s)[:20] for s in mine}
     return render_template(
         "summaries/list.html",
         summaries=mine,
@@ -311,6 +329,59 @@ def summary_open(summary_id: int):
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
 
 
+@bp.route("/summaries/<int:summary_id>/generate", methods=["POST"])
+@login_required
+def summary_generate(summary_id: int):
+    """Generate a new edition on demand (useful for agentic summaries)."""
+    from ..agent.creds import MissingCredentials
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    try:
+        _, _items, run = summarize.build_summary(summary, record_run=True)
+    except MissingCredentials as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("web.settings"))
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not generate edition: {exc}", "danger")
+        return redirect(url_for("web.summaries"))
+    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
+
+
+@bp.route("/summaries/<int:summary_id>/memory", methods=["GET", "POST"])
+@login_required
+def summary_memory(summary_id: int):
+    """View/edit the agent's Markdown memory files for a summary."""
+    from ..agent import memory as agent_memory
+    from ..agent.prompt import DEFAULT_DAILY_CONTENT_CONFIG, DEFAULT_INTERESTS
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+
+    if request.method == "POST":
+        for kind in ("interests", "content_config", "history"):
+            if f"mem_{kind}" in request.form:
+                agent_memory.write(current_user, summary, kind, request.form.get(f"mem_{kind}", ""))
+        flash("Memory updated.", "success")
+        return redirect(url_for("web.summary_memory", summary_id=summary.id))
+
+    files = {
+        "interests": agent_memory.ensure_default(
+            current_user, summary, "interests", DEFAULT_INTERESTS),
+        "content_config": agent_memory.ensure_default(
+            current_user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG),
+        "history": agent_memory.read(current_user, summary, "history"),
+    }
+    retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+    headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
+    return render_template(
+        "summaries/memory.html",
+        summary=summary, files=files, headlines=headlines, retention=retention,
+    )
+
+
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>")
 @login_required
 def edition_view(summary_id: int, run_id: int):
@@ -320,7 +391,41 @@ def edition_view(summary_id: int, run_id: int):
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    return render_template("summaries/view.html", summary=summary, run=run)
+    plugin = summary_registry.get(summary.type_key)
+    is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
+    chain = summarize.revision_chain(run) if is_agentic else [run]
+    return render_template(
+        "summaries/view.html",
+        summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
+    )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback", methods=["POST"])
+@login_required
+def edition_feedback(summary_id: int, run_id: int):
+    from ..agent.creds import MissingCredentials
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    text = (request.form.get("feedback") or "").strip()
+    if not text:
+        flash("Enter some feedback first.", "warning")
+        return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+    try:
+        new_run = summarize.revise_edition(run, text)
+    except MissingCredentials as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("web.settings"))
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not revise edition: {exc}", "danger")
+        return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+    flash("Revision created from your feedback.", "success")
+    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=new_run.id))
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])

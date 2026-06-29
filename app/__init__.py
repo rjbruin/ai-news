@@ -51,10 +51,12 @@ def create_app(config_object: type | None = None) -> Flask:
     from .auth.routes import bp as auth_bp
     from .web.routes import bp as web_bp
     from .web.admin import bp as admin_bp
+    from .api.routes import bp as api_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(web_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(api_bp)
 
     register_template_helpers(app)
 
@@ -63,6 +65,7 @@ def create_app(config_object: type | None = None) -> Flask:
     if not app.config.get("TESTING"):
         with app.app_context():
             _purge_empty_editions()
+            _prune_agent_headlines(app)
 
     if app.config.get("DEBUG_SEED") and not app.config.get("TESTING"):
         with app.app_context():
@@ -146,6 +149,24 @@ def _purge_empty_editions() -> None:
         logging.getLogger(__name__).exception("Startup: failed to purge empty editions")
 
 
+def _prune_agent_headlines(app: Flask) -> None:
+    """Prune agent HEADLINES memory older than the configured retention window."""
+    import logging
+    from .agent import memory as agent_memory
+
+    try:
+        days = app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+        pruned = agent_memory.prune_headlines(days=days)
+        if pruned:
+            logging.getLogger(__name__).info(
+                "Startup: pruned %d old headline file(s)", pruned
+            )
+    except Exception:
+        from .extensions import db
+        db.session.rollback()
+        logging.getLogger(__name__).exception("Startup: failed to prune headlines")
+
+
 def _ensure_dirs(app: Flask) -> None:
     base = Path(app.root_path).parent
     (base / "instance").mkdir(exist_ok=True)
@@ -164,3 +185,24 @@ def register_template_helpers(app: Flask) -> None:
         if dt is None:
             return ""
         return dt.strftime("%-d %B") if hasattr(dt, "strftime") else str(dt)
+
+    @app.template_filter("md")
+    def markdown_filter(text):
+        """Render Markdown to sanitized HTML (for agent-authored block content)."""
+        import bleach
+        import markdown as md
+        from markupsafe import Markup
+
+        if not text:
+            return ""
+        raw = md.markdown(str(text), extensions=["extra", "sane_lists"])
+        allowed_tags = set(bleach.sanitizer.ALLOWED_TAGS) | {
+            "p", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "span", "br", "hr",
+            "table", "thead", "tbody", "tr", "th", "td", "img",
+        }
+        allowed_attrs = {
+            "a": ["href", "title", "target", "rel"],
+            "img": ["src", "alt", "title"],
+        }
+        clean = bleach.clean(raw, tags=allowed_tags, attributes=allowed_attrs, strip=True)
+        return Markup(clean)
