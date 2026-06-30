@@ -45,14 +45,15 @@ def _scripted_chat():
                     {"type": "story", "headline": "Big release", "dek": "It shipped.",
                      "emphasis": "lead", "url": "https://x.test"},
                 ]})},
-            }], "_usage": {"total_tokens": 200}}
+            }], "_usage": {"total_tokens": 200, "cost": 0.001}}
         if state["n"] == 2:
             return {"role": "assistant", "content": None, "tool_calls": [{
                 "id": "c2", "type": "function",
                 "function": {"name": "write_headlines",
                              "arguments": json.dumps({"notes": "- Big release"})},
-            }], "_usage": {"total_tokens": 30}}
-        return {"role": "assistant", "content": "Edition complete.", "_usage": {"total_tokens": 5}}
+            }], "_usage": {"total_tokens": 30, "cost": 0.0002}}
+        return {"role": "assistant", "content": "Edition complete.",
+                "_usage": {"total_tokens": 5, "cost": 0.00005}}
 
     return chat
 
@@ -77,6 +78,13 @@ def test_build_agentic_summary_end_to_end(monkeypatch, db, keyed_user, agentic_s
     assert 'href="https://x.test"' in run.content
     assert run.revision == 1
     assert run.parent_run_id is None
+
+    # Agent log + total cost recorded against the run.
+    assert run.agent_log is not None
+    event_types = [e["type"] for e in run.agent_log]
+    assert "usage" in event_types
+    assert "stop" in event_types
+    assert run.agent_cost == pytest.approx(0.001 + 0.0002 + 0.00005)
 
     # Headlines persisted against the edition timestamp.
     rows = memory.recent_headlines(keyed_user, agentic_summary, days=7)

@@ -158,10 +158,18 @@ def build_summary(
 
     document = None
     pending_headlines = None
+    agent_log: list[dict] = []
+    agent_cost = None
+
+    def _collect(event: dict) -> None:
+        agent_log.append(event)
+        if log_fn:
+            log_fn(event)
+
     if getattr(plugin, "is_agentic", False):
-        artifact, document, pending_headlines = _build_agentic(
+        artifact, document, pending_headlines, agent_cost = _build_agentic(
             summary, plugin, items, start, end,
-            seed_document=seed_document, extra_instruction=extra_instruction, log_fn=log_fn,
+            seed_document=seed_document, extra_instruction=extra_instruction, log_fn=_collect,
         )
     else:
         artifact = plugin.build(
@@ -186,6 +194,8 @@ def build_summary(
             content=artifact.html,
             artifact_ref=artifact.file_path,
             document=document,
+            agent_log=agent_log or None,
+            agent_cost=agent_cost,
             parent_run_id=parent_run_id,
             revision=revision,
             status="ok",
@@ -208,7 +218,7 @@ def build_summary(
 def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_instruction, log_fn=None):
     """Run the agent to produce a document, then render it via the plugin.
 
-    Returns (artifact, document, pending_headlines).
+    Returns (artifact, document, pending_headlines, cost_used).
     """
     from ..agent import creds, runner
     from ..agent.context import AgentSession
@@ -233,7 +243,7 @@ def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_i
         items, {**(summary.params or {}), "_document": document},
         range_start=start, range_end=end,
     )
-    return artifact, document, session.pending_headlines
+    return artifact, document, session.pending_headlines, session.cost_used
 
 
 # ─────────────────────────── feedback revisions ────────────────────────────
@@ -250,11 +260,13 @@ def _feedback_instruction(feedback: str) -> str:
     )
 
 
-def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
+def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None) -> SummaryRun:
     """Create a new revision of an agentic edition that applies reader feedback.
 
     Scopes items to the parent edition's window so the revision works from the
     same material; links the new run via parent_run_id with revision bumped.
+    An optional `log_fn` is called with each agent event live (in addition to
+    being recorded on the new run), for streaming progress to a caller.
     """
     summary = parent_run.summary
     plugin = summary_registry.create(summary.type_key)
@@ -265,10 +277,18 @@ def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
     end = _aware(parent_run.range_end) or utcnow()
     items = items_in_window(start, end)
 
-    artifact, document, _headlines = _build_agentic(
+    agent_log: list[dict] = []
+
+    def _collect(event: dict) -> None:
+        agent_log.append(event)
+        if log_fn is not None:
+            log_fn(event)
+
+    artifact, document, _headlines, cost = _build_agentic(
         summary, plugin, items, start, end,
         seed_document=parent_run.document or [],
         extra_instruction=_feedback_instruction(feedback),
+        log_fn=_collect,
     )
 
     run = SummaryRun(
@@ -279,6 +299,8 @@ def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
         label=parent_run.label,
         content=artifact.html,
         document=document,
+        agent_log=agent_log or None,
+        agent_cost=cost,
         parent_run_id=parent_run.id,
         revision=(parent_run.revision or 1) + 1,
         status="ok",

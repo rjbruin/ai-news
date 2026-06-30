@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Generating · {{ summary.name }} · AI News{% endblock %}
+{% block title %}Revising · {{ summary.name }} · AI News{% endblock %}
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
-  <a href="{{ url_for('web.summaries') }}" class="btn btn-sm btn-outline-secondary">← Summaries</a>
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+     class="btn btn-sm btn-outline-secondary">← Edition</a>
   <div class="flex-grow-1">
-    <h1 class="h3 mb-0">Generating edition</h1>
-    <div class="small text-body-secondary">{{ summary.name }}</div>
+    <h1 class="h3 mb-0">Revising edition</h1>
+    <div class="small text-body-secondary">{{ summary.name }} · {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</div>
   </div>
   <div id="cost-ticker" class="small text-body-secondary">Cost so far: $0.0000</div>
   <div id="status-indicator">
@@ -18,17 +19,20 @@
   <div class="card-body p-0">
     <div id="agent-log"
          data-summary-id="{{ summary.id }}"
+         data-run-id="{{ run.id }}"
          class="p-3 font-monospace small overflow-auto"
          style="min-height: 220px; max-height: 65vh;">
       <span class="text-body-secondary">Connecting…</span>
     </div>
   </div>
   <div class="card-footer d-none" id="footer-done">
-    <a id="view-link" href="#" class="btn btn-primary btn-sm">Open edition →</a>
-    <a href="{{ url_for('web.summaries') }}" class="btn btn-outline-secondary btn-sm ms-2">Back to summaries</a>
+    <a id="view-link" href="#" class="btn btn-primary btn-sm">Open revision →</a>
+    <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-outline-secondary btn-sm ms-2">Back to edition</a>
   </div>
   <div class="card-footer d-none" id="footer-error">
-    <a href="{{ url_for('web.summaries') }}" class="btn btn-outline-secondary btn-sm">Back to summaries</a>
+    <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-outline-secondary btn-sm">Back to edition</a>
   </div>
 </div>
 {% endblock %}
@@ -40,9 +44,10 @@
   const statusEl = document.getElementById('status-indicator');
   const costEl = document.getElementById('cost-ticker');
   const summaryId = logEl.dataset.summaryId;
+  const runId = logEl.dataset.runId;
   const log = createAgentLog(logEl, statusEl, costEl);
 
-  const source = new EventSource(`/summaries/${summaryId}/generate/stream`);
+  const source = new EventSource(`/summaries/${summaryId}/editions/${runId}/feedback/stream`);
 
   source.onmessage = function (e) {
     const ev = JSON.parse(e.data);
