@@ -9,6 +9,7 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="badge text-bg-secondary align-middle">rev {{ run.revision }}</span>
       {% endif %}
+      <span id="read-badge" class="badge align-middle ms-1 {{ 'text-bg-light border text-body-secondary' if run.read_at else 'd-none' }}">read</span>
     </h1>
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
@@ -16,6 +17,11 @@
   <a href="{{ url_for('web.summary_memory', summary_id=summary.id) }}"
      class="btn btn-sm btn-outline-secondary">Memory</a>
   {% endif %}
+  <form method="post" id="unread-form"
+        action="{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}"
+        class="d-inline {{ '' if run.read_at else 'd-none' }}">
+    <button class="btn btn-sm btn-outline-secondary">Mark as unread</button>
+  </form>
   <form method="post"
         action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
         class="d-inline">
@@ -69,10 +75,38 @@
       <textarea name="feedback" class="form-control mb-2" rows="3"
                 placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
       <div class="text-end">
-        <button class="btn btn-primary btn-sm">Submit feedback &amp; revise</button>
+        <button class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
       </div>
     </form>
   </div>
 </div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-generate').forEach(function(btn) {
+  const form = btn.closest('form');
+  const SPINNER = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Revising…';
+  if (form) {
+    form.addEventListener('submit', function() {
+      btn.disabled = true;
+      btn.innerHTML = SPINNER;
+    });
+  }
+});
+
+(function () {
+  const alreadyRead = {{ 'true' if run.read_at else 'false' }};
+  if (alreadyRead) return;
+  setTimeout(function () {
+    fetch("{{ url_for('web.edition_mark_read', summary_id=summary.id, run_id=run.id) }}",
+          {method: 'POST'})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function () {
+        document.getElementById('read-badge').classList.remove('d-none');
+        document.getElementById('unread-form').classList.remove('d-none');
+      });
+  }, 10000);
+}());
+</script>
 {% endblock %}

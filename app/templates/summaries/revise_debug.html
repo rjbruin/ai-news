@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Revising · {{ summary.name }} · AI News{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+     class="btn btn-sm btn-outline-secondary">← Edition</a>
+  <div class="flex-grow-1">
+    <h1 class="h3 mb-0">Revising edition</h1>
+    <div class="small text-body-secondary">{{ summary.name }} · {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+  </div>
+  <div id="cost-ticker" class="small text-body-secondary">Cost so far: $0.0000</div>
+  <div id="status-indicator">
+    <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span>
+    <span class="text-body-secondary small">Running…</span>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <div id="agent-log"
+         data-summary-id="{{ summary.id }}"
+         data-run-id="{{ run.id }}"
+         class="p-3 font-monospace small overflow-auto"
+         style="min-height: 220px; max-height: 65vh;">
+      <span class="text-body-secondary">Connecting…</span>
+    </div>
+  </div>
+  <div class="card-footer d-none" id="footer-done">
+    <a id="view-link" href="#" class="btn btn-primary btn-sm">Open revision →</a>
+    <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-outline-secondary btn-sm ms-2">Back to edition</a>
+  </div>
+  <div class="card-footer d-none" id="footer-error">
+    <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-outline-secondary btn-sm">Back to edition</a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "summaries/partials/_agent_log_js.html" %}
+<script>
+(function () {
+  const logEl = document.getElementById('agent-log');
+  const statusEl = document.getElementById('status-indicator');
+  const costEl = document.getElementById('cost-ticker');
+  const summaryId = logEl.dataset.summaryId;
+  const runId = logEl.dataset.runId;
+  const log = createAgentLog(logEl, statusEl, costEl);
+
+  const source = new EventSource(`/summaries/${summaryId}/editions/${runId}/feedback/stream`);
+
+  source.onmessage = function (e) {
+    const ev = JSON.parse(e.data);
+    log.handleEvent(ev);
+
+    if (ev.type === 'done') {
+      source.close();
+      const footer = document.getElementById('footer-done');
+      footer.classList.remove('d-none');
+      document.getElementById('view-link').href =
+        `/summaries/${summaryId}/editions/${ev.run_id}`;
+
+    } else if (ev.type === 'error') {
+      source.close();
+      document.getElementById('footer-error').classList.remove('d-none');
+    }
+  };
+
+  source.onerror = function () {
+    source.close();
+    log.handleEvent({type: 'error', message: 'Connection lost.'});
+    document.getElementById('footer-error').classList.remove('d-none');
+  };
+}());
+</script>
+{% endblock %}

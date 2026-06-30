@@ -59,7 +59,10 @@
   <div class="list-group list-group-flush">
     {% for run in runs %}
     <div class="list-group-item d-flex align-items-center gap-2 py-2">
-      <span class="flex-grow-1">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      {% if not run.read_at %}
+      <span class="badge rounded-pill text-bg-primary" style="width:.5rem;height:.5rem;padding:0;" title="Unread"></span>
+      {% endif %}
+      <span class="flex-grow-1 {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
       <span class="badge text-bg-light border text-body-secondary small">
         {{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}
       </span>

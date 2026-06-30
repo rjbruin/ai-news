@@ -265,6 +265,8 @@ class SummaryRun(db.Model):
     agent_log = db.Column(JSONEncodedDict, nullable=True)
     agent_cost = db.Column(db.Float, nullable=True)
 
+    read_at = db.Column(db.DateTime, nullable=True)
+
     summary = db.relationship("Summary", back_populates="runs")
     revisions = db.relationship(
         "SummaryRun",

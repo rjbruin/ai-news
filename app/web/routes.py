@@ -11,16 +11,18 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
+    session,
     stream_with_context,
     url_for,
 )
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import NewsItem, Summary, SummaryRun, Tag
+from ..models import NewsItem, Summary, SummaryRun, Tag, utcnow
 from ..services import summarize
 from ..summaries import registry as summary_registry
 from ..tagging import engine as tagging_engine
@@ -465,8 +467,6 @@ def edition_view(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback", methods=["POST"])
 @login_required
 def edition_feedback(summary_id: int, run_id: int):
-    from ..agent.creds import MissingCredentials
-
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
@@ -478,16 +478,74 @@ def edition_feedback(summary_id: int, run_id: int):
     if not text:
         flash("Enter some feedback first.", "warning")
         return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
-    try:
-        new_run = summarize.revise_edition(run, text)
-    except MissingCredentials as exc:
-        flash(str(exc), "warning")
-        return redirect(url_for("web.settings"))
-    except Exception as exc:  # noqa: BLE001
-        flash(f"Could not revise edition: {exc}", "danger")
+    session[f"feedback_{run_id}"] = text
+    return redirect(url_for("web.edition_feedback_debug", summary_id=summary_id, run_id=run_id))
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback/debug")
+@login_required
+def edition_feedback_debug(summary_id: int, run_id: int):
+    """Landing page for a feedback revision run — streams the agent log live."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    if f"feedback_{run_id}" not in session:
+        flash("Enter some feedback first.", "warning")
         return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
-    flash("Revision created from your feedback.", "success")
-    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=new_run.id))
+    return render_template("summaries/revise_debug.html", summary=summary, run=run)
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback/stream")
+@login_required
+def edition_feedback_stream(summary_id: int, run_id: int):
+    """SSE endpoint that applies the stashed feedback and streams the agent log."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    text = session.pop(f"feedback_{run_id}", None)
+    if not text:
+        abort(400)
+
+    app = current_app._get_current_object()
+    event_queue: queue.Queue = queue.Queue()
+
+    def _run():
+        with app.app_context():
+            try:
+                parent_run = db.session.get(SummaryRun, run_id)
+
+                def log_fn(event: dict) -> None:
+                    event_queue.put(event)
+
+                new_run = summarize.revise_edition(parent_run, text, log_fn=log_fn)
+                event_queue.put({"type": "done", "run_id": new_run.id})
+            except Exception as exc:  # noqa: BLE001
+                event_queue.put({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _stream():
+        while True:
+            try:
+                event = event_queue.get(timeout=30)
+            except queue.Empty:
+                yield ": heartbeat\n\n"
+                continue
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") in ("done", "error"):
+                break
+
+    return Response(
+        stream_with_context(_stream()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/logs")
@@ -501,6 +559,37 @@ def edition_logs(summary_id: int, run_id: int):
     if run.summary_id != summary_id:
         abort(404)
     return render_template("summaries/edition_logs.html", summary=summary, run=run)
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/read", methods=["POST"])
+@login_required
+def edition_mark_read(summary_id: int, run_id: int):
+    """Marks an edition read (idempotent). Called automatically after the
+    reader has spent a few seconds on the edition page."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    if run.read_at is None:
+        run.read_at = utcnow()
+        db.session.commit()
+    return jsonify({"read_at": run.read_at.isoformat()})
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/unread", methods=["POST"])
+@login_required
+def edition_mark_unread(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    run.read_at = None
+    db.session.commit()
+    return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])

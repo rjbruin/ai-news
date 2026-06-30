@@ -45,3 +45,18 @@ a[target="_blank"]:not(.btn)::after {
 @media print {
   .app-navbar, footer, .btn { display: none !important; }
 }
+
+/* Agentic summary heading scale — explicit and monotonic, independent of
+   Bootstrap's h1-h6 utility classes (which don't map cleanly onto the
+   block hierarchy: edition > section > story/cluster > brief/callout > label). */
+.an-h1 { font-size: 2rem; font-weight: 700; }
+.an-h2 { font-size: 1.4rem; font-weight: 700; color: var(--brand); }
+.an-h3 { font-size: 1.2rem; font-weight: 700; }
+.an-h4 { font-size: 1.05rem; font-weight: 600; }
+.an-h5 { font-size: .95rem; font-weight: 600; }
+.an-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; }
+
+.agentic-section:not(:first-of-type) {
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(0, 0, 0, .08);
+}

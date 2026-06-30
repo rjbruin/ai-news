@@ -260,11 +260,13 @@ def _feedback_instruction(feedback: str) -> str:
     )
 
 
-def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
+def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None) -> SummaryRun:
     """Create a new revision of an agentic edition that applies reader feedback.
 
     Scopes items to the parent edition's window so the revision works from the
     same material; links the new run via parent_run_id with revision bumped.
+    An optional `log_fn` is called with each agent event live (in addition to
+    being recorded on the new run), for streaming progress to a caller.
     """
     summary = parent_run.summary
     plugin = summary_registry.create(summary.type_key)
@@ -276,11 +278,17 @@ def revise_edition(parent_run: SummaryRun, feedback: str) -> SummaryRun:
     items = items_in_window(start, end)
 
     agent_log: list[dict] = []
+
+    def _collect(event: dict) -> None:
+        agent_log.append(event)
+        if log_fn is not None:
+            log_fn(event)
+
     artifact, document, _headlines, cost = _build_agentic(
         summary, plugin, items, start, end,
         seed_document=parent_run.document or [],
         extra_instruction=_feedback_instruction(feedback),
-        log_fn=agent_log.append,
+        log_fn=_collect,
     )
 
     run = SummaryRun(

@@ -12,8 +12,8 @@
 {% macro render_block(block) %}
 {%- set t = block.type -%}
 {%- if t == 'edition_header' -%}
-  <header class="mb-4 pb-2 border-bottom">
-    <h1 class="h2 mb-1">{{ block.title }}</h1>
+  <header class="mb-4 pb-3 border-bottom border-2">
+    <h1 class="an-h1 mb-1">{{ block.title }}</h1>
     {% if block.subtitle %}<p class="lead text-body-secondary mb-1">{{ block.subtitle }}</p>{% endif %}
     {% if block.date %}<p class="small text-body-secondary mb-0">{{ block.date }}</p>{% endif %}
   </header>
@@ -22,28 +22,37 @@
   <div class="agentic-intro fs-5 mb-4">{{ block.markdown | md }}</div>
 
 {%- elif t == 'section' -%}
-  <div class="mt-4 mb-2">
-    <h2 class="h4 border-bottom pb-1">{{ block.title }}</h2>
-    {% if block.description %}<p class="text-body-secondary">{{ block.description }}</p>{% endif %}
-  </div>
+  <section class="agentic-section mt-5 mb-3">
+    <h2 class="an-h2 mb-1">{{ block.title }}</h2>
+    {% if block.description %}<p class="text-body-secondary mb-0">{{ block.description }}</p>{% endif %}
+  </section>
 
 {%- elif t == 'story' -%}
   {%- set lead = block.emphasis == 'lead' -%}
   {%- set brief = block.emphasis == 'brief' -%}
-  {%- set head_class = 'h3 mb-1' if lead else ('h6 mb-0' if brief else 'h5 mb-1') -%}
-  <article class="agentic-story mb-{{ 4 if lead else 3 }} {{ 'p-3 bg-body-tertiary rounded' if lead else '' }}">
-    <h3 class="{{ head_class }}">
+  {%- if brief -%}
+  <article class="agentic-story agentic-story--brief d-flex align-items-baseline gap-2 mb-2 py-1 border-bottom border-light-subtle">
+    <h3 class="an-h5 mb-0 flex-grow-1">
       {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
       {% else %}{{ block.headline }}{% endif %}
     </h3>
-    {% if block.dek and not brief %}<p class="fw-semibold mb-1">{{ block.dek }}</p>{% endif %}
-    {% if block.body and not brief %}<div class="mb-1">{{ block.body | md }}</div>{% endif %}
+    {% if block.source %}<span class="small text-body-secondary text-nowrap">{{ block.source }}</span>{% endif %}
+  </article>
+  {%- else -%}
+  <article class="agentic-story {{ 'agentic-story--lead p-3 bg-body-tertiary rounded mb-4' if lead else 'ps-3 border-start border-3 mb-3' }}">
+    <h3 class="{{ 'an-h3' if lead else 'an-h4' }} mb-1">
+      {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
+      {% else %}{{ block.headline }}{% endif %}
+    </h3>
+    {% if block.dek %}<p class="fw-semibold mb-1">{{ block.dek }}</p>{% endif %}
+    {% if block.body %}<div class="mb-1">{{ block.body | md }}</div>{% endif %}
     {% if block.source %}<p class="small text-body-secondary mb-0">{{ block.source }}</p>{% endif %}
   </article>
+  {%- endif -%}
 
 {%- elif t == 'cluster' -%}
   <article class="agentic-cluster mb-3 ps-3 border-start border-3">
-    <h3 class="h5 mb-1">{{ block.headline }}</h3>
+    <h3 class="an-h4 mb-1">{{ block.headline }}</h3>
     {% if block.body %}<div>{{ block.body | md }}</div>{% endif %}
   </article>
 
@@ -55,8 +64,8 @@
         'note': 'border-secondary',
       }.get(block.variant, 'border-secondary') -%}
   <aside class="agentic-callout my-3 p-3 border-start border-4 {{ variant_class }} bg-body-tertiary rounded-end">
-    <div class="text-uppercase small fw-bold text-body-secondary mb-1">{{ block.variant }}</div>
-    <h4 class="h6 mb-1">{{ block.title }}</h4>
+    <div class="an-label text-uppercase text-body-secondary mb-1">{{ block.variant }}</div>
+    <h4 class="an-h5 mb-1">{{ block.title }}</h4>
     <div>{{ block.markdown | md }}</div>
   </aside>
 
@@ -67,8 +76,8 @@
   </blockquote>
 
 {%- elif t == 'quick_hits' -%}
-  <div class="agentic-quick-hits my-3">
-    {% if block.title %}<h4 class="h6 text-uppercase text-body-secondary">{{ block.title }}</h4>{% endif %}
+  <div class="agentic-quick-hits my-3 p-3 bg-body-tertiary rounded">
+    {% if block.title %}<h4 class="an-label text-uppercase text-body-secondary mb-2">{{ block.title }}</h4>{% endif %}
     <ul class="mb-0">
       {% for it in block['items'] %}
       <li>{% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.text }}</a>{% else %}{{ it.text }}{% endif %}</li>
