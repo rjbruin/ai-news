@@ -83,7 +83,7 @@ class Config:
 
     # Agentic summary pipeline
     AGENT_ENABLED = _bool(os.environ.get("AGENT_ENABLED"), True)
-    AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "24"))
+    AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "50"))
     AGENT_MAX_TOKENS = int(os.environ.get("AGENT_MAX_TOKENS", "0"))  # 0 = no cap
     AGENT_HEADLINES_RETENTION_DAYS = int(
         os.environ.get("AGENT_HEADLINES_RETENTION_DAYS", "7")

@@ -12,6 +12,7 @@
 
 {% for s in summaries %}
 {% set runs = editions[s.id] %}
+{% set gen = active_generations.get(s.id) %}
 <div class="card shadow-sm mb-4">
   <div class="card-header d-flex align-items-center gap-2">
     <div class="flex-grow-1">
@@ -34,7 +35,12 @@
       </div>
     </div>
     <div class="d-flex gap-2 flex-shrink-0">
-      {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
+      {% if gen %}
+        <span class="btn btn-sm btn-primary disabled">
+          <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+          {{ 'Revising…' if gen.kind == 'revise' else 'Generating…' }}
+        </span>
+      {% elif s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
         <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
            class="btn btn-sm btn-primary btn-generate">Open now</a>
       {% elif s.type_key in types and types[s.type_key].is_agentic %}
@@ -55,8 +61,26 @@
     </div>
   </div>
 
-  {% if runs %}
+  {% if runs or gen %}
   <div class="list-group list-group-flush">
+    {% if gen %}
+    <div class="list-group-item d-flex align-items-center gap-2 py-2 bg-body-tertiary">
+      <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+      <span class="flex-grow-1 fw-semibold">
+        {{ 'Revising edition…' if gen.kind == 'revise' else 'Generating edition…' }}
+      </span>
+      {% if gen.kind == 'revise' %}
+        <a href="{{ url_for('web.edition_feedback_debug', summary_id=s.id, run_id=gen.parent_run_id) }}"
+           class="btn btn-sm btn-outline-secondary">Logs</a>
+      {% else %}
+        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
+           class="btn btn-sm btn-outline-secondary">Logs</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('web.generate_cancel', summary_id=s.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-danger">Cancel</button>
+      </form>
+    </div>
+    {% endif %}
     {% for run in runs %}
     <div class="list-group-item d-flex align-items-center gap-2 py-2">
       {% if not run.read_at %}

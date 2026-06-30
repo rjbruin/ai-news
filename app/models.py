@@ -49,8 +49,16 @@ class User(UserMixin, db.Model):
     openrouter_api_key_enc = db.Column(db.Text, nullable=True)
     openrouter_model = db.Column(db.String(120), nullable=True)
 
+    featured_summary_id = db.Column(
+        db.Integer, db.ForeignKey("summaries.id"), nullable=True
+    )
+
     tags = db.relationship("Tag", back_populates="owner", lazy="dynamic")
-    summaries = db.relationship("Summary", back_populates="user", lazy="dynamic")
+    summaries = db.relationship(
+        "Summary", back_populates="user", lazy="dynamic",
+        foreign_keys="Summary.user_id",
+    )
+    featured_summary = db.relationship("Summary", foreign_keys=[featured_summary_id])
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
@@ -233,7 +241,9 @@ class Summary(db.Model):
     enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
-    user = db.relationship("User", back_populates="summaries")
+    user = db.relationship(
+        "User", back_populates="summaries", foreign_keys=[user_id]
+    )
     runs = db.relationship(
         "SummaryRun", back_populates="summary", lazy="dynamic",
         cascade="all, delete-orphan",

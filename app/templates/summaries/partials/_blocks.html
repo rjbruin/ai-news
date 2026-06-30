@@ -31,7 +31,7 @@
   {%- set lead = block.emphasis == 'lead' -%}
   {%- set brief = block.emphasis == 'brief' -%}
   {%- if brief -%}
-  <article class="agentic-story agentic-story--brief d-flex align-items-baseline gap-2 mb-2 py-1 border-bottom border-light-subtle">
+  <article class="agentic-story agentic-story--brief d-flex align-items-baseline gap-2 mb-2">
     <h3 class="an-h5 mb-0 flex-grow-1">
       {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
       {% else %}{{ block.headline }}{% endif %}
@@ -39,7 +39,7 @@
     {% if block.source %}<span class="small text-body-secondary text-nowrap">{{ block.source }}</span>{% endif %}
   </article>
   {%- else -%}
-  <article class="agentic-story {{ 'agentic-story--lead p-3 bg-body-tertiary rounded mb-4' if lead else 'ps-3 border-start border-3 mb-3' }}">
+  <article class="agentic-story {{ 'agentic-story--lead mb-4' if lead else 'agentic-story--standard mb-3' }}">
     <h3 class="{{ 'an-h3' if lead else 'an-h4' }} mb-1">
       {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
       {% else %}{{ block.headline }}{% endif %}
@@ -51,34 +51,34 @@
   {%- endif -%}
 
 {%- elif t == 'cluster' -%}
-  <article class="agentic-cluster mb-3 ps-3 border-start border-3">
+  <article class="agentic-cluster mb-3">
     <h3 class="an-h4 mb-1">{{ block.headline }}</h3>
     {% if block.body %}<div>{{ block.body | md }}</div>{% endif %}
   </article>
 
 {%- elif t == 'callout' -%}
-  {%- set variant_class = {
-        'trend': 'border-primary',
-        'connection': 'border-info',
-        'watch': 'border-warning',
-        'note': 'border-secondary',
-      }.get(block.variant, 'border-secondary') -%}
-  <aside class="agentic-callout my-3 p-3 border-start border-4 {{ variant_class }} bg-body-tertiary rounded-end">
-    <div class="an-label text-uppercase text-body-secondary mb-1">{{ block.variant }}</div>
+  {%- set variant_icon = {
+        'trend': '📈',
+        'connection': '🔗',
+        'watch': '👀',
+        'note': '📝',
+      }.get(block.variant, '📝') -%}
+  <aside class="agentic-callout agentic-callout--{{ block.variant }} my-3">
+    <div class="an-label text-uppercase mb-1">{{ variant_icon }} {{ block.variant }}</div>
     <h4 class="an-h5 mb-1">{{ block.title }}</h4>
     <div>{{ block.markdown | md }}</div>
   </aside>
 
 {%- elif t == 'quote' -%}
-  <blockquote class="blockquote my-3 ps-3 border-start border-3">
-    <p class="mb-1">{{ block.text }}</p>
+  <blockquote class="agentic-quote blockquote my-3">
+    <p class="mb-1">“{{ block.text }}”</p>
     {% if block.attribution %}<footer class="blockquote-footer">{{ block.attribution }}</footer>{% endif %}
   </blockquote>
 
 {%- elif t == 'quick_hits' -%}
-  <div class="agentic-quick-hits my-3 p-3 bg-body-tertiary rounded">
-    {% if block.title %}<h4 class="an-label text-uppercase text-body-secondary mb-2">{{ block.title }}</h4>{% endif %}
-    <ul class="mb-0">
+  <div class="agentic-quick-hits my-3">
+    <h4 class="agentic-quick-hits__title">⚡ {{ block.title or 'Quick hits' }}</h4>
+    <ul>
       {% for it in block['items'] %}
       <li>{% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.text }}</a>{% else %}{{ it.text }}{% endif %}</li>
       {% endfor %}
@@ -86,7 +86,7 @@
   </div>
 
 {%- elif t == 'divider' -%}
-  <hr class="my-4">
+  <hr class="agentic-divider my-4">
 
 {%- endif -%}
 {% endmacro %}

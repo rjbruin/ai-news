@@ -15,19 +15,24 @@ import json
 
 from ..models import SummaryRun
 from . import memory
-from .blocks import BlockValidationError, find_block, validate_document
+from .blocks import BlockValidationError, find_block, url_domain, validate_document
 from .context import AgentSession
 
 # ── Item serialisation ──────────────────────────────────────────────────────
 
 def _item_brief(item) -> dict:
+    # Note: deliberately NOT exposing item.source.name (the ingestion feed's
+    # display name, e.g. "Newsletters from you@gmail.com") — it's config
+    # metadata about how the item was fetched, not a per-article attribution,
+    # and the agent was citing it verbatim when no other name was available.
+    # url_domain gives it the actual thing the prompt asks it to cite.
     return {
         "id": item.id,
         "title": item.title,
         "one_liner": item.one_liner,
         "item_type": item.item_type,
-        "source": item.source.name if item.source else None,
         "url": item.url,
+        "url_domain": url_domain(item.url) or None,
         "published_at": (item.published_at or item.fetched_at).isoformat()
         if (item.published_at or item.fetched_at) else None,
     }

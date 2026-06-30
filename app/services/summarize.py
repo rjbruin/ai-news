@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from flask import current_app
+from flask import current_app, url_for
 
 from ..extensions import db
 from ..models import NewsItem, Summary, SummaryRun, utcnow
@@ -107,19 +107,29 @@ def _edition_label(summary: Summary, range_start: datetime | None, range_end: da
 
 # ─────────────────────────── item scoping ────────────────────────────
 
-def items_in_window(start: datetime | None, end: datetime | None) -> list[NewsItem]:
-    """Return news items fetched within [start, end] (naive-UTC aware inputs)."""
+def items_in_window(
+    start: datetime | None, end: datetime | None, *, exclude_seed: bool = False
+) -> list[NewsItem]:
+    """Return news items fetched within [start, end] (naive-UTC aware inputs).
+
+    ``exclude_seed`` drops items from the "seed" debug fixture source — used
+    by debug_agentic so it exercises the agent against real ingested news,
+    keeping the seed fixtures available for other, dedicated test cases.
+    """
     q = NewsItem.query
     if start is not None:
         q = q.filter(NewsItem.fetched_at >= start.replace(tzinfo=None))
     if end is not None:
         q = q.filter(NewsItem.fetched_at <= end.replace(tzinfo=None))
-    return q.order_by(NewsItem.fetched_at.desc()).all()
+    items = q.order_by(NewsItem.fetched_at.desc()).all()
+    if exclude_seed:
+        items = [it for it in items if not (it.source and it.source.type_key == "seed")]
+    return items
 
 
 def items_in_scope(summary: Summary) -> list[NewsItem]:
     start, end = resolve_range(summary)
-    return items_in_window(start, end)
+    return items_in_window(start, end, exclude_seed=summary.type_key == "debug_agentic")
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -139,6 +149,7 @@ def build_summary(
     extra_instruction: str | None = None,
     parent_run_id: int | None = None,
     log_fn=None,
+    cancel_event=None,
 ):
     """Build the artifact for a summary config and optionally persist it.
 
@@ -170,7 +181,14 @@ def build_summary(
         artifact, document, pending_headlines, agent_cost = _build_agentic(
             summary, plugin, items, start, end,
             seed_document=seed_document, extra_instruction=extra_instruction, log_fn=_collect,
+            cancel_event=cancel_event,
         )
+        # The agent loop only checks cancel_event between steps, so a run that
+        # finishes its last step right as cancel is requested can race past
+        # every in-loop check. Catch that here, before anything is persisted.
+        if cancel_event is not None and cancel_event.is_set():
+            from ..agent.runner import AgentCancelled
+            raise AgentCancelled("Generation cancelled.")
     else:
         artifact = plugin.build(
             items, summary.params or {}, range_start=start, range_end=end
@@ -215,7 +233,10 @@ def build_summary(
     return artifact, items, run
 
 
-def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_instruction, log_fn=None):
+def _build_agentic(
+    summary, plugin, items, start, end, *,
+    seed_document, extra_instruction, log_fn=None, cancel_event=None,
+):
     """Run the agent to produce a document, then render it via the plugin.
 
     Returns (artifact, document, pending_headlines, cost_used).
@@ -235,9 +256,14 @@ def _build_agentic(summary, plugin, items, start, end, *, seed_document, extra_i
         user=summary.user, summary=summary, items=items,
         range_start=start, range_end=end,
     )
+    try:
+        max_steps = int((summary.params or {}).get("max_steps")) or None
+    except (TypeError, ValueError):
+        max_steps = None
     document = runner.run_agent(
         session, api_key=api_key, model=model,
         seed_document=seed_document, extra_instruction=extra_instruction, log_fn=log_fn,
+        cancel_event=cancel_event, max_steps=max_steps,
     )
     artifact = plugin.build(
         items, {**(summary.params or {}), "_document": document},
@@ -260,7 +286,7 @@ def _feedback_instruction(feedback: str) -> str:
     )
 
 
-def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None) -> SummaryRun:
+def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None, cancel_event=None) -> SummaryRun:
     """Create a new revision of an agentic edition that applies reader feedback.
 
     Scopes items to the parent edition's window so the revision works from the
@@ -275,7 +301,7 @@ def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None) -> Summar
 
     start = _aware(parent_run.range_start)
     end = _aware(parent_run.range_end) or utcnow()
-    items = items_in_window(start, end)
+    items = items_in_window(start, end, exclude_seed=summary.type_key == "debug_agentic")
 
     agent_log: list[dict] = []
 
@@ -289,7 +315,11 @@ def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None) -> Summar
         seed_document=parent_run.document or [],
         extra_instruction=_feedback_instruction(feedback),
         log_fn=_collect,
+        cancel_event=cancel_event,
     )
+    if cancel_event is not None and cancel_event.is_set():
+        from ..agent.runner import AgentCancelled
+        raise AgentCancelled("Generation cancelled.")
 
     run = SummaryRun(
         summary_id=summary.id,
@@ -367,36 +397,40 @@ def cut_due_editions(force: bool = False) -> int:
     Returns the number of editions cut.
     """
     cut = 0
-    for summary in Summary.query.filter_by(scope_mode="fixed_period", enabled=True).all():
-        try:
-            _, expected_end = resolve_range(summary)
-            latest = (
-                SummaryRun.query
-                .filter_by(summary_id=summary.id)
-                .order_by(SummaryRun.range_end.desc())
-                .first()
-            )
-            expected_naive = expected_end.replace(tzinfo=None)
-            if latest and latest.range_end and latest.range_end >= expected_naive:
-                continue  # Edition already exists for this period
+    # Templates rendered by build_summary() (e.g. _news_item.html) call url_for(),
+    # which requires a request context. The scheduler and startup-seed callers of
+    # this function only push an app context, so provide one here.
+    with current_app.test_request_context(base_url=current_app.config.get("PUBLIC_URL", "")):
+        for summary in Summary.query.filter_by(scope_mode="fixed_period", enabled=True).all():
+            try:
+                _, expected_end = resolve_range(summary)
+                latest = (
+                    SummaryRun.query
+                    .filter_by(summary_id=summary.id)
+                    .order_by(SummaryRun.range_end.desc())
+                    .first()
+                )
+                expected_naive = expected_end.replace(tzinfo=None)
+                if latest and latest.range_end and latest.range_end >= expected_naive:
+                    continue  # Edition already exists for this period
 
-            now = utcnow()
-            # Only cut if the cutoff time has actually passed (skipped when force=True)
-            if not force and now.replace(tzinfo=None) < expected_naive:
-                continue
+                now = utcnow()
+                # Only cut if the cutoff time has actually passed (skipped when force=True)
+                if not force and now.replace(tzinfo=None) < expected_naive:
+                    continue
 
-            artifact, items, run = build_summary(summary, record_run=True)
-            cut += 1
-            logger.info("Cut edition '%s' for summary %d", run.label if run else "?", summary.id)
+                artifact, items, run = build_summary(summary, record_run=True)
+                cut += 1
+                logger.info("Cut edition '%s' for summary %d", run.label if run else "?", summary.id)
 
-            if summary.params and summary.params.get("send_email") and run:
-                try:
-                    _send_edition_email(summary, run, artifact)
-                except Exception:  # noqa: BLE001
-                    logger.exception("Failed to send email for edition %d", run.id)
+                if summary.params and summary.params.get("send_email") and run:
+                    try:
+                        _send_edition_email(summary, run, artifact)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Failed to send email for edition %d", run.id)
 
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to cut edition for summary %d", summary.id)
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to cut edition for summary %d", summary.id)
 
     return cut
 
@@ -417,18 +451,35 @@ def _send_edition_email(summary: Summary, run: SummaryRun, artifact) -> None:
     subject = f"{summary.name} – {run.label or 'Edition'}"
     html_body = artifact.html or ""
 
+    with current_app.test_request_context(base_url=cfg.get("PUBLIC_URL", "")):
+        open_url = url_for(
+            "web.edition_view", summary_id=summary.id, run_id=run.id, _external=True
+        )
+        app_css_url = url_for("static", filename="css/app.css", _external=True)
+
     full_html = f"""<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>{subject}</title>
+<head>
+<meta charset="utf-8">
+<title>{subject}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="{app_css_url}">
 <style>
-  body {{ font-family: -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px; color: #212529; }}
-  a {{ color: #1f3a5f; }}
-  h2 {{ color: #1f3a5f; }}
+  body {{ max-width: 700px; margin: 0 auto; background: #f8f9fa; }}
+  .email-header {{
+    background: linear-gradient(90deg, #16293f, #1f3a5f);
+    color: #fff; padding: 14px 20px; font-weight: 600; font-size: 1.1rem;
+  }}
+  .email-body {{ padding: 20px; background: #fff; }}
 </style>
 </head>
 <body>
-<p style="color:#6c757d;font-size:.875rem;margin-bottom:1.5rem">{summary.name} · {run.label or ''}</p>
+<div class="email-header">📰 AI News</div>
+<div class="email-body">
+<p style="color:#6c757d;font-size:.875rem;margin-bottom:1rem">{summary.name} · {run.label or ''}</p>
+<p style="margin-bottom:1.5rem"><a href="{open_url}">Open this edition in the app →</a></p>
 {html_body}
+</div>
 </body>
 </html>"""
 

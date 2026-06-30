@@ -21,9 +21,10 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
+from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import NewsItem, Summary, SummaryRun, Tag, utcnow
-from ..services import summarize
+from ..services import generation_registry, summarize
 from ..summaries import registry as summary_registry
 from ..tagging import engine as tagging_engine
 
@@ -40,7 +41,6 @@ def index():
 @bp.route("/dashboard")
 @login_required
 def dashboard():
-    recent = NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(10).all()
     my_summaries = (
         Summary.query.filter_by(user_id=current_user.id)
         .order_by(Summary.created_at)
@@ -55,13 +55,36 @@ def dashboard():
         )
         for s in my_summaries
     }
+
+    featured_summary = current_user.featured_summary
+    if featured_summary and featured_summary.user_id != current_user.id:
+        featured_summary = None
+    featured_run = latest_editions.get(featured_summary.id) if featured_summary else None
+    other_summaries = [
+        s for s in my_summaries if not featured_summary or s.id != featured_summary.id
+    ]
+
     return render_template(
         "dashboard.html",
-        recent=recent,
         my_summaries=my_summaries,
         latest_editions=latest_editions,
         summary_types=summary_registry.all_types(),
+        featured_summary=featured_summary,
+        featured_run=featured_run,
+        other_summaries=other_summaries,
     )
+
+
+@bp.route("/dashboard/feature", methods=["POST"])
+@login_required
+def dashboard_feature():
+    summary_id = request.form.get("summary_id", type=int)
+    summary = db.session.get(Summary, summary_id) if summary_id else None
+    if not summary or summary.user_id != current_user.id:
+        abort(404)
+    current_user.featured_summary_id = summary.id
+    db.session.commit()
+    return redirect(url_for("web.dashboard"))
 
 
 # ───────────────────────── Settings ─────────────────────────
@@ -245,11 +268,15 @@ def summaries():
     )
     # Show the latest revision of each edition chain (heads), newest first.
     editions = {s.id: summarize.edition_heads(s)[:20] for s in mine}
+    active_generations = {
+        s.id: generation_registry.get(s.id) for s in mine if generation_registry.get(s.id)
+    }
     return render_template(
         "summaries/list.html",
         summaries=mine,
         editions=editions,
         types=summary_registry.all_types(),
+        active_generations=active_generations,
     )
 
 
@@ -257,6 +284,7 @@ def summaries():
 @login_required
 def summary_new():
     types = summary_registry.all_types()
+    has_existing = Summary.query.filter_by(user_id=current_user.id).first() is not None
     if request.method == "POST":
         type_key = request.form.get("type_key")
         if type_key not in types:
@@ -277,10 +305,15 @@ def summary_new():
                 params=_collect_params(plugin_cls),
             )
             db.session.add(summary)
+            db.session.flush()
+            if not has_existing or request.form.get("feature_this"):
+                current_user.featured_summary_id = summary.id
             db.session.commit()
             flash("Summary created.", "success")
             return redirect(url_for("web.summaries"))
-    return render_template("summaries/edit.html", summary=None, types=types)
+    return render_template(
+        "summaries/edit.html", summary=None, types=types, has_existing=has_existing
+    )
 
 
 @bp.route("/summaries/<int:summary_id>/edit", methods=["GET", "POST"])
@@ -369,7 +402,12 @@ def generate_debug(summary_id: int):
 @bp.route("/summaries/<int:summary_id>/generate/stream")
 @login_required
 def generate_stream(summary_id: int):
-    """SSE endpoint that runs the agent and streams its log events."""
+    """SSE endpoint that runs the agent and streams its log events.
+
+    Idempotent: if a generation is already running for this summary (e.g. the
+    user navigated away and came back), this re-attaches to that run's event
+    stream instead of starting a second one.
+    """
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
@@ -377,34 +415,49 @@ def generate_stream(summary_id: int):
     if not getattr(plugin_cls, "is_agentic", False):
         abort(400)
 
-    app = current_app._get_current_object()
-    event_queue: queue.Queue = queue.Queue()
+    handle = generation_registry.get(summary_id)
+    if handle is None:
+        handle = generation_registry.start(summary_id, kind="generate")
+        app = current_app._get_current_object()
 
-    def _run():
-        with app.app_context():
-            try:
-                s = db.session.get(Summary, summary_id)
+        def _run():
+            with app.app_context():
+                try:
+                    s = db.session.get(Summary, summary_id)
+                    _, _items, run = summarize.build_summary(
+                        s, record_run=True, log_fn=handle.emit,
+                        cancel_event=handle.cancel_event,
+                    )
+                    handle.emit({"type": "done", "run_id": run.id})
+                except AgentCancelled:
+                    handle.emit({"type": "cancelled"})
+                except Exception as exc:  # noqa: BLE001
+                    handle.emit({"type": "error", "message": str(exc)})
+                finally:
+                    generation_registry.finish(handle)
 
-                def log_fn(event: dict) -> None:
-                    event_queue.put(event)
+        threading.Thread(target=_run, daemon=True).start()
 
-                _, _items, run = summarize.build_summary(s, record_run=True, log_fn=log_fn)
-                event_queue.put({"type": "done", "run_id": run.id})
-            except Exception as exc:  # noqa: BLE001
-                event_queue.put({"type": "error", "message": str(exc)})
+    return _stream_handle(handle)
 
-    threading.Thread(target=_run, daemon=True).start()
+
+def _stream_handle(handle) -> Response:
+    """Subscribe to a GenerationHandle and stream its events as SSE."""
+    q = handle.subscribe()
 
     def _stream():
-        while True:
-            try:
-                event = event_queue.get(timeout=30)
-            except queue.Empty:
-                yield ": heartbeat\n\n"
-                continue
-            yield f"data: {json.dumps(event)}\n\n"
-            if event.get("type") in ("done", "error"):
-                break
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=30)
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+                    continue
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("done", "error", "cancelled"):
+                    break
+        finally:
+            handle.unsubscribe(q)
 
     return Response(
         stream_with_context(_stream()),
@@ -492,7 +545,11 @@ def edition_feedback_debug(summary_id: int, run_id: int):
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    if f"feedback_{run_id}" not in session:
+    # Either there's stashed feedback to kick off a new run, or a run for this
+    # summary is already in flight (e.g. reached via the summaries list Logs
+    # link) and we're just re-attaching to its live stream.
+    has_pending_feedback = f"feedback_{run_id}" in session
+    if not has_pending_feedback and generation_registry.get(summary_id) is None:
         flash("Enter some feedback first.", "warning")
         return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
     return render_template("summaries/revise_debug.html", summary=summary, run=run)
@@ -501,51 +558,57 @@ def edition_feedback_debug(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback/stream")
 @login_required
 def edition_feedback_stream(summary_id: int, run_id: int):
-    """SSE endpoint that applies the stashed feedback and streams the agent log."""
+    """SSE endpoint that applies the stashed feedback and streams the agent log.
+
+    Idempotent the same way as generate_stream: re-attaches to an already
+    running revision instead of starting a second one.
+    """
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    text = session.pop(f"feedback_{run_id}", None)
-    if not text:
-        abort(400)
 
-    app = current_app._get_current_object()
-    event_queue: queue.Queue = queue.Queue()
+    handle = generation_registry.get(summary_id)
+    if handle is None:
+        text = session.pop(f"feedback_{run_id}", None)
+        if not text:
+            abort(400)
+        handle = generation_registry.start(summary_id, kind="revise", parent_run_id=run_id)
+        app = current_app._get_current_object()
 
-    def _run():
-        with app.app_context():
-            try:
-                parent_run = db.session.get(SummaryRun, run_id)
+        def _run():
+            with app.app_context():
+                try:
+                    parent_run = db.session.get(SummaryRun, run_id)
+                    new_run = summarize.revise_edition(
+                        parent_run, text, log_fn=handle.emit,
+                        cancel_event=handle.cancel_event,
+                    )
+                    handle.emit({"type": "done", "run_id": new_run.id})
+                except AgentCancelled:
+                    handle.emit({"type": "cancelled"})
+                except Exception as exc:  # noqa: BLE001
+                    handle.emit({"type": "error", "message": str(exc)})
+                finally:
+                    generation_registry.finish(handle)
 
-                def log_fn(event: dict) -> None:
-                    event_queue.put(event)
+        threading.Thread(target=_run, daemon=True).start()
 
-                new_run = summarize.revise_edition(parent_run, text, log_fn=log_fn)
-                event_queue.put({"type": "done", "run_id": new_run.id})
-            except Exception as exc:  # noqa: BLE001
-                event_queue.put({"type": "error", "message": str(exc)})
+    return _stream_handle(handle)
 
-    threading.Thread(target=_run, daemon=True).start()
 
-    def _stream():
-        while True:
-            try:
-                event = event_queue.get(timeout=30)
-            except queue.Empty:
-                yield ": heartbeat\n\n"
-                continue
-            yield f"data: {json.dumps(event)}\n\n"
-            if event.get("type") in ("done", "error"):
-                break
-
-    return Response(
-        stream_with_context(_stream()),
-        content_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+@bp.route("/summaries/<int:summary_id>/generate/cancel", methods=["POST"])
+@login_required
+def generate_cancel(summary_id: int):
+    """Cancel an in-flight agentic generation or revision for this summary."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    if generation_registry.cancel(summary_id):
+        flash("Cancelling…", "info")
+    return redirect(url_for("web.summaries"))
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/logs")
@@ -627,6 +690,19 @@ def _collect_params(plugin_cls) -> dict:
         elif spec.get("type") == "checkboxes":
             vals = request.form.getlist(f"param_{field}")
             params[field] = [int(v) for v in vals if v.lstrip("-").isdigit()]
+        elif spec.get("type") == "number":
+            raw = request.form.get(f"param_{field}")
+            try:
+                val = int(raw)
+            except (TypeError, ValueError):
+                val = spec.get("default")
+            else:
+                lo, hi = spec.get("min"), spec.get("max")
+                if lo is not None:
+                    val = max(lo, val)
+                if hi is not None:
+                    val = min(hi, val)
+            params[field] = val
         else:
             val = request.form.get(f"param_{field}")
             if val is not None:
