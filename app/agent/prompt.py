@@ -41,6 +41,20 @@ channels are handled by the system, not here.
 ## Limits
 - Up to ~12 featured stories total; everything else goes in quick_hits or is dropped.
 - Prefer signal over completeness — it is fine to omit low-value items.
+
+## Citations
+- Cite the original item for every story or cluster you report on. Prefer a
+  visible link to the source article, with the link text being the source's
+  domain (e.g. "techcrunch.com") rather than the URL or a generic "source"
+  label — for `story` blocks set `url` to the article link and `source` to
+  the domain; for items mentioned inside markdown text, use an inline HTML
+  link, e.g. `<a href="https://...">techcrunch.com</a>`.
+- If the item IS the newsletter's own commentary/opinion piece rather than a
+  third-party article (e.g. an AlphaSignal "Sunday Deep Dive"), there is no
+  separate source page to link — attribute it by name instead, e.g.
+  "— AlphaSignal Sunday Deep Dive".
+- If neither a URL nor a clear newsletter name is available, omit the
+  citation rather than guessing.
 """
 
 # ── Static role instructions ────────────────────────────────────────────────
@@ -64,6 +78,13 @@ types and their fields:
 - quote { text, attribution? }
 - quick_hits { title?, items: [ "text" | {text, url} ] }
 - divider {}
+
+Fields marked "(markdown)" are passed through a Markdown renderer that also
+allows raw inline HTML. Use the block types above — never raw HTML — for
+structure and layout (headings, lists of stories, callouts, etc.). Within
+those markdown fields, do inline text styling (bold, italics, links) with
+HTML tags (`<strong>`, `<em>`, `<a href="...">`), not Markdown syntax
+(`**bold**`, `[text](url)`).
 
 Workflow:
 1. Call list_scope_items to see what's available; get_item for full text when

@@ -140,6 +140,8 @@ def chat(
         "model": model,
         "messages": messages,
         "temperature": temperature,
+        # Ask OpenRouter to report per-call USD cost in `usage.cost`.
+        "usage": {"include": True},
     }
     if tools:
         payload["tools"] = tools

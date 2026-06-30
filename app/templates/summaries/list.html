@@ -65,6 +65,10 @@
       </span>
       <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
          class="btn btn-sm btn-outline-primary">Open</a>
+      {% if run.agent_log %}
+      <a href="{{ url_for('web.edition_logs', summary_id=s.id, run_id=run.id) }}"
+         class="btn btn-sm btn-outline-secondary">Logs</a>
+      {% endif %}
       <form method="post"
             action="{{ url_for('web.edition_delete', summary_id=s.id, run_id=run.id) }}"
             class="d-inline">

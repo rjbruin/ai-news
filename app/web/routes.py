@@ -490,6 +490,19 @@ def edition_feedback(summary_id: int, run_id: int):
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=new_run.id))
 
 
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/logs")
+@login_required
+def edition_logs(summary_id: int, run_id: int):
+    """Static replay of an edition's recorded agent log."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    return render_template("summaries/edition_logs.html", summary=summary, run=run)
+
+
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])
 @login_required
 def edition_delete(summary_id: int, run_id: int):

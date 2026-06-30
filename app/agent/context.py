@@ -21,6 +21,7 @@ class AgentSession:
     document: list[dict] = field(default_factory=list)
     pending_headlines: str | None = None   # set via write_headlines tool
     tokens_used: int = 0
+    cost_used: float = 0.0
 
     def item_by_id(self, item_id):
         for it in self.items:

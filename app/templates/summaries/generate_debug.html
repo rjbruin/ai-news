@@ -7,6 +7,7 @@
     <h1 class="h3 mb-0">Generating edition</h1>
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
+  <div id="cost-ticker" class="small text-body-secondary">Cost so far: $0.0000</div>
   <div id="status-indicator">
     <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span>
     <span class="text-body-secondary small">Running…</span>
@@ -32,95 +33,23 @@
 </div>
 {% endblock %}
 {% block scripts %}
+{% include "summaries/partials/_agent_log_js.html" %}
 <script>
 (function () {
   const logEl = document.getElementById('agent-log');
-  const indicator = document.getElementById('status-indicator');
+  const statusEl = document.getElementById('status-indicator');
+  const costEl = document.getElementById('cost-ticker');
   const summaryId = logEl.dataset.summaryId;
-  let placeholderCleared = false;
-
-  function clearPlaceholder() {
-    if (!placeholderCleared) {
-      logEl.innerHTML = '';
-      placeholderCleared = true;
-    }
-  }
-
-  function esc(s) {
-    return String(s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  function append(html) {
-    clearPlaceholder();
-    logEl.insertAdjacentHTML('beforeend', html);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  function setStatus(html) {
-    indicator.innerHTML = html;
-  }
+  const log = createAgentLog(logEl, statusEl, costEl);
 
   const source = new EventSource(`/summaries/${summaryId}/generate/stream`);
 
   source.onmessage = function (e) {
     const ev = JSON.parse(e.data);
+    log.handleEvent(ev);
 
-    if (ev.type === 'start') {
-      append(
-        `<div class="text-info-emphasis mb-1">` +
-        `▶ ${ev.items} item(s) in scope · model: <code>${esc(ev.model)}</code>` +
-        `</div>`
-      );
-
-    } else if (ev.type === 'llm_call') {
-      append(
-        `<div class="mt-2 text-body-secondary">` +
-        `<span class="text-primary fw-semibold">Step ${ev.step}</span> — calling LLM` +
-        `<span class="spinner-border spinner-border-sm ms-2 align-middle" ` +
-        `      id="step-spinner-${ev.step}" role="status"></span>` +
-        `</div>`
-      );
-
-    } else if (ev.type === 'tool_call') {
-      const sp = document.getElementById(`step-spinner-${ev.step}`);
-      if (sp) sp.remove();
-      append(
-        `<div class="ms-3">` +
-        `<span class="text-success">→</span> ` +
-        `<code class="text-primary">${esc(ev.name)}</code>` +
-        `<span class="text-body-secondary"> ${esc(ev.args_preview)}</span>` +
-        `</div>`
-      );
-
-    } else if (ev.type === 'tool_result') {
-      append(
-        `<div class="ms-3 text-body-secondary">` +
-        `<span class="text-secondary">←</span> ${esc(ev.preview)}` +
-        `</div>`
-      );
-
-    } else if (ev.type === 'stop') {
-      // remove any lingering step spinner (model returned no tool calls)
-      const sp = document.getElementById(`step-spinner-${ev.step}`);
-      if (sp) sp.remove();
-      const reasons = {
-        no_tool_calls: 'agent finished',
-        max_steps: 'hit step limit',
-        token_limit: 'hit token budget',
-      };
-      append(
-        `<div class="mt-2 pt-2 border-top text-body-secondary">` +
-        `■ ${reasons[ev.reason] || ev.reason} — ` +
-        `${ev.step} step(s), ${ev.total_tokens} tokens` +
-        `</div>`
-      );
-
-    } else if (ev.type === 'done') {
+    if (ev.type === 'done') {
       source.close();
-      append(`<div class="mt-2 text-success fw-semibold">✓ Edition ready</div>`);
-      setStatus('<span class="text-success small fw-semibold">✓ Done</span>');
       const footer = document.getElementById('footer-done');
       footer.classList.remove('d-none');
       document.getElementById('view-link').href =
@@ -128,16 +57,13 @@
 
     } else if (ev.type === 'error') {
       source.close();
-      append(`<div class="mt-2 text-danger fw-semibold">✗ ${esc(ev.message)}</div>`);
-      setStatus('<span class="text-danger small fw-semibold">✗ Error</span>');
       document.getElementById('footer-error').classList.remove('d-none');
     }
   };
 
   source.onerror = function () {
     source.close();
-    append('<div class="mt-2 text-danger">✗ Connection lost.</div>');
-    setStatus('<span class="text-danger small fw-semibold">✗ Disconnected</span>');
+    log.handleEvent({type: 'error', message: 'Connection lost.'});
     document.getElementById('footer-error').classList.remove('d-none');
   };
 }());

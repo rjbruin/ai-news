@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Agent log · {{ summary.name }} · AI News{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+     class="btn btn-sm btn-outline-secondary">← Edition</a>
+  <div class="flex-grow-1">
+    <h1 class="h3 mb-0">Agent log</h1>
+    <div class="small text-body-secondary">{{ summary.name }} · {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+  </div>
+  <div id="cost-ticker" class="small text-body-secondary">Cost so far: $0.0000</div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <div id="agent-log"
+         class="p-3 font-monospace small overflow-auto"
+         style="min-height: 220px; max-height: 75vh;">
+      {% if not run.agent_log %}
+      <span class="text-body-secondary">No log was recorded for this edition.</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "summaries/partials/_agent_log_js.html" %}
+<script>
+(function () {
+  const logEl = document.getElementById('agent-log');
+  const costEl = document.getElementById('cost-ticker');
+  const log = createAgentLog(logEl, null, costEl);
+  const events = {{ (run.agent_log or []) | tojson }};
+  if (events.length) {
+    events.forEach(log.handleEvent);
+  } else {
+    log.setCost({{ run.agent_cost or 0 }});
+  }
+}());
+</script>
+{% endblock %}

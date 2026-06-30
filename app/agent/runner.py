@@ -99,14 +99,19 @@ def run_agent(
         )
         usage = message.get("_usage") or {}
         step_tokens = int(usage.get("total_tokens") or 0)
+        step_cost = float(usage.get("cost") or 0.0)
         session.tokens_used += step_tokens
+        session.cost_used += step_cost
+        emit({"type": "usage", "step": step + 1, "tokens": step_tokens,
+              "total_tokens": session.tokens_used, "cost": step_cost,
+              "total_cost": session.cost_used})
 
         messages.append(_clean_assistant_message(message))
         tool_calls = message.get("tool_calls") or []
 
         if not tool_calls:
             emit({"type": "stop", "reason": "no_tool_calls", "step": step + 1,
-                  "total_tokens": session.tokens_used})
+                  "total_tokens": session.tokens_used, "total_cost": session.cost_used})
             break
 
         for call in tool_calls:
@@ -134,7 +139,7 @@ def run_agent(
 
         if max_tokens and session.tokens_used >= max_tokens:
             emit({"type": "stop", "reason": "token_limit", "step": step + 1,
-                  "total_tokens": session.tokens_used})
+                  "total_tokens": session.tokens_used, "total_cost": session.cost_used})
             logger.warning(
                 "Agent token budget reached (%d) for summary %d; stopping.",
                 session.tokens_used, session.summary.id,
@@ -142,7 +147,7 @@ def run_agent(
             break
     else:
         emit({"type": "stop", "reason": "max_steps", "step": max_steps,
-              "total_tokens": session.tokens_used})
+              "total_tokens": session.tokens_used, "total_cost": session.cost_used})
         logger.warning(
             "Agent hit max steps (%d) for summary %d.", max_steps, session.summary.id
         )
