@@ -43,6 +43,13 @@ class AgenticDailyPageSummary(NewsSummary):
             "label": "Send as email newsletter when edition is cut",
             "default": False,
         },
+        "max_steps": {
+            "type": "number",
+            "label": "Max agent steps per edition",
+            "default": 50,
+            "min": 1,
+            "max": 200,
+        },
     }
 
     def build(

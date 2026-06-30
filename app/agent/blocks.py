@@ -9,6 +9,7 @@ layouts — the "super-WYSIWYG editor using system-defined elements".
 from __future__ import annotations
 
 import uuid
+from urllib.parse import urlparse
 
 # ── Block schema ──────────────────────────────────────────────────────────
 # For each type: required fields, optional fields (with defaults), and any
@@ -72,6 +73,16 @@ class BlockValidationError(ValueError):
     """Raised when a block document fails validation."""
 
 
+def url_domain(url: str | None) -> str:
+    """Bare domain for citing an article (e.g. 'techcrunch.com'), or ''."""
+    if not url:
+        return ""
+    host = urlparse(url).netloc
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
 def _validate_block(block: dict, index: int) -> dict:
     if not isinstance(block, dict):
         raise BlockValidationError(f"Block {index} is not an object.")
@@ -104,6 +115,12 @@ def _validate_block(block: dict, index: int) -> dict:
                 f"must be one of {allowed}."
             )
 
+    # story.source is never trusted from the agent — it's derived from url so
+    # it can't drift to a hallucinated or stale label (e.g. echoing item_type,
+    # or the ingestion feed name). No url means no source, deliberately.
+    if btype == "story":
+        clean["source"] = url_domain(clean.get("url"))
+
     # quick_hits.items normalisation: list of {text, url?}
     if btype == "quick_hits":
         norm = []
@@ -128,7 +145,33 @@ def validate_document(blocks: list) -> list[dict]:
     """
     if not isinstance(blocks, list):
         raise BlockValidationError("Document must be a list of blocks.")
-    return [_validate_block(b, i) for i, b in enumerate(blocks)]
+    cleaned = [_validate_block(b, i) for i, b in enumerate(blocks)]
+    return _dedupe_stories(cleaned)
+
+
+def _dedupe_stories(blocks: list[dict]) -> list[dict]:
+    """Collapse duplicate `story` blocks that cite the same item_id.
+
+    When drafting a long, multi-section document the agent sometimes features
+    the same item twice under different sections, independently, so citation
+    completeness can differ between the copies. Keep the first occurrence,
+    fill in its url/source from a later duplicate if that one has it, and
+    drop the rest rather than showing the same story twice.
+    """
+    first_index: dict[int, int] = {}
+    out: list[dict] = []
+    for block in blocks:
+        item_id = block.get("item_id") if block.get("type") == "story" else None
+        if item_id is not None and item_id in first_index:
+            kept = out[first_index[item_id]]
+            if not kept.get("url") and block.get("url"):
+                kept["url"] = block["url"]
+                kept["source"] = block.get("source", "")
+            continue
+        if item_id is not None:
+            first_index[item_id] = len(out)
+        out.append(block)
+    return out
 
 
 def find_block(blocks: list[dict], block_id: str) -> int | None:

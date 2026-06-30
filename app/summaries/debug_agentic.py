@@ -31,6 +31,13 @@ class DebugAgenticSummary(NewsSummary):
             "label": "End (UTC)",
             "default": "",
         },
+        "max_steps": {
+            "type": "number",
+            "label": "Max agent steps per edition",
+            "default": 50,
+            "min": 1,
+            "max": 200,
+        },
     }
 
     def build(

@@ -103,6 +103,12 @@
         <input type="datetime-local" name="param_{{ field }}" class="form-control"
                value="{{ cur_val }}">
 
+        {% elif spec.type == 'number' %}
+        <label class="form-label">{{ spec.label }}</label>
+        <input type="number" name="param_{{ field }}" class="form-control"
+               value="{{ cur_val if cur_val is not none else spec.get('default', '') }}"
+               min="{{ spec.get('min', 1) }}" max="{{ spec.get('max', '') }}">
+
         {% else %}
         <label class="form-label">{{ spec.label }}</label>
         <input name="param_{{ field }}" class="form-control"
@@ -112,6 +118,15 @@
       </div>
       {% endfor %}
     {% endfor %}
+
+    {% if not summary and has_existing %}
+    <div class="form-check">
+      <input type="checkbox" name="feature_this" class="form-check-input" id="feature_this">
+      <label class="form-check-label" for="feature_this">
+        Feature this summary on my dashboard
+      </label>
+    </div>
+    {% endif %}
 
   </div>
   <div class="card-footer d-flex justify-content-between">

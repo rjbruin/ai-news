@@ -97,6 +97,10 @@ function createAgentLog(logEl, statusEl, costEl) {
     } else if (ev.type === 'error') {
       append(`<div class="mt-2 text-danger fw-semibold">✗ ${esc(ev.message)}</div>`);
       setStatus('<span class="text-danger small fw-semibold">✗ Error</span>');
+
+    } else if (ev.type === 'cancelled') {
+      append(`<div class="mt-2 text-warning-emphasis fw-semibold">⊘ Cancelled</div>`);
+      setStatus('<span class="text-warning-emphasis small fw-semibold">⊘ Cancelled</span>');
     }
   }
 

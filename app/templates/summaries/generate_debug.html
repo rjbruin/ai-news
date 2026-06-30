@@ -23,6 +23,11 @@
       <span class="text-body-secondary">Connecting…</span>
     </div>
   </div>
+  <div class="card-footer" id="footer-running">
+    <form method="post" action="{{ url_for('web.generate_cancel', summary_id=summary.id) }}">
+      <button class="btn btn-outline-danger btn-sm">Cancel</button>
+    </form>
+  </div>
   <div class="card-footer d-none" id="footer-done">
     <a id="view-link" href="#" class="btn btn-primary btn-sm">Open edition →</a>
     <a href="{{ url_for('web.summaries') }}" class="btn btn-outline-secondary btn-sm ms-2">Back to summaries</a>
@@ -50,13 +55,15 @@
 
     if (ev.type === 'done') {
       source.close();
+      document.getElementById('footer-running').classList.add('d-none');
       const footer = document.getElementById('footer-done');
       footer.classList.remove('d-none');
       document.getElementById('view-link').href =
         `/summaries/${summaryId}/editions/${ev.run_id}`;
 
-    } else if (ev.type === 'error') {
+    } else if (ev.type === 'error' || ev.type === 'cancelled') {
       source.close();
+      document.getElementById('footer-running').classList.add('d-none');
       document.getElementById('footer-error').classList.remove('d-none');
     }
   };
@@ -64,6 +71,7 @@
   source.onerror = function () {
     source.close();
     log.handleEvent({type: 'error', message: 'Connection lost.'});
+    document.getElementById('footer-running').classList.add('d-none');
     document.getElementById('footer-error').classList.remove('d-none');
   };
 }());

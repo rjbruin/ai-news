@@ -9,59 +9,148 @@
   </form>
   {% endif %}
 </div>
-{% if my_summaries %}
-<div class="row g-3 mb-4">
-  {% for s in my_summaries %}
-  {% set run = latest_editions[s.id] %}
-  <div class="col-sm-6 col-lg-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-body d-flex flex-column">
-        <div class="d-flex justify-content-between align-items-start mb-1">
-          <span class="fw-semibold">{{ s.name }}</span>
-          <span class="badge text-bg-light border ms-2 flex-shrink-0 small">
-            {{ summary_types[s.type_key].label if s.type_key in summary_types else s.type_key }}
-          </span>
-        </div>
-        {% if run %}
-          <div class="text-body-secondary small mb-3">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</div>
-          <div class="mt-auto">
-            <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
-               class="btn btn-sm btn-primary w-100">Open</a>
+{% if not my_summaries %}
+<div class="card shadow-sm">
+  <div class="card-body text-center py-5">
+    <p class="text-body-secondary mb-3">You don't have any summaries yet.</p>
+    <a href="{{ url_for('web.summary_new') }}" class="btn btn-primary">Create your first summary</a>
+  </div>
+</div>
+
+{% elif not featured_summary %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h2 class="h5">Choose a summary to feature</h2>
+    <p class="text-body-secondary small mb-3">
+      Pick one of your summaries to show prominently on this dashboard.
+    </p>
+    <div class="row g-3">
+      {% for s in my_summaries %}
+      <div class="col-sm-6 col-lg-4">
+        <form method="post" action="{{ url_for('web.dashboard_feature') }}">
+          <input type="hidden" name="summary_id" value="{{ s.id }}">
+          <div class="card h-100">
+            <div class="card-body d-flex flex-column">
+              <span class="fw-semibold">{{ s.name }}</span>
+              <span class="badge text-bg-light border align-self-start my-1 small">
+                {{ summary_types[s.type_key].label if s.type_key in summary_types else s.type_key }}
+              </span>
+              <button class="btn btn-sm btn-primary mt-auto">Feature this</button>
+            </div>
           </div>
-        {% elif s.scope_mode == 'since_last' %}
-          <div class="text-body-secondary small mb-3 fst-italic">No editions yet</div>
-          <div class="mt-auto">
-            <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
-               class="btn btn-sm btn-outline-primary w-100">Open now</a>
-          </div>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <div>
+        <span class="fw-semibold fs-5">{{ featured_summary.name }}</span>
+        <span class="badge text-bg-light border ms-1 small">
+          {{ summary_types[featured_summary.type_key].label if featured_summary.type_key in summary_types else featured_summary.type_key }}
+        </span>
+      </div>
+      <a href="#choose-featured" class="small" data-bs-toggle="collapse">Change</a>
+    </div>
+    {% if featured_run %}
+      <h1 class="h3 mb-1">
+        {{ featured_run.label or featured_run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if featured_run.read_at %}
+        <span class="badge text-bg-light border text-body-secondary align-middle ms-1">read</span>
         {% else %}
-          <div class="text-body-secondary small fst-italic">No editions cut yet</div>
+        <span class="badge text-bg-primary align-middle ms-1">unread</span>
         {% endif %}
+      </h1>
+      <div class="text-body-secondary small mb-3">
+        {{ featured_run.generated_at.strftime('%Y-%m-%d %H:%M') }} ·
+        {{ featured_run.item_count }} item{{ 's' if featured_run.item_count != 1 else '' }}
+      </div>
+      <a href="{{ url_for('web.edition_view', summary_id=featured_summary.id, run_id=featured_run.id) }}"
+         class="btn btn-primary">Open</a>
+    {% elif featured_summary.scope_mode == 'since_last' %}
+      <p class="text-body-secondary fst-italic mb-3">No editions yet</p>
+      <a href="{{ url_for('web.summary_open', summary_id=featured_summary.id) }}"
+         class="btn btn-outline-primary btn-generate">Open now</a>
+    {% else %}
+      <p class="text-body-secondary fst-italic mb-0">No editions cut yet</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="collapse mb-4" id="choose-featured">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h2 class="h6">Feature a different summary</h2>
+      <div class="row g-3">
+        {% for s in my_summaries %}
+        <div class="col-sm-6 col-lg-4">
+          <form method="post" action="{{ url_for('web.dashboard_feature') }}">
+            <input type="hidden" name="summary_id" value="{{ s.id }}">
+            <div class="card h-100 {{ 'border-primary' if s.id == featured_summary.id else '' }}">
+              <div class="card-body d-flex flex-column">
+                <span class="fw-semibold">{{ s.name }}</span>
+                <span class="badge text-bg-light border align-self-start my-1 small">
+                  {{ summary_types[s.type_key].label if s.type_key in summary_types else s.type_key }}
+                </span>
+                <button class="btn btn-sm btn-outline-primary mt-auto"
+                        {{ 'disabled' if s.id == featured_summary.id else '' }}>
+                  {{ 'Featured' if s.id == featured_summary.id else 'Feature this' }}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+        {% endfor %}
       </div>
     </div>
   </div>
-  {% endfor %}
+</div>
+
+{% if other_summaries %}
+<div class="card shadow-sm">
+  <div class="card-header">
+    <span class="fw-semibold">Other recent editions</span>
+  </div>
+  <div class="list-group list-group-flush">
+    {% for s in other_summaries %}
+    {% set run = latest_editions[s.id] %}
+    <div class="list-group-item d-flex align-items-center gap-2 py-2">
+      <span class="flex-shrink-0 small text-body-secondary" style="width:9rem">{{ s.name }}</span>
+      {% if run %}
+        <span class="flex-grow-1 {{ '' if run.read_at else 'fw-semibold' }}">
+          {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+        </span>
+        {% if not run.read_at %}
+        <span class="badge rounded-pill text-bg-primary" style="width:.5rem;height:.5rem;padding:0;" title="Unread"></span>
+        {% endif %}
+        <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
+           class="btn btn-sm btn-outline-primary">Open</a>
+      {% elif s.scope_mode == 'since_last' %}
+        <span class="flex-grow-1 text-body-secondary fst-italic small">No editions yet</span>
+        <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
+           class="btn btn-sm btn-outline-primary btn-generate">Open now</a>
+      {% else %}
+        <span class="flex-grow-1 text-body-secondary fst-italic small">No editions cut yet</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
-
-<div class="card shadow-sm">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span class="fw-semibold">Latest news</span>
-    <a href="{{ url_for('web.news') }}" class="btn btn-sm btn-outline-primary">View all</a>
-  </div>
-  <ul class="list-group list-group-flush">
-    {% for item in recent %}
-    <li class="list-group-item">
-      <div class="fw-semibold">
-        {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
-        {% else %}{{ item.title }}{% endif %}
-      </div>
-      <div class="small text-body-secondary">{{ item.summary_text }}</div>
-      {% for link in item.tag_links %}<span class="badge text-bg-light border">{{ link.tag.name }}</span>{% endfor %}
-    </li>
-    {% else %}
-    <li class="list-group-item text-body-secondary">No news yet. An admin can add a source and poll it.</li>
-    {% endfor %}
-  </ul>
-</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-generate').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    btn.classList.add('disabled');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating…';
+  });
+});
+</script>
 {% endblock %}
