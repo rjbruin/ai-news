@@ -14,8 +14,8 @@
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
   {% if is_agentic %}
-  <a href="{{ url_for('web.summary_memory', summary_id=summary.id) }}"
-     class="btn btn-sm btn-outline-secondary">Memory</a>
+  <a href="{{ url_for('web.summary_edit', summary_id=summary.id) }}"
+     class="btn btn-sm btn-outline-secondary">Settings</a>
   {% endif %}
   <form method="post" id="unread-form"
         action="{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}"

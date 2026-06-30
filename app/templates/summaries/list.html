@@ -1,13 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Summaries · AI News{% endblock %}
+{% block title %}Editions · AI News{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3 mb-0">Your summaries</h1>
-  <a href="{{ url_for('web.summary_new') }}" class="btn btn-primary">New summary</a>
-</div>
+<h1 class="h3 mb-4">Editions</h1>
 
 {% if not summaries %}
-<p class="text-body-secondary">No summaries yet.</p>
+<p class="text-body-secondary">No edition configuration found.</p>
 {% endif %}
 
 {% for s in summaries %}
@@ -15,49 +12,19 @@
 {% set gen = active_generations.get(s.id) %}
 <div class="card shadow-sm mb-4">
   <div class="card-header d-flex align-items-center gap-2">
-    <div class="flex-grow-1">
-      <span class="fw-semibold fs-6">{{ s.name }}</span>
-      <span class="badge text-bg-light border ms-1">
-        {{ types[s.type_key].label if s.type_key in types else s.type_key }}
-      </span>
-      <div class="small text-body-secondary mt-1">
-        {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
-          Cut on open
-        {% elif s.period == 'day' %}
-          Daily at {{ (s.params or {}).get('release_time', '08:00') }} UTC
-        {% else %}
-          {% set day_names = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}
-          Weekly on {{ day_names[(s.params or {}).get('release_day', '0')|int] }}s at 08:00 UTC
-        {% endif %}
-        {% if (s.params or {}).get('send_email') %}
-          · <span class="text-success">email on cut</span>
-        {% endif %}
-      </div>
-    </div>
+    <span class="fw-semibold flex-grow-1">All editions</span>
     <div class="d-flex gap-2 flex-shrink-0">
       {% if gen %}
         <span class="btn btn-sm btn-primary disabled">
           <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
           {{ 'Revising…' if gen.kind == 'revise' else 'Generating…' }}
         </span>
-      {% elif s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
-        <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
-           class="btn btn-sm btn-primary btn-generate">Open now</a>
-      {% elif s.type_key in types and types[s.type_key].is_agentic %}
-        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
-           class="btn btn-sm btn-primary">Generate now</a>
       {% else %}
-        <form method="post" action="{{ url_for('web.summary_generate', summary_id=s.id) }}" class="d-inline">
-          <button class="btn btn-sm btn-primary btn-generate">Generate now</button>
-        </form>
+        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
+           class="btn btn-sm btn-primary">Generate</a>
       {% endif %}
-      {% if s.type_key in types and types[s.type_key].is_agentic %}
-        <a href="{{ url_for('web.summary_memory', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Memory</a>
-      {% endif %}
-      <a href="{{ url_for('web.summary_edit', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
-      <form method="post" action="{{ url_for('web.summary_delete', summary_id=s.id) }}" class="d-inline">
-        <button class="btn btn-sm btn-outline-danger">Delete</button>
-      </form>
+      <a href="{{ url_for('web.summary_memory', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Memory</a>
+      <a href="{{ url_for('web.summary_edit', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Settings</a>
     </div>
   </div>
 
@@ -106,16 +73,7 @@
   </div>
   {% else %}
   <div class="card-body text-body-secondary small fst-italic">
-    {% if s.scope_mode == 'since_last' and s.type_key not in ('debug_agentic',) %}
-      No editions yet — click "Open now" to cut one.
-    {% else %}
-      No editions cut yet.
-      {% if s.type_key in types and types[s.type_key].is_agentic %}
-        Click "Generate now" to run the agent.
-      {% else %}
-        The next one will be cut automatically at the scheduled time.
-      {% endif %}
-    {% endif %}
+    No editions yet — click "Generate" to run the agent.
   </div>
   {% endif %}
 </div>

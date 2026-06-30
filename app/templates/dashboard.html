@@ -1,28 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · AI News{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="mb-4">
   <h1 class="h3 mb-0">Dashboard</h1>
-  {% if current_user.is_admin %}
-  <form method="post" action="{{ url_for('admin.poll_all') }}">
-    <button class="btn btn-outline-primary">Refresh news</button>
-  </form>
-  {% endif %}
 </div>
 {% if not my_summaries %}
 <div class="card shadow-sm">
   <div class="card-body text-center py-5">
-    <p class="text-body-secondary mb-3">You don't have any summaries yet.</p>
-    <a href="{{ url_for('web.summary_new') }}" class="btn btn-primary">Create your first summary</a>
+    <p class="text-body-secondary mb-0">No edition configuration found. Ask an admin to set one up.</p>
   </div>
 </div>
 
 {% elif not featured_summary %}
 <div class="card shadow-sm mb-4">
   <div class="card-body">
-    <h2 class="h5">Choose a summary to feature</h2>
+    <h2 class="h5">Choose an edition type to feature</h2>
     <p class="text-body-secondary small mb-3">
-      Pick one of your summaries to show prominently on this dashboard.
+      Pick the edition type to show prominently on this dashboard.
     </p>
     <div class="row g-3">
       {% for s in my_summaries %}
@@ -32,9 +26,6 @@
           <div class="card h-100">
             <div class="card-body d-flex flex-column">
               <span class="fw-semibold">{{ s.name }}</span>
-              <span class="badge text-bg-light border align-self-start my-1 small">
-                {{ summary_types[s.type_key].label if s.type_key in summary_types else s.type_key }}
-              </span>
               <button class="btn btn-sm btn-primary mt-auto">Feature this</button>
             </div>
           </div>
@@ -49,13 +40,10 @@
 <div class="card shadow-sm mb-4">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start mb-2">
-      <div>
-        <span class="fw-semibold fs-5">{{ featured_summary.name }}</span>
-        <span class="badge text-bg-light border ms-1 small">
-          {{ summary_types[featured_summary.type_key].label if featured_summary.type_key in summary_types else featured_summary.type_key }}
-        </span>
-      </div>
+      <span class="text-body-secondary small">Most recent edition</span>
+      {% if my_summaries|length > 1 %}
       <a href="#choose-featured" class="small" data-bs-toggle="collapse">Change</a>
+      {% endif %}
     </div>
     {% if featured_run %}
       <h1 class="h3 mb-1">
@@ -72,20 +60,19 @@
       </div>
       <a href="{{ url_for('web.edition_view', summary_id=featured_summary.id, run_id=featured_run.id) }}"
          class="btn btn-primary">Open</a>
-    {% elif featured_summary.scope_mode == 'since_last' %}
-      <p class="text-body-secondary fst-italic mb-3">No editions yet</p>
-      <a href="{{ url_for('web.summary_open', summary_id=featured_summary.id) }}"
-         class="btn btn-outline-primary btn-generate">Open now</a>
     {% else %}
-      <p class="text-body-secondary fst-italic mb-0">No editions cut yet</p>
+      <p class="text-body-secondary fst-italic mb-3">No editions generated yet.</p>
+      <a href="{{ url_for('web.generate_debug', summary_id=featured_summary.id) }}"
+         class="btn btn-primary">Generate first edition</a>
     {% endif %}
   </div>
 </div>
 
+{% if my_summaries|length > 1 %}
 <div class="collapse mb-4" id="choose-featured">
   <div class="card shadow-sm">
     <div class="card-body">
-      <h2 class="h6">Feature a different summary</h2>
+      <h2 class="h6">Feature a different edition type</h2>
       <div class="row g-3">
         {% for s in my_summaries %}
         <div class="col-sm-6 col-lg-4">
@@ -94,9 +81,6 @@
             <div class="card h-100 {{ 'border-primary' if s.id == featured_summary.id else '' }}">
               <div class="card-body d-flex flex-column">
                 <span class="fw-semibold">{{ s.name }}</span>
-                <span class="badge text-bg-light border align-self-start my-1 small">
-                  {{ summary_types[s.type_key].label if s.type_key in summary_types else s.type_key }}
-                </span>
                 <button class="btn btn-sm btn-outline-primary mt-auto"
                         {{ 'disabled' if s.id == featured_summary.id else '' }}>
                   {{ 'Featured' if s.id == featured_summary.id else 'Feature this' }}
@@ -110,6 +94,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 {% if other_summaries %}
 <div class="card shadow-sm">
@@ -130,12 +115,8 @@
         {% endif %}
         <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
            class="btn btn-sm btn-outline-primary">Open</a>
-      {% elif s.scope_mode == 'since_last' %}
-        <span class="flex-grow-1 text-body-secondary fst-italic small">No editions yet</span>
-        <a href="{{ url_for('web.summary_open', summary_id=s.id) }}"
-           class="btn btn-sm btn-outline-primary btn-generate">Open now</a>
       {% else %}
-        <span class="flex-grow-1 text-body-secondary fst-italic small">No editions cut yet</span>
+        <span class="flex-grow-1 text-body-secondary fst-italic small">No editions yet</span>
       {% endif %}
     </div>
     {% endfor %}
