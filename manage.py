@@ -1,10 +1,11 @@
 """Management CLI: `python manage.py <command>`.
 
 Commands:
-  init-db     Create all tables (quick start without Alembic).
-  seed-tags   Insert a small starter global taxonomy.
-  poll        Poll all due sources once (force).
-  run         Run the dev server.
+  init-db           Create all tables (quick start without Alembic).
+  seed-tags         Insert a small starter global taxonomy.
+  poll              Poll all due sources once (force).
+  rerender-editions Re-render stored HTML for all agentic editions from their block documents.
+  run               Run the dev server.
 """
 from __future__ import annotations
 
@@ -52,6 +53,25 @@ def poll(app):
         print(ingest.ingest_all_due(force=True))
 
 
+def rerender_editions(app):
+    from app.agent.render import render_html
+    from app.models import SummaryRun
+
+    with app.app_context():
+        runs = SummaryRun.query.filter(SummaryRun.document.isnot(None)).all()
+        updated = 0
+        for run in runs:
+            if not run.document:
+                continue
+            try:
+                run.content = render_html(run.document)
+                updated += 1
+            except Exception as e:
+                print(f"  Run {run.id}: failed — {e}")
+        db.session.commit()
+        print(f"Re-rendered {updated} editions.")
+
+
 def main():
     app = create_app()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
@@ -61,6 +81,8 @@ def main():
         seed_tags(app)
     elif cmd == "poll":
         poll(app)
+    elif cmd == "rerender-editions":
+        rerender_editions(app)
     elif cmd == "run":
         app.run(host="0.0.0.0", port=app.config["PORT"], debug=True)
     else:

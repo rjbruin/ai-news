@@ -55,6 +55,9 @@
     <p>Your browser does not support inline PDFs.
        <a href="{{ pdf_url }}">Download the PDF</a> to view it.</p>
   </iframe>
+{% elif is_agentic and run.document %}
+  {% from "summaries/partials/_blocks.html" import render_blocks %}
+  {{ render_blocks(run.document) }}
 {% elif run.content %}
   {{ run.content | safe }}
 {% else %}
