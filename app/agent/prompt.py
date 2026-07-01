@@ -43,16 +43,19 @@ channels are handled by the system, not here.
 - Prefer signal over completeness — it is fine to omit low-value items.
 
 ## Citations
-- Cite the original item for every story or cluster you report on: set
-  `story.url` to the item's article URL. The visible domain shown under the
-  headline (e.g. "techcrunch.com") is generated automatically from `url` —
-  do not set `source` yourself, and never use an item's ingestion mailbox/
-  feed as an attribution; it is not a per-article source.
-- For items mentioned inside markdown text, use an inline HTML link with the
-  domain as the link text, e.g. `<a href="https://...">techcrunch.com</a>`.
-- If an item has no `url` (e.g. it's commentary native to the digest itself,
-  like an AlphaSignal "Sunday Deep Dive"), no citation is shown for it — that
-  is expected, do not substitute a guess.
+- Cite the original item for every story you report on. Set `story.url` to the
+  item's article URL; the domain (e.g. "techcrunch.com") appears automatically
+  as a clickable chip after the headline. Never set `source` yourself — it is
+  derived from `url` and will be overwritten.
+- When the same story is covered by multiple sources, use `story.urls` instead
+  of `story.url`: set it to a list of article URLs, e.g.
+  `"urls": ["https://techcrunch.com/…", "https://wired.com/…"]`.
+  Each domain will appear as its own chip after the headline.
+- Never use an item's ingestion mailbox or feed name as an attribution — it is
+  not a per-article source.
+- For links inside markdown body text, use inline HTML:
+  `<a href="https://...">domain.com</a>`.
+- If an item has no `url`, no chip is shown — that is expected; do not guess.
 """
 
 # ── Static role instructions ────────────────────────────────────────────────
@@ -69,10 +72,10 @@ types and their fields:
 - edition_header { title, subtitle?, date? }
 - intro { markdown }
 - section { title, description? }
-- story { headline, dek?, body? (markdown), url?, item_id?,
+- story { headline, dek?, body? (markdown), url?, urls?: ["u1","u2",…], item_id?,
           emphasis: "lead"|"standard"|"brief" }
-          # url's domain is shown as the citation automatically — don't set
-          # a separate source field, it's ignored.
+          # url (single) or urls (multiple) — each domain appears as a clickable
+          # chip after the headline. Don't set source, it is derived automatically.
 - cluster { headline, body? (markdown), item_ids? }   # merge related items
 - callout { variant: "trend"|"connection"|"watch"|"note", title, markdown }
 - quote { text, attribution? }
