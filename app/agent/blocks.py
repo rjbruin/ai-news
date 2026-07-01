@@ -8,8 +8,11 @@ layouts — the "super-WYSIWYG editor using system-defined elements".
 """
 from __future__ import annotations
 
+import re
 import uuid
 from urllib.parse import urlparse
+
+_TAG_RE = re.compile(r"<[^>]+>")
 
 # ── Block schema ──────────────────────────────────────────────────────────
 # For each type: required fields, optional fields (with defaults), and any
@@ -22,6 +25,7 @@ BLOCK_SCHEMA: dict[str, dict] = {
     "edition_header": {
         "required": ["title"],
         "optional": {"subtitle": "", "date": ""},
+        "plain_text": ["title", "subtitle"],
     },
     "intro": {
         "required": ["markdown"],
@@ -30,6 +34,7 @@ BLOCK_SCHEMA: dict[str, dict] = {
     "section": {
         "required": ["title"],
         "optional": {"description": ""},
+        "plain_text": ["title", "description"],
     },
     "story": {
         "required": ["headline"],
@@ -43,23 +48,28 @@ BLOCK_SCHEMA: dict[str, dict] = {
             "emphasis": "standard",
         },
         "enums": {"emphasis": STORY_EMPHASIS},
+        "plain_text": ["headline", "dek"],
     },
     "cluster": {
         "required": ["headline"],
         "optional": {"item_ids": [], "body": ""},
+        "plain_text": ["headline"],
     },
     "callout": {
         "required": ["title", "markdown"],
         "optional": {"variant": "note"},
         "enums": {"variant": CALLOUT_VARIANTS},
+        "plain_text": ["title"],
     },
     "quote": {
         "required": ["text"],
         "optional": {"attribution": ""},
+        "plain_text": ["text", "attribution"],
     },
     "quick_hits": {
         "required": ["items"],
         "optional": {"title": "Also notable"},
+        "plain_text": ["title"],
     },
     "divider": {
         "required": [],
@@ -72,6 +82,13 @@ BLOCK_TYPES = tuple(BLOCK_SCHEMA.keys())
 
 class BlockValidationError(ValueError):
     """Raised when a block document fails validation."""
+
+
+def strip_tags(text: str | None) -> str:
+    """Remove any HTML tags from a plain-text field."""
+    if not text:
+        return text or ""
+    return _TAG_RE.sub("", text).strip()
 
 
 def url_domain(url: str | None) -> str:
@@ -115,6 +132,14 @@ def _validate_block(block: dict, index: int) -> dict:
                 f"Block {index} ({btype}) field {field!r}={clean.get(field)!r} "
                 f"must be one of {allowed}."
             )
+
+    # Strip HTML tags from plain-text fields. Agents sometimes embed <a> tags
+    # in headline/title/dek — those fields are never rendered as HTML so the
+    # tags would show as raw text. Markdown fields (body, markdown) are left
+    # alone because they intentionally accept inline HTML.
+    for field in schema.get("plain_text", []):
+        if clean.get(field):
+            clean[field] = strip_tags(clean[field])
 
     # story.sources is always derived — never trust the agent's source/url values
     # directly, they can drift. Accept url (string) or urls (list); normalise

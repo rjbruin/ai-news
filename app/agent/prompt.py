@@ -74,8 +74,9 @@ types and their fields:
 - section { title, description? }
 - story { headline, dek?, body? (markdown), url?, urls?: ["u1","u2",…], item_id?,
           emphasis: "lead"|"standard"|"brief" }
-          # url (single) or urls (multiple) — each domain appears as a clickable
-          # chip after the headline. Don't set source, it is derived automatically.
+          # headline and dek are plain text — no HTML tags. url (single) or
+          # urls (multiple) — each domain appears as a clickable chip after the
+          # headline. Don't set source, it is derived automatically.
 - cluster { headline, body? (markdown), item_ids? }   # merge related items
 - callout { variant: "trend"|"connection"|"watch"|"note", title, markdown }
 - quote { text, attribution? }
