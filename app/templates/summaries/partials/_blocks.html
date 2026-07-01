@@ -30,23 +30,24 @@
 {%- elif t == 'story' -%}
   {%- set lead = block.emphasis == 'lead' -%}
   {%- set brief = block.emphasis == 'brief' -%}
+  {#- Backward-compat: old blocks have url/source strings but no sources list.
+      Always derive domain from url directly — block.source may be stale. -#}
+  {%- set _srcs = block.sources if block.sources else ([{'url': block.url, 'domain': block.url | url_domain}] if block.url else []) -%}
   {%- if brief -%}
   <article class="agentic-story agentic-story--brief d-flex align-items-baseline gap-2 mb-2">
     <h3 class="an-h5 mb-0 flex-grow-1">
-      {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
-      {% else %}{{ block.headline }}{% endif %}
+      {{ block.headline }}
+      {%- for src in _srcs %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
     </h3>
-    {% if block.source %}<span class="small text-body-secondary text-nowrap">{{ block.source }}</span>{% endif %}
   </article>
   {%- else -%}
   <article class="agentic-story {{ 'agentic-story--lead mb-4' if lead else 'agentic-story--standard mb-3' }}">
     <h3 class="{{ 'an-h3' if lead else 'an-h4' }} mb-1">
-      {% if block.url %}<a href="{{ block.url }}" target="_blank" rel="noopener">{{ block.headline }}</a>
-      {% else %}{{ block.headline }}{% endif %}
+      {{ block.headline }}
+      {%- for src in _srcs %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
     </h3>
     {% if block.dek %}<p class="fw-semibold mb-1">{{ block.dek }}</p>{% endif %}
     {% if block.body %}<div class="mb-1">{{ block.body | md }}</div>{% endif %}
-    {% if block.source %}<p class="small text-body-secondary mb-0">{{ block.source }}</p>{% endif %}
   </article>
   {%- endif -%}
 

@@ -124,6 +124,31 @@ a[target="_blank"]:not(.btn)::after {
   padding: .5rem .75rem;
 }
 
+/* Source citation chips — appear inline after a story headline. */
+.story-source {
+  display: inline-block;
+  font-size: .68rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--bs-secondary-color);
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: .25rem;
+  padding: 0 .4em;
+  margin-left: .4em;
+  text-decoration: none;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.story-source:hover {
+  color: var(--ag-blue);
+  border-color: var(--ag-blue);
+  text-decoration: none;
+}
+/* Consecutive chips sit flush with a hair of gap. */
+.story-source + .story-source { margin-left: .2em; }
+
 .agentic-cluster {
   background: var(--ag-teal-tint);
   border-left: 4px solid var(--ag-teal);

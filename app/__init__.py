@@ -180,6 +180,12 @@ def register_template_helpers(app: Flask) -> None:
     def inject_globals():
         return {"app_version": get_version()}
 
+    @app.template_filter("url_domain")
+    def url_domain_filter(url):
+        """Extract bare domain from a URL for use as citation text."""
+        from .agent.blocks import url_domain
+        return url_domain(url)
+
     @app.template_filter("monthday")
     def monthday_filter(dt):
         if dt is None:

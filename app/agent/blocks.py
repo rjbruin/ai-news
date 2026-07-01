@@ -38,7 +38,8 @@ BLOCK_SCHEMA: dict[str, dict] = {
             "dek": "",
             "body": "",
             "url": "",
-            "source": "",
+            "urls": [],   # list of URL strings — use for multiple source articles
+            "source": "",  # deprecated; derived automatically from url/urls
             "emphasis": "standard",
         },
         "enums": {"emphasis": STORY_EMPHASIS},
@@ -115,11 +116,28 @@ def _validate_block(block: dict, index: int) -> dict:
                 f"must be one of {allowed}."
             )
 
-    # story.source is never trusted from the agent — it's derived from url so
-    # it can't drift to a hallucinated or stale label (e.g. echoing item_type,
-    # or the ingestion feed name). No url means no source, deliberately.
+    # story.sources is always derived — never trust the agent's source/url values
+    # directly, they can drift. Accept url (string) or urls (list); normalise
+    # both into sources: [{url, domain}], deduped and domain-verified.
     if btype == "story":
-        clean["source"] = url_domain(clean.get("url"))
+        url_list: list[str] = []
+        raw_urls = clean.get("urls")
+        if isinstance(raw_urls, list):
+            url_list = [u for u in raw_urls if isinstance(u, str) and u.strip()]
+        primary = clean.get("url", "")
+        if primary and primary not in url_list:
+            url_list.insert(0, primary)
+        seen_domains: set[str] = set()
+        sources: list[dict] = []
+        for u in url_list:
+            d = url_domain(u)
+            if d and d not in seen_domains:
+                sources.append({"url": u, "domain": d})
+                seen_domains.add(d)
+        clean["sources"] = sources
+        # Keep legacy url/source for backward-compat (email renderer etc.)
+        clean["url"] = sources[0]["url"] if sources else ""
+        clean["source"] = sources[0]["domain"] if sources else ""
 
     # quick_hits.items normalisation: list of {text, url?}
     if btype == "quick_hits":
@@ -153,10 +171,9 @@ def _dedupe_stories(blocks: list[dict]) -> list[dict]:
     """Collapse duplicate `story` blocks that cite the same item_id.
 
     When drafting a long, multi-section document the agent sometimes features
-    the same item twice under different sections, independently, so citation
-    completeness can differ between the copies. Keep the first occurrence,
-    fill in its url/source from a later duplicate if that one has it, and
-    drop the rest rather than showing the same story twice.
+    the same item twice under different sections. Keep the first occurrence and
+    merge *all* source URLs from later duplicates into it, so no citation is
+    lost. Drop the duplicate block itself.
     """
     first_index: dict[int, int] = {}
     out: list[dict] = []
@@ -164,6 +181,13 @@ def _dedupe_stories(blocks: list[dict]) -> list[dict]:
         item_id = block.get("item_id") if block.get("type") == "story" else None
         if item_id is not None and item_id in first_index:
             kept = out[first_index[item_id]]
+            # Merge sources from the duplicate without repeating domains.
+            existing = {s["url"] for s in kept.get("sources") or []}
+            for src in block.get("sources") or []:
+                if src.get("url") and src["url"] not in existing:
+                    kept.setdefault("sources", []).append(src)
+                    existing.add(src["url"])
+            # Backfill primary url/source if the kept block has none.
             if not kept.get("url") and block.get("url"):
                 kept["url"] = block["url"]
                 kept["source"] = block.get("source", "")
