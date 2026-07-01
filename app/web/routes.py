@@ -89,26 +89,61 @@ def dashboard_feature():
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
+    from ..agent import memory as agent_memory
+    from ..agent.prompt import DEFAULT_DAILY_CONTENT_CONFIG, DEFAULT_INTERESTS
+
+    summary = (
+        Summary.query
+        .filter_by(user_id=current_user.id, type_key="agentic_page")
+        .first()
+    )
+    types = summary_registry.all_types()
+
     if request.method == "POST":
+        # Account settings
         current_user.openrouter_model = (
             request.form.get("openrouter_model") or ""
         ).strip() or None
-
         if request.form.get("clear_key"):
             current_user.set_openrouter_key(None)
-            flash("OpenRouter API key removed.", "info")
         else:
             new_key = (request.form.get("openrouter_api_key") or "").strip()
             if new_key:
                 current_user.set_openrouter_key(new_key)
-                flash("OpenRouter API key saved.", "success")
-            else:
-                flash("Settings updated.", "success")
-
         db.session.commit()
+
+        # Summary schedule + memory
+        if summary:
+            summary.period = request.form.get("period", summary.period)
+            summary.params = _collect_params(types[summary.type_key])
+            db.session.commit()
+            for kind in ("interests", "content_config", "history"):
+                if f"mem_{kind}" in request.form:
+                    agent_memory.write(
+                        current_user, summary, kind,
+                        request.form.get(f"mem_{kind}", ""),
+                    )
+
+        flash("Settings saved.", "success")
         return redirect(url_for("web.settings"))
 
-    return render_template("settings.html")
+    files, headlines = {}, []
+    retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+    if summary:
+        files = {
+            "interests": agent_memory.ensure_default(
+                current_user, summary, "interests", DEFAULT_INTERESTS),
+            "content_config": agent_memory.ensure_default(
+                current_user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG),
+            "history": agent_memory.read(current_user, summary, "history"),
+        }
+        headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
+
+    return render_template(
+        "settings.html",
+        summary=summary, types=types,
+        files=files, headlines=headlines, retention=retention,
+    )
 
 
 # ───────────────────────── News ─────────────────────────
@@ -154,47 +189,30 @@ def summaries():
 @bp.route("/summaries/<int:summary_id>/edit", methods=["GET", "POST"])
 @login_required
 def summary_edit(summary_id: int):
-    from ..agent import memory as agent_memory
-    from ..agent.prompt import DEFAULT_DAILY_CONTENT_CONFIG, DEFAULT_INTERESTS
-
-    summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
-        abort(403)
-    types = summary_registry.all_types()
-
-    if request.method == "POST":
-        summary.period = request.form.get("period", summary.period)
-        summary.params = _collect_params(types[summary.type_key])
-        db.session.commit()
-        for kind in ("interests", "content_config", "history"):
-            if f"mem_{kind}" in request.form:
-                agent_memory.write(
-                    current_user, summary, kind,
-                    request.form.get(f"mem_{kind}", ""),
-                )
-        flash("Settings updated.", "success")
-        return redirect(url_for("web.summaries"))
-
-    files = {
-        "interests": agent_memory.ensure_default(
-            current_user, summary, "interests", DEFAULT_INTERESTS),
-        "content_config": agent_memory.ensure_default(
-            current_user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG),
-        "history": agent_memory.read(current_user, summary, "history"),
-    }
-    retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
-    headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
-    return render_template(
-        "summaries/edit.html",
-        summary=summary, types=types,
-        files=files, headlines=headlines, retention=retention,
-    )
+    return redirect(url_for("web.settings"))
 
 
 @bp.route("/summaries/<int:summary_id>/memory", methods=["GET", "POST"])
 @login_required
 def summary_memory(summary_id: int):
-    return redirect(url_for("web.summary_edit", summary_id=summary_id))
+    return redirect(url_for("web.settings"))
+
+
+@bp.route("/summaries/<int:summary_id>/generate/custom", methods=["POST"])
+@login_required
+def generate_custom(summary_id: int):
+    """Store a custom date range in the session and redirect to the live log page."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    plugin_cls = summary_registry.get(summary.type_key)
+    if not getattr(plugin_cls, "is_agentic", False):
+        abort(400)
+    session[f"custom_range_{summary_id}"] = {
+        "range_start": request.form.get("range_start", ""),
+        "range_end": request.form.get("range_end", ""),
+    }
+    return redirect(url_for("web.generate_debug", summary_id=summary_id))
 
 
 @bp.route("/summaries/<int:summary_id>/delete", methods=["POST"])
@@ -269,6 +287,9 @@ def generate_stream(summary_id: int):
     if not getattr(plugin_cls, "is_agentic", False):
         abort(400)
 
+    # Pop any custom date range set by generate_custom before starting the thread.
+    custom_range = session.pop(f"custom_range_{summary_id}", None)
+
     handle = generation_registry.get(summary_id)
     if handle is None:
         handle = generation_registry.start(summary_id, kind="generate")
@@ -278,6 +299,8 @@ def generate_stream(summary_id: int):
             with app.app_context():
                 try:
                     s = db.session.get(Summary, summary_id)
+                    if custom_range:
+                        s.params = {**(s.params or {}), **custom_range}
                     _, _items, run = summarize.build_summary(
                         s, record_run=True, log_fn=handle.emit,
                         cancel_event=handle.cancel_event,

@@ -20,11 +20,11 @@
           {{ 'Revising…' if gen.kind == 'revise' else 'Generating…' }}
         </span>
       {% else %}
-        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
-           class="btn btn-sm btn-primary">Generate</a>
+        <button type="button" class="btn btn-sm btn-primary"
+                data-bs-toggle="modal" data-bs-target="#modal-new-edition-{{ s.id }}">
+          New custom edition
+        </button>
       {% endif %}
-      <a href="{{ url_for('web.summary_memory', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Memory</a>
-      <a href="{{ url_for('web.summary_edit', summary_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Settings</a>
     </div>
   </div>
 
@@ -51,7 +51,7 @@
     {% for run in runs %}
     <div class="list-group-item d-flex align-items-center gap-2 py-2">
       {% if not run.read_at %}
-      <span class="badge rounded-pill text-bg-primary" style="width:.5rem;height:.5rem;padding:0;" title="Unread"></span>
+      <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
       {% endif %}
       <span class="flex-grow-1 {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
       <span class="badge text-bg-light border text-body-secondary small">
@@ -77,6 +77,40 @@
   </div>
   {% endif %}
 </div>
+{% if not gen %}
+<div class="modal fade" id="modal-new-edition-{{ s.id }}" tabindex="-1"
+     aria-labelledby="modal-label-{{ s.id }}" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-label-{{ s.id }}">New custom edition</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{{ url_for('web.generate_custom', summary_id=s.id) }}">
+        <div class="modal-body">
+          <p class="text-body-secondary small mb-3">
+            Choose the news window for this edition. Items fetched within this
+            range will be passed to the agent.
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Start (UTC)</label>
+            <input type="datetime-local" name="range_start" class="form-control" required>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">End (UTC)</label>
+            <input type="datetime-local" name="range_end" class="form-control" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Generate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endfor %}
 {% endblock %}
 {% block scripts %}
