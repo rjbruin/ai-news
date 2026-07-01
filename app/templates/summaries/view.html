@@ -9,12 +9,12 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="badge text-bg-secondary align-middle">rev {{ run.revision }}</span>
       {% endif %}
-      <span id="read-badge" class="badge align-middle ms-1 {{ 'text-bg-light border text-body-secondary' if run.read_at else 'd-none' }}">read</span>
+      <i id="read-badge" class="fa-regular fa-envelope-open text-body-secondary ms-2 {{ '' if run.read_at else 'd-none' }}" title="Read"></i>
     </h1>
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
   {% if is_agentic %}
-  <a href="{{ url_for('web.summary_edit', summary_id=summary.id) }}"
+  <a href="{{ url_for('web.settings') }}"
      class="btn btn-sm btn-outline-secondary">Settings</a>
   {% endif %}
   <form method="post" id="unread-form"

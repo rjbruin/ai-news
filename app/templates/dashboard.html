@@ -49,9 +49,9 @@
       <h1 class="h3 mb-1">
         {{ featured_run.label or featured_run.generated_at.strftime('%Y-%m-%d %H:%M') }}
         {% if featured_run.read_at %}
-        <span class="badge text-bg-light border text-body-secondary align-middle ms-1">read</span>
+        <i class="fa-regular fa-envelope-open text-body-secondary ms-2" title="Read"></i>
         {% else %}
-        <span class="badge text-bg-primary align-middle ms-1">unread</span>
+        <i class="fa-solid fa-envelope text-primary ms-2" title="Unread"></i>
         {% endif %}
       </h1>
       <div class="text-body-secondary small mb-3">
@@ -111,7 +111,7 @@
           {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
         </span>
         {% if not run.read_at %}
-        <span class="badge rounded-pill text-bg-primary" style="width:.5rem;height:.5rem;padding:0;" title="Unread"></span>
+        <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
         {% endif %}
         <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
            class="btn btn-sm btn-outline-primary">Open</a>
