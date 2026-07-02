@@ -58,7 +58,7 @@
 </div>
 
 <h2 class="h5">Users</h2>
-<div class="table-responsive shadow-sm">
+<div class="table-responsive shadow-sm mb-4">
   <table class="table bg-white mb-0">
     <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th></tr></thead>
     <tbody>
@@ -69,6 +69,41 @@
         <td>{{ '✓' if u.email_verified else '—' }}</td>
         <td>{{ 'admin' if u.is_admin else 'user' }}</td>
       </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5">Recent editions</h2>
+<div class="table-responsive shadow-sm">
+  <table class="table table-hover bg-white align-middle mb-0">
+    <thead><tr><th>Edition</th><th>Summary</th><th>User</th><th>Generated</th><th>Email</th><th></th></tr></thead>
+    <tbody>
+    {% for run in recent_runs %}
+      <tr>
+        <td>
+          <a href="{{ url_for('web.edition_view', summary_id=run.summary_id, run_id=run.id) }}">
+            {{ run.label or run.id }}
+          </a>
+        </td>
+        <td class="small">{{ run.summary.name }}</td>
+        <td class="small">{{ run.summary.user.email }}</td>
+        <td class="small">{{ run.generated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="small">
+          {% if run.summary.params and run.summary.params.get('send_email') %}
+            <span class="text-success">✓ enabled</span>
+          {% else %}
+            <span class="text-body-secondary">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('admin.run_resend_email', run_id=run.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-primary">Resend email</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="text-body-secondary">No editions yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

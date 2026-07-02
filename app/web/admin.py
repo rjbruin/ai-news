@@ -15,8 +15,9 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import IngestRun, NewsItem, NewsItemTag, Source, Tag, User
+from ..models import IngestRun, NewsItem, NewsItemTag, Source, Summary, SummaryRun, Tag, User
 from ..services import ingest
+from ..services.summarize import resend_edition_email
 from ..sources import registry as source_registry
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -36,11 +37,19 @@ def admin_required(view):
 @bp.route("/")
 @admin_required
 def index():
+    recent_runs = (
+        SummaryRun.query
+        .join(Summary, SummaryRun.summary_id == Summary.id)
+        .order_by(SummaryRun.generated_at.desc())
+        .limit(20)
+        .all()
+    )
     return render_template(
         "admin/index.html",
         sources=Source.query.order_by(Source.created_at.desc()).all(),
         users=User.query.order_by(User.created_at).all(),
         source_types=source_registry.all_types(),
+        recent_runs=recent_runs,
     )
 
 
@@ -123,6 +132,22 @@ def source_delete(source_id: int):
     db.session.delete(source)
     db.session.commit()
     flash("Source deleted.", "info")
+    return redirect(url_for("admin.index"))
+
+
+@bp.route("/runs/<int:run_id>/resend-email", methods=["POST"])
+@admin_required
+def run_resend_email(run_id: int):
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    summary = run.summary
+    try:
+        resend_edition_email(summary, run)
+        flash(
+            f"Email resent: \"{run.label or run.id}\" → {summary.user.email}",
+            "success",
+        )
+    except Exception as exc:
+        flash(f"Failed to resend email: {exc}", "danger")
     return redirect(url_for("admin.index"))
 
 
