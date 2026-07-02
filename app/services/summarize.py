@@ -425,7 +425,7 @@ def cut_due_editions(force: bool = False) -> int:
 
                 if summary.params and summary.params.get("send_email") and run:
                     try:
-                        _send_edition_email(summary, run, artifact)
+                        _send_edition_email(summary, run, artifact.html or "")
                     except Exception:  # noqa: BLE001
                         logger.exception("Failed to send email for edition %d", run.id)
 
@@ -442,7 +442,56 @@ def cut_due_editions(force: bool = False) -> int:
 
 # ─────────────────────────── email sending ────────────────────────────
 
-def _send_edition_email(summary: Summary, run: SummaryRun, artifact) -> None:
+# CSS embedded directly in the email so it works in clients that strip <link> tags.
+# CSS variables resolved to their literal values; only classes actually used by the
+# block renderer are included.
+_EMAIL_CSS = """\
+body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;color:#212529;margin:0;padding:0}
+a{color:#1f3a5f}
+h1,h2,h3,h4,h5,h6{margin-top:0;line-height:1.2}
+p{margin-top:0;margin-bottom:1rem}
+ul,ol{margin-bottom:1rem;padding-left:2rem}
+.mb-0{margin-bottom:0!important}.mb-1{margin-bottom:.25rem!important}.mb-3{margin-bottom:1rem!important}.mb-4{margin-bottom:1.5rem!important}
+.mt-5{margin-top:3rem!important}.my-3{margin-top:1rem!important;margin-bottom:1rem!important}
+.pb-3{padding-bottom:1rem!important}.border-bottom{border-bottom:1px solid #dee2e6!important}
+.lead{font-size:1.25rem}.small{font-size:.875rem}.text-body-secondary{color:#6c757d}.fw-semibold{font-weight:600}
+.an-h1{font-size:2.1rem;font-weight:800}.an-h2{font-size:1.5rem;font-weight:800;color:#1f3a5f}
+.an-h3{font-size:1.2rem;font-weight:700}.an-h4{font-size:1.05rem;font-weight:600}
+.an-h5{font-size:.95rem;font-weight:600}.an-label{font-size:.72rem;font-weight:700;letter-spacing:.04em}
+.agentic-intro{border-left:4px solid #1f3a5f;background:#eaf1ff;border-radius:0 .6rem .6rem 0;padding:1rem 1.25rem}
+.agentic-section{margin-top:2.5rem;margin-bottom:1rem}
+.agentic-item{background:#fff;border-left:4px solid #2f6fed;border-radius:0 .6rem .6rem 0;box-shadow:0 1px 5px rgba(15,23,42,.07);padding:.9rem 1.1rem;margin-bottom:1rem}
+.agentic-item__subheader{font-size:.9rem;font-weight:600;margin-bottom:.25rem}
+.agentic-item__summary{font-size:.9rem}.agentic-item__summary p:last-child{margin-bottom:0}
+.agentic-trend{background:#f3eefc;border-left:4px solid #8854d0;border-radius:0 .6rem .6rem 0;padding:.9rem 1.1rem;margin:1rem 0}
+.agentic-trend__headline{font-size:.95rem;font-weight:700;color:#8854d0;margin-bottom:.25rem}
+.agentic-trend__text{font-size:.9rem}.agentic-trend__text p:last-child{margin-bottom:0}
+.agentic-more-news{background:#fdf1df;border-left:4px solid #d9821f;border-radius:0 .6rem .6rem 0;padding:.75rem 1.1rem 1rem;margin:1rem 0}
+.agentic-more-news__title{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#d9821f;margin-bottom:.5rem}
+.agentic-more-news ul{list-style:none;padding:0;margin:0}
+.agentic-more-news li{padding:.3rem 0;font-size:.875rem;border-bottom:1px solid rgba(0,0,0,.06)}
+.agentic-more-news li:last-child{border-bottom:none}
+.story-source{display:inline-block;font-size:.68rem;font-weight:500;line-height:1.5;color:#6c757d;background:#fff;border:1px solid #dee2e6;border-radius:.25rem;padding:0 .4em;margin-left:.4em;text-decoration:none;vertical-align:middle;white-space:nowrap}
+.agentic-story--lead{background:#fff;border:1px solid rgba(31,58,95,.08);border-top:4px solid #1f3a5f;border-radius:.75rem;padding:1.25rem 1.5rem;margin-bottom:1.5rem}
+.agentic-story--standard{background:#eaf1ff;border-left:4px solid #2f6fed;border-radius:0 .6rem .6rem 0;padding:.9rem 1.1rem;margin-bottom:1rem}
+.agentic-story--brief{border-left:3px solid #5f6b7a;background:#eef1f3;border-radius:0 .4rem .4rem 0;padding:.5rem .75rem;margin-bottom:.5rem}
+.agentic-cluster{background:#e3f6f1;border-left:4px solid #128f77;border-radius:0 .6rem .6rem 0;padding:.9rem 1.1rem;margin-bottom:1rem}
+.agentic-callout{border-radius:.6rem;border:1px solid transparent;padding:1rem 1.25rem;margin:1rem 0}
+.agentic-callout--trend{background:#eaf1ff;border-color:rgba(47,111,237,.25)}
+.agentic-callout--connection{background:#f3eefc;border-color:rgba(136,84,208,.25)}
+.agentic-callout--watch{background:#fdf1df;border-color:rgba(217,130,31,.3)}
+.agentic-callout--note{background:#eef1f3;border-color:rgba(95,107,122,.25)}
+.agentic-quote{background:#f3eefc;border-left:4px solid #8854d0;border-radius:0 .6rem .6rem 0;padding:1rem 1.25rem;font-style:italic;margin:1rem 0}
+.agentic-quick-hits{background:#fdf1df;border:1px solid rgba(217,130,31,.35);border-radius:.75rem;padding:1.1rem 1.3rem;margin:1rem 0}
+.agentic-quick-hits__title{font-size:1.1rem;font-weight:800;color:#d9821f;margin-bottom:.65rem}
+.agentic-quick-hits ul{list-style:none;padding-left:0;margin-bottom:0}
+.agentic-divider{border:none;border-top:2px dashed rgba(31,58,95,.15);margin:1.5rem 0}
+.email-header{background:#1f3a5f;color:#fff;padding:14px 20px;font-weight:600;font-size:1.1rem}
+.email-body{padding:20px;background:#fff}
+"""
+
+
+def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> None:
     cfg = current_app.config
     smtp_host = cfg.get("SMTP_HOST", "")
     if not smtp_host:
@@ -454,29 +503,18 @@ def _send_edition_email(summary: Summary, run: SummaryRun, artifact) -> None:
         return
 
     subject = f"{summary.name} – {run.label or 'Edition'}"
-    html_body = artifact.html or ""
 
     with current_app.test_request_context(base_url=cfg.get("PUBLIC_URL", "")):
         open_url = url_for(
             "web.edition_view", summary_id=summary.id, run_id=run.id, _external=True
         )
-        app_css_url = url_for("static", filename="css/app.css", _external=True)
 
     full_html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>{subject}</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="{app_css_url}">
-<style>
-  body {{ max-width: 700px; margin: 0 auto; background: #f8f9fa; }}
-  .email-header {{
-    background: linear-gradient(90deg, #16293f, #1f3a5f);
-    color: #fff; padding: 14px 20px; font-weight: 600; font-size: 1.1rem;
-  }}
-  .email-body {{ padding: 20px; background: #fff; }}
-</style>
+<style>{_EMAIL_CSS}</style>
 </head>
 <body>
 <div class="email-header">📰 AI News</div>
@@ -507,3 +545,8 @@ def _send_edition_email(summary: Summary, run: SummaryRun, artifact) -> None:
         s.sendmail(msg["From"], [user.email], msg.as_string())
 
     logger.info("Sent edition email '%s' to %s", subject, user.email)
+
+
+def resend_edition_email(summary: Summary, run: SummaryRun) -> None:
+    """Re-send the email for an already-generated edition run."""
+    _send_edition_email(summary, run, run.content or "")
