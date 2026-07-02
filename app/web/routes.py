@@ -23,7 +23,7 @@ from flask_login import current_user, login_required
 
 from ..agent.runner import AgentCancelled
 from ..extensions import db
-from ..models import NewsItem, Summary, SummaryRun, utcnow
+from ..models import Alert, NewsItem, Summary, SummaryRun, utcnow
 from ..services import generation_registry, summarize
 from ..summaries import registry as summary_registry
 
@@ -35,6 +35,15 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for("web.dashboard"))
     return render_template("index.html")
+
+
+@bp.route("/alerts/<int:alert_id>/dismiss", methods=["POST"])
+@login_required
+def dismiss_alert(alert_id: int):
+    alert = Alert.query.filter_by(id=alert_id, user_id=current_user.id).first_or_404()
+    alert.dismissed_at = utcnow()
+    db.session.commit()
+    return "", 204
 
 
 @bp.route("/dashboard")

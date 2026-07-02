@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from flask import current_app, url_for
 
 from ..extensions import db
-from ..models import NewsItem, Summary, SummaryRun, utcnow
+from ..models import Alert, NewsItem, Summary, SummaryRun, utcnow
 from ..summaries import registry as summary_registry
 
 logger = logging.getLogger(__name__)
@@ -429,8 +429,13 @@ def cut_due_editions(force: bool = False) -> int:
                     except Exception:  # noqa: BLE001
                         logger.exception("Failed to send email for edition %d", run.id)
 
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to cut edition for summary %d", summary.id)
+                Alert.push(
+                    user_id=summary.user_id,
+                    key=f"edition:{summary.id}",
+                    message=f'Edition generation failed for "{summary.name}": {exc}',
+                )
 
     return cut
 

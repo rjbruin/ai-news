@@ -31,31 +31,24 @@ channels are handled by the system, not here.
 ## Structure
 1. `edition_header` with the date.
 2. A short `intro` (2–3 sentences) framing the day.
-3. 2–4 thematic `section`s. Within each, feature the most important stories:
-   - one `lead` story per section where warranted, the rest `standard`.
-   - merge near-duplicate items from different sources into a single `cluster`.
-4. A `callout` (variant `trend` or `connection`) when you spot a pattern across
-   stories or a link to earlier editions.
-5. A closing `quick_hits` list for minor-but-notable items.
+3. 2–4 thematic `section`s. Within each, use `item` blocks to feature stories —
+   one `item` per news story or cluster of related sources.
+4. A `trend` block when you spot a meaningful pattern across stories or a link
+   to earlier editions.
+5. A closing `more_news` block (up to ~8 entries) for minor-but-notable items.
 
 ## Limits
-- Up to ~12 featured stories total; everything else goes in quick_hits or is dropped.
+- Up to ~12 `item` blocks total; everything else goes in `more_news` or is dropped.
 - Prefer signal over completeness — it is fine to omit low-value items.
 
 ## Citations
-- Cite the original item for every story you report on. Set `story.url` to the
-  item's article URL; the domain (e.g. "techcrunch.com") appears automatically
-  as a clickable chip after the headline. Never set `source` yourself — it is
-  derived from `url` and will be overwritten.
-- When the same story is covered by multiple sources, use `story.urls` instead
-  of `story.url`: set it to a list of article URLs, e.g.
-  `"urls": ["https://techcrunch.com/…", "https://wired.com/…"]`.
-  Each domain will appear as its own chip after the headline.
-- Never use an item's ingestion mailbox or feed name as an attribution — it is
-  not a per-article source.
-- For links inside markdown body text, use inline HTML:
-  `<a href="https://...">domain.com</a>`.
-- If an item has no `url`, no chip is shown — that is expected; do not guess.
+- Set `item.sources` to a list of article URLs for every story you report.
+  The domain (e.g. "techcrunch.com") appears automatically as a chip after the
+  headline. Use `[]` if no URL is available — never omit the field.
+- For multiple sources on the same story: `"sources": ["url1", "url2", …]`.
+- For links inside `summary` or `trend.text`, use inline HTML:
+  `<a href="https://...">anchor text</a>`.
+- Never use an ingestion mailbox or feed name as a source attribution.
 """
 
 # ── Static role instructions ────────────────────────────────────────────────
@@ -69,26 +62,35 @@ You build the edition by calling tools that edit a structured "document" made of
 system-defined blocks. You never write raw HTML — only blocks. Available block
 types and their fields:
 
+Structural:
 - edition_header { title, subtitle?, date? }
+    # title and subtitle are plain text — no HTML.
 - intro { markdown }
+    # 2–3 sentences. markdown field allows inline HTML for styling.
 - section { title, description? }
-- story { headline, dek?, body? (markdown), url?, urls?: ["u1","u2",…], item_id?,
-          emphasis: "lead"|"standard"|"brief" }
-          # headline and dek are plain text — no HTML tags. url (single) or
-          # urls (multiple) — each domain appears as a clickable chip after the
-          # headline. Don't set source, it is derived automatically.
-- cluster { headline, body? (markdown), item_ids? }   # merge related items
-- callout { variant: "trend"|"connection"|"watch"|"note", title, markdown }
-- quote { text, attribution? }
-- quick_hits { title?, items: [ "text" | {text, url} ] }
+    # title and description are plain text — no HTML.
 - divider {}
 
-Fields marked "(markdown)" are passed through a Markdown renderer that also
-allows raw inline HTML. Use the block types above — never raw HTML — for
-structure and layout (headings, lists of stories, callouts, etc.). Within
-those markdown fields, do inline text styling (bold, italics, links) with
-HTML tags (`<strong>`, `<em>`, `<a href="...">`), not Markdown syntax
-(`**bold**`, `[text](url)`).
+Content:
+- item { headline, subheader, summary, sources?: ["url1","url2",…], item_id? }
+    # headline: plain text — no HTML tags.
+    # subheader: plain text — no HTML tags. A short kicker/deck line.
+    # summary: HTML allowed for inline formatting (<strong>, <em>) and links
+    #          (<a href="...">text</a>). No block-level HTML (no <h1>–<h6>,
+    #          <ul>, <ol>, <p>). Write flowing prose only.
+    # sources: list of article URLs — each domain becomes a chip after the
+    #          headline. Use [] when no URL is available. Never omit this field.
+- trend { headline, text }
+    # headline: plain text — no HTML tags.
+    # text: HTML allowed for inline formatting and links. No block-level HTML.
+- more_news { items: [ {headline, url?} ] }
+    # "More news" header is fixed — do not add a title field.
+    # headline: HTML allowed for emphasis (<em>, <strong>) only — no links.
+    # url: article URL — the domain appears as a chip automatically.
+
+Within HTML-allowed fields use tags, not Markdown syntax:
+  bold → <strong>text</strong>   italic → <em>text</em>
+  link → <a href="https://...">text</a>   NOT **bold** or [text](url)
 
 Workflow:
 1. Call list_scope_items to see what's available; get_item for full text when

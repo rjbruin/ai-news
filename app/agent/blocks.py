@@ -22,6 +22,7 @@ STORY_EMPHASIS = ("lead", "standard", "brief")
 CALLOUT_VARIANTS = ("trend", "connection", "watch", "note")
 
 BLOCK_SCHEMA: dict[str, dict] = {
+    # ── Structural blocks (always available to the agent) ──────────────────
     "edition_header": {
         "required": ["title"],
         "optional": {"subtitle": "", "date": ""},
@@ -36,6 +37,26 @@ BLOCK_SCHEMA: dict[str, dict] = {
         "optional": {"description": ""},
         "plain_text": ["title", "description"],
     },
+    "divider": {
+        "required": [],
+        "optional": {},
+    },
+    # ── Content blocks (current generation — agent uses these) ─────────────
+    "item": {
+        "required": ["headline", "subheader", "summary"],
+        "optional": {"item_id": None, "sources": []},
+        "plain_text": ["headline", "subheader"],
+    },
+    "trend": {
+        "required": ["headline", "text"],
+        "optional": {},
+        "plain_text": ["headline"],
+    },
+    "more_news": {
+        "required": ["items"],
+        "optional": {},
+    },
+    # ── Legacy blocks (not exposed to agent; kept for stored-document compat) ──
     "story": {
         "required": ["headline"],
         "optional": {
@@ -43,8 +64,8 @@ BLOCK_SCHEMA: dict[str, dict] = {
             "dek": "",
             "body": "",
             "url": "",
-            "urls": [],   # list of URL strings — use for multiple source articles
-            "source": "",  # deprecated; derived automatically from url/urls
+            "urls": [],
+            "source": "",
             "emphasis": "standard",
         },
         "enums": {"emphasis": STORY_EMPHASIS},
@@ -71,13 +92,15 @@ BLOCK_SCHEMA: dict[str, dict] = {
         "optional": {"title": "Also notable"},
         "plain_text": ["title"],
     },
-    "divider": {
-        "required": [],
-        "optional": {},
-    },
 }
 
 BLOCK_TYPES = tuple(BLOCK_SCHEMA.keys())
+
+# Block types the agent may produce (excludes legacy types kept for compat).
+AGENT_BLOCK_TYPES = (
+    "edition_header", "intro", "section", "divider",
+    "item", "trend", "more_news",
+)
 
 
 class BlockValidationError(ValueError):
@@ -141,9 +164,24 @@ def _validate_block(block: dict, index: int) -> dict:
         if clean.get(field):
             clean[field] = strip_tags(clean[field])
 
-    # story.sources is always derived — never trust the agent's source/url values
-    # directly, they can drift. Accept url (string) or urls (list); normalise
-    # both into sources: [{url, domain}], deduped and domain-verified.
+    # item.sources: agent passes a list of URL strings; normalise to [{url, domain}].
+    if btype == "item":
+        raw = clean.get("sources")
+        if isinstance(raw, str):
+            raw = [raw] if raw.strip() else []
+        elif not isinstance(raw, list):
+            raw = []
+        seen_d: set[str] = set()
+        normalized: list[dict] = []
+        for u in raw:
+            if isinstance(u, str) and u.strip():
+                d = url_domain(u.strip())
+                if d and d not in seen_d:
+                    normalized.append({"url": u.strip(), "domain": d})
+                    seen_d.add(d)
+        clean["sources"] = normalized
+
+    # story.sources: derive from url/urls (legacy path — keep for old documents).
     if btype == "story":
         url_list: list[str] = []
         raw_urls = clean.get("urls")
@@ -160,11 +198,24 @@ def _validate_block(block: dict, index: int) -> dict:
                 sources.append({"url": u, "domain": d})
                 seen_domains.add(d)
         clean["sources"] = sources
-        # Keep legacy url/source for backward-compat (email renderer etc.)
         clean["url"] = sources[0]["url"] if sources else ""
         clean["source"] = sources[0]["domain"] if sources else ""
 
-    # quick_hits.items normalisation: list of {text, url?}
+    # more_news.items: list of {headline, url?}
+    if btype == "more_news":
+        norm = []
+        for it in clean.get("items") or []:
+            if isinstance(it, str):
+                norm.append({"headline": it, "url": ""})
+            elif isinstance(it, dict) and it.get("headline"):
+                norm.append({"headline": it["headline"], "url": it.get("url", "")})
+        if not norm:
+            raise BlockValidationError(
+                f"Block {index} (more_news) needs a non-empty items list."
+            )
+        clean["items"] = norm
+
+    # quick_hits.items normalisation: list of {text, url?} (legacy)
     if btype == "quick_hits":
         norm = []
         for it in clean.get("items") or []:
@@ -189,30 +240,28 @@ def validate_document(blocks: list) -> list[dict]:
     if not isinstance(blocks, list):
         raise BlockValidationError("Document must be a list of blocks.")
     cleaned = [_validate_block(b, i) for i, b in enumerate(blocks)]
-    return _dedupe_stories(cleaned)
+    return _dedupe_items(cleaned)
 
 
-def _dedupe_stories(blocks: list[dict]) -> list[dict]:
-    """Collapse duplicate `story` blocks that cite the same item_id.
+def _dedupe_items(blocks: list[dict]) -> list[dict]:
+    """Collapse duplicate item/story blocks that cite the same item_id.
 
-    When drafting a long, multi-section document the agent sometimes features
-    the same item twice under different sections. Keep the first occurrence and
-    merge *all* source URLs from later duplicates into it, so no citation is
-    lost. Drop the duplicate block itself.
+    The agent sometimes features the same news item twice across sections.
+    Keep the first occurrence and merge source URLs from later duplicates.
     """
     first_index: dict[int, int] = {}
     out: list[dict] = []
     for block in blocks:
-        item_id = block.get("item_id") if block.get("type") == "story" else None
+        btype = block.get("type")
+        item_id = block.get("item_id") if btype in ("item", "story") else None
         if item_id is not None and item_id in first_index:
             kept = out[first_index[item_id]]
-            # Merge sources from the duplicate without repeating domains.
             existing = {s["url"] for s in kept.get("sources") or []}
             for src in block.get("sources") or []:
                 if src.get("url") and src["url"] not in existing:
                     kept.setdefault("sources", []).append(src)
                     existing.add(src["url"])
-            # Backfill primary url/source if the kept block has none.
+            # Legacy: backfill primary url/source for story blocks.
             if not kept.get("url") and block.get("url"):
                 kept["url"] = block["url"]
                 kept["source"] = block.get("source", "")

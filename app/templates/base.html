@@ -56,6 +56,13 @@
       </div>
     {% endfor %}
   {% endwith %}
+  {% for alert in active_alerts %}
+    <div class="alert alert-{{ alert.level }} alert-dismissible fade show" role="alert">
+      {{ alert.message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"
+              onclick="fetch('{{ url_for('web.dismiss_alert', alert_id=alert.id) }}', {method:'POST'})"></button>
+    </div>
+  {% endfor %}
   {% block content %}{% endblock %}
 </main>
 
