@@ -110,6 +110,71 @@ def chat_json(
         raise LLMError(f"LLM did not return valid JSON: {content[:500]}") from exc
 
 
+def chat_stream(
+    messages: list[dict],
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    temperature: float = 0.7,
+    timeout: float = 300.0,
+):
+    """Streaming chat completions — yields text chunks as they arrive."""
+    from collections.abc import Generator  # noqa: F401
+
+    api_key = api_key or current_app.config.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise LLMNotConfigured("No OpenRouter API key available for this request")
+
+    base_url = current_app.config["OPENROUTER_BASE_URL"].rstrip("/")
+    model = model or current_app.config["OPENROUTER_MODEL"]
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "X-Title": "AI News",
+    }
+    pub = current_app.config.get("PUBLIC_URL")
+    if pub:
+        headers["HTTP-Referer"] = pub
+
+    try:
+        with httpx.stream(
+            "POST",
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                    content = chunk["choices"][0]["delta"].get("content", "")
+                    if content:
+                        yield content
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    pass
+    except httpx.HTTPStatusError as exc:
+        try:
+            body = exc.response.json()
+        except Exception:
+            body = exc.response.text[:500]
+        raise LLMError(f"OpenRouter HTTP {exc.response.status_code}: {body}") from exc
+    except httpx.HTTPError as exc:
+        raise LLMError(f"OpenRouter request failed: {exc}") from exc
+
+
 def chat(
     messages: list[dict],
     *,

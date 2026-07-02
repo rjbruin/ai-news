@@ -1,8 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · AI News{% endblock %}
 {% block content %}
-<div class="mb-4">
-  <h1 class="h3 mb-0">Dashboard</h1>
+<div class="d-flex align-items-center gap-3 mb-4">
+  <h1 class="h3 mb-0 flex-shrink-0">Dashboard</h1>
+  <form method="get" action="{{ url_for('web.search') }}" class="flex-grow-1">
+    <div class="input-group">
+      <input type="search" name="q" class="form-control" placeholder="Search editions and news…">
+      <button class="btn btn-outline-secondary" type="submit">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+    </div>
+  </form>
 </div>
 {% if not my_summaries %}
 <div class="card shadow-sm">

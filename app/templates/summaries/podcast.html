@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Podcast · {{ run.label or 'Edition' }} · AI News{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+     class="text-body-secondary small text-decoration-none">
+    ← {{ run.label or run.generated_at.strftime('%Y-%m-%d') }}
+  </a>
+</div>
+<h1 class="h4 mb-4">Podcast export</h1>
+
+<div id="phase-generating">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <div class="spinner-border spinner-border-sm text-primary" id="spinner" role="status">
+      <span class="visually-hidden">Generating…</span>
+    </div>
+    <span id="status-msg" class="text-body-secondary small">Generating podcast script…</span>
+  </div>
+  <div class="card shadow-sm">
+    <div class="card-header fw-semibold small py-2">Script</div>
+    <div class="card-body p-0">
+      <pre id="script-output"
+           class="p-3 mb-0 small"
+           style="white-space:pre-wrap;max-height:60vh;overflow-y:auto;min-height:120px"></pre>
+    </div>
+  </div>
+</div>
+
+<div id="phase-review" class="d-none">
+  <p class="text-body-secondary small mb-2">
+    Review and edit the script before generating audio.
+    Lines must start with <code>HOST A:</code> or <code>HOST B:</code>.
+  </p>
+  <div class="card shadow-sm mb-3">
+    <div class="card-header fw-semibold small py-2">Script</div>
+    <div class="card-body p-0">
+      <textarea id="script-text"
+                class="form-control font-monospace border-0 rounded-0"
+                rows="24"
+                spellcheck="false"
+                style="resize:vertical;border-radius:0 0 .375rem .375rem !important"></textarea>
+    </div>
+  </div>
+  <div class="text-end">
+    <button id="btn-generate" class="btn btn-primary">Generate podcast</button>
+  </div>
+</div>
+
+<div id="phase-audio" class="d-none">
+  <div class="alert alert-success mb-3">Podcast generated!</div>
+  <audio controls class="w-100 mb-3" id="audio-player"></audio>
+  <div class="d-flex gap-2">
+    <a id="download-link" class="btn btn-outline-secondary" download>Download MP3</a>
+    <button class="btn btn-outline-secondary" id="btn-regenerate">Edit script &amp; regenerate</button>
+  </div>
+</div>
+
+<div id="phase-error" class="d-none">
+  <div class="alert alert-danger" id="error-msg"></div>
+  <a href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}"
+     class="btn btn-outline-secondary btn-sm">Try again</a>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const STREAM_URL = {{ url_for('web.edition_podcast_stream', summary_id=summary.id, run_id=run.id) | tojson }};
+const AUDIO_URL  = {{ url_for('web.edition_podcast_generate_audio', summary_id=summary.id, run_id=run.id) | tojson }};
+const AUTO_GENERATE = {{ 'true' if auto_generate else 'false' }};
+
+const phaseGenerating = document.getElementById('phase-generating');
+const phaseReview     = document.getElementById('phase-review');
+const phaseAudio      = document.getElementById('phase-audio');
+const phaseError      = document.getElementById('phase-error');
+const scriptOutput    = document.getElementById('script-output');
+const scriptText      = document.getElementById('script-text');
+const spinner         = document.getElementById('spinner');
+const statusMsg       = document.getElementById('status-msg');
+
+let fullScript = '';
+
+function showPhase(name) {
+  [phaseGenerating, phaseReview, phaseAudio, phaseError].forEach(el => el.classList.add('d-none'));
+  document.getElementById('phase-' + name).classList.remove('d-none');
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showPhase('error');
+}
+
+function generateAudio(script) {
+  showPhase('generating');
+  statusMsg.textContent = 'Generating podcast audio… (this may take a minute)';
+  spinner.classList.remove('d-none');
+  scriptOutput.textContent = '';
+
+  fetch(AUDIO_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({script: script}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      showError(data.error);
+    } else {
+      document.getElementById('audio-player').src = data.audio_url;
+      document.getElementById('download-link').href = data.audio_url;
+      showPhase('audio');
+    }
+  })
+  .catch(err => showError('Failed to generate audio: ' + err));
+}
+
+// Stream the script from the LLM.
+const es = new EventSource(STREAM_URL);
+es.onmessage = function(e) {
+  const data = JSON.parse(e.data);
+  if (data.type === 'token') {
+    fullScript += data.text;
+    scriptOutput.textContent = fullScript;
+    scriptOutput.scrollTop = scriptOutput.scrollHeight;
+  } else if (data.type === 'done') {
+    es.close();
+    spinner.classList.add('d-none');
+    statusMsg.textContent = 'Script complete.';
+    if (AUTO_GENERATE) {
+      generateAudio(fullScript);
+    } else {
+      scriptText.value = fullScript;
+      showPhase('review');
+    }
+  } else if (data.type === 'error') {
+    es.close();
+    showError(data.message || 'An error occurred during script generation.');
+  }
+};
+es.onerror = function() {
+  es.close();
+  showError('Connection lost during script generation. Please try again.');
+};
+
+// Review → generate audio.
+document.getElementById('btn-generate').addEventListener('click', function() {
+  const script = scriptText.value.trim();
+  if (!script) return;
+  generateAudio(script);
+});
+
+// Show script for editing after audio is done.
+document.getElementById('btn-regenerate').addEventListener('click', function() {
+  if (!scriptText.value) scriptText.value = fullScript;
+  showPhase('review');
+});
+</script>
+{% endblock %}

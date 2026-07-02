@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import queue
+import secrets
 import threading
 
 from flask import (
@@ -94,6 +95,35 @@ def dashboard_feature():
     return redirect(url_for("web.dashboard"))
 
 
+# ───────────────────────── Search ─────────────────────────
+@bp.route("/search")
+@login_required
+def search():
+    from ..services.search import PER_PAGE, search_editions, search_news
+
+    query = request.args.get("q", "").strip()
+    ep = request.args.get("ep", 1, type=int)
+    np_ = request.args.get("np", 1, type=int)
+
+    edition_results, edition_total = [], 0
+    news_results, news_total = [], 0
+    if query:
+        edition_results, edition_total = search_editions(query, current_user.id, ep)
+        news_results, news_total = search_news(query, np_)
+
+    return render_template(
+        "search.html",
+        query=query,
+        edition_results=edition_results,
+        edition_total=edition_total,
+        ep=ep,
+        news_results=news_results,
+        news_total=news_total,
+        np=np_,
+        per_page=PER_PAGE,
+    )
+
+
 # ───────────────────────── Settings ─────────────────────────
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
@@ -109,7 +139,7 @@ def settings():
     types = summary_registry.all_types()
 
     if request.method == "POST":
-        # Account settings
+        # OpenRouter settings
         current_user.openrouter_model = (
             request.form.get("openrouter_model") or ""
         ).strip() or None
@@ -119,7 +149,30 @@ def settings():
             new_key = (request.form.get("openrouter_api_key") or "").strip()
             if new_key:
                 current_user.set_openrouter_key(new_key)
+
+        # ElevenLabs settings
+        if request.form.get("clear_elevenlabs_key"):
+            current_user.set_elevenlabs_key(None)
+        else:
+            el_key = (request.form.get("elevenlabs_api_key") or "").strip()
+            if el_key:
+                current_user.set_elevenlabs_key(el_key)
+        current_user.elevenlabs_voice_host_a = (
+            (request.form.get("elevenlabs_voice_host_a") or "").strip() or None
+        )
+        current_user.elevenlabs_voice_host_b = (
+            (request.form.get("elevenlabs_voice_host_b") or "").strip() or None
+        )
+        current_user.elevenlabs_model = (
+            (request.form.get("elevenlabs_model") or "").strip() or None
+        )
+        current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
         db.session.commit()
+
+        # Podcast format memory (user-level, no summary)
+        if "mem_podcast_format" in request.form:
+            from ..services.podcast import _set_podcast_format
+            _set_podcast_format(current_user, request.form.get("mem_podcast_format", ""))
 
         # Summary schedule + memory
         if summary:
@@ -136,6 +189,7 @@ def settings():
         flash("Settings saved.", "success")
         return redirect(url_for("web.settings"))
 
+    from ..services.podcast import _get_podcast_format, DEFAULT_PODCAST_FORMAT
     files, headlines = {}, []
     retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
     if summary:
@@ -148,10 +202,14 @@ def settings():
         }
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
+    podcast_format = _get_podcast_format(current_user)
+
     return render_template(
         "settings.html",
         summary=summary, types=types,
         files=files, headlines=headlines, retention=retention,
+        podcast_format=podcast_format,
+        default_podcast_format=DEFAULT_PODCAST_FORMAT,
     )
 
 
@@ -367,6 +425,67 @@ def edition_view(summary_id: int, run_id: int):
     return render_template(
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
+        is_shared_view=False,
+    )
+
+
+@bp.route("/shared/<token>")
+def edition_shared(token: str):
+    run = SummaryRun.query.filter_by(share_token=token).first_or_404()
+    summary = run.summary
+    plugin = summary_registry.get(summary.type_key)
+    is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
+    chain = summarize.revision_chain(run) if is_agentic else [run]
+    return render_template(
+        "summaries/view.html",
+        summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
+        is_shared_view=True,
+    )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/share", methods=["POST"])
+@login_required
+def edition_share(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    if not run.share_token:
+        run.share_token = secrets.token_hex(32)
+        db.session.commit()
+    return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/unshare", methods=["POST"])
+@login_required
+def edition_unshare(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    run.share_token = None
+    db.session.commit()
+    return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/export")
+@login_required
+def edition_export(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    plugin = summary_registry.get(summary.type_key)
+    is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
+    return render_template(
+        "summaries/print.html",
+        summary=summary, run=run, is_agentic=is_agentic,
     )
 
 
@@ -506,6 +625,96 @@ def edition_mark_unread(summary_id: int, run_id: int):
     run.read_at = None
     db.session.commit()
     return jsonify({"read_at": None})
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast")
+@login_required
+def edition_podcast(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    if not current_user.has_elevenlabs_key:
+        flash("Add your ElevenLabs API key in Settings before generating a podcast.", "warning")
+        return redirect(url_for("web.settings"))
+    return render_template(
+        "summaries/podcast.html",
+        summary=summary, run=run,
+        auto_generate=current_user.podcast_auto_generate,
+    )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast/stream")
+@login_required
+def edition_podcast_stream(summary_id: int, run_id: int):
+    from ..agent.creds import resolve as resolve_creds, MissingCredentials
+    from ..services import podcast as podcast_svc
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    try:
+        api_key, model = resolve_creds(current_user)
+    except MissingCredentials as exc:
+        def _err():
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        return Response(
+            stream_with_context(_err()),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    user_obj = current_user._get_current_object()
+    run_obj = run
+
+    def _generate():
+        try:
+            for token in podcast_svc.generate_script_stream(run_obj, user_obj, api_key, model):
+                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_generate()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@bp.route(
+    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/generate-audio",
+    methods=["POST"],
+)
+@login_required
+def edition_podcast_generate_audio(summary_id: int, run_id: int):
+    from ..services import podcast as podcast_svc
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    data = request.get_json(silent=True) or {}
+    script = (data.get("script") or "").strip()
+    if not script:
+        return jsonify({"error": "No script provided."}), 400
+
+    try:
+        _path, filename = podcast_svc.generate_audio(script, current_user._get_current_object())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 400
+
+    audio_url = url_for("static", filename=f"podcasts/{filename}")
+    return jsonify({"audio_url": audio_url})
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])

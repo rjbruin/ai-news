@@ -52,6 +52,13 @@ class User(UserMixin, db.Model):
     openrouter_api_key_enc = db.Column(db.Text, nullable=True)
     openrouter_model = db.Column(db.String(120), nullable=True)
 
+    # ElevenLabs TTS credentials for podcast export.
+    elevenlabs_api_key_enc = db.Column(db.Text, nullable=True)
+    elevenlabs_voice_host_a = db.Column(db.String(120), nullable=True)
+    elevenlabs_voice_host_b = db.Column(db.String(120), nullable=True)
+    elevenlabs_model = db.Column(db.String(120), nullable=True)
+    podcast_auto_generate = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+
     featured_summary_id = db.Column(
         db.Integer, db.ForeignKey("summaries.id"), nullable=True
     )
@@ -65,6 +72,20 @@ class User(UserMixin, db.Model):
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
+
+    def set_elevenlabs_key(self, plaintext: str | None) -> None:
+        from .crypto import encrypt
+
+        self.elevenlabs_api_key_enc = encrypt(plaintext) if plaintext else None
+
+    def get_elevenlabs_key(self) -> str | None:
+        from .crypto import decrypt
+
+        return decrypt(self.elevenlabs_api_key_enc) if self.elevenlabs_api_key_enc else None
+
+    @property
+    def has_elevenlabs_key(self) -> bool:
+        return bool(self.elevenlabs_api_key_enc)
 
     def set_openrouter_key(self, plaintext: str | None) -> None:
         """Store (encrypted) or clear the user's OpenRouter API key."""
@@ -279,6 +300,7 @@ class SummaryRun(db.Model):
     agent_cost = db.Column(db.Float, nullable=True)
 
     read_at = db.Column(db.DateTime, nullable=True)
+    share_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
     summary = db.relationship("Summary", back_populates="runs")
     revisions = db.relationship(
