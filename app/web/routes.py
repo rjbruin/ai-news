@@ -505,7 +505,7 @@ def edition_mark_unread(summary_id: int, run_id: int):
         abort(404)
     run.read_at = None
     db.session.commit()
-    return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+    return jsonify({"read_at": None})
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])
