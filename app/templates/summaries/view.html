@@ -2,7 +2,6 @@
 {% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · AI News{% endblock %}
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
-  <a href="{{ url_for('web.summaries') }}" class="btn btn-sm btn-outline-secondary">← Summaries</a>
   <div class="flex-grow-1">
     <h1 class="h3 mb-0">
       {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
@@ -15,12 +14,7 @@
         <i id="read-icon" class="{{ 'fa-regular fa-envelope-open text-body-secondary' if run.read_at else 'fa-solid fa-envelope text-primary' }}"></i>
       </button>
     </h1>
-    <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
-  {% if is_agentic %}
-  <a href="{{ url_for('web.settings') }}"
-     class="btn btn-sm btn-outline-secondary">Settings</a>
-  {% endif %}
   <form method="post"
         action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
         class="d-inline">
