@@ -2,18 +2,234 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ run.label or run.generated_at.strftime('%Y-%m-%d') }} · {{ summary.name }}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
-        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
   <style>
-    @page { size: A4 portrait; margin: 1.5cm 2cm; }
-    @media screen {
-      body { max-width: 740px; margin: 2rem auto; padding: 0 1.25rem; }
+    /* ── Inter font (served locally, no CDN needed during PDF gen) ──────── */
+    @font-face {
+      font-family: "Inter";
+      font-weight: 400;
+      src: url("{{ url_for('static', filename='fonts/inter-400.woff2') }}") format("woff2");
     }
-    /* always suppress external-link arrows in this clean view */
+    @font-face {
+      font-family: "Inter";
+      font-weight: 600;
+      src: url("{{ url_for('static', filename='fonts/inter-600.woff2') }}") format("woff2");
+    }
+    @font-face {
+      font-family: "Inter";
+      font-weight: 700;
+      src: url("{{ url_for('static', filename='fonts/inter-700.woff2') }}") format("woff2");
+    }
+    @font-face {
+      font-family: "Inter";
+      font-weight: 800;
+      src: url("{{ url_for('static', filename='fonts/inter-800.woff2') }}") format("woff2");
+    }
+
+    /* ── Page setup ─────────────────────────────────────────────────────── */
+    @page {
+      size: A4 portrait;
+      margin: 1.8cm 2cm 2cm;
+      @bottom-right {
+        content: counter(page) " / " counter(pages);
+        font-family: "Inter", Helvetica, Arial, sans-serif;
+        font-size: 8pt;
+        color: #6c757d;
+      }
+    }
+
+    /* ── Base ────────────────────────────────────────────────────────────── */
+    body {
+      font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.55;
+      color: #212529;
+      background: white;
+    }
+
+    a { color: #1f3a5f; text-decoration: none; }
     a[target="_blank"]::after { display: none !important; }
+
+    /* ── Heading scale ───────────────────────────────────────────────────── */
+    .an-h1 { font-size: 20pt; font-weight: 800; }
+    .an-h2 { font-size: 14pt; font-weight: 800; color: #1f3a5f; }
+    .an-h3 { font-size: 11pt; font-weight: 700; }
+    .an-h4 { font-size: 10pt; font-weight: 600; }
+    .an-h5 { font-size: 9.5pt; font-weight: 600; }
+    .an-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; }
+
+    /* ── Section header ──────────────────────────────────────────────────── */
+    .agentic-section:not(:first-of-type) { margin-top: 2rem; }
+    .agentic-section .an-h2 {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+    }
+    .agentic-section .an-h2::before {
+      content: "";
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      background: #2f6fed;
+      flex-shrink: 0;
+    }
+
+    /* ── Intro block ─────────────────────────────────────────────────────── */
+    .agentic-intro {
+      border-left: 4px solid #1f3a5f;
+      background: #eaf1ff;
+      border-radius: 0 .6rem .6rem 0;
+      padding: 1rem 1.25rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    /* ── Item block ──────────────────────────────────────────────────────── */
+    .agentic-item {
+      background: #fff;
+      border-left: 4px solid #2f6fed;
+      border-radius: 0 .6rem .6rem 0;
+      padding: .9rem 1.1rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .agentic-item__subheader { font-size: .9rem; font-weight: 600; }
+    .agentic-item__summary   { font-size: .9rem; }
+    .agentic-item__summary p:last-child { margin-bottom: 0; }
+
+    /* ── Trend block ─────────────────────────────────────────────────────── */
+    .agentic-trend {
+      background: #f3eefc;
+      border-left: 4px solid #8854d0;
+      border-radius: 0 .6rem .6rem 0;
+      padding: .9rem 1.1rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .agentic-trend__headline { font-size: .95rem; font-weight: 700; color: #8854d0; margin-bottom: .25rem; }
+    .agentic-trend__text     { font-size: .9rem; }
+    .agentic-trend__text p:last-child { margin-bottom: 0; }
+
+    /* ── More news block ─────────────────────────────────────────────────── */
+    .agentic-more-news {
+      background: #fdf1df;
+      border-left: 4px solid #d9821f;
+      border-radius: 0 .6rem .6rem 0;
+      padding: .75rem 1.1rem 1rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .agentic-more-news__title {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: #d9821f; margin-bottom: .5rem;
+    }
+    .agentic-more-news ul  { list-style: none; padding: 0; margin: 0; }
+    .agentic-more-news li  { padding: .3rem 0; font-size: .875rem; border-bottom: 1px solid rgba(0,0,0,.06); }
+    .agentic-more-news li:last-child { border-bottom: none; }
+
+    /* ── Story blocks (legacy) ───────────────────────────────────────────── */
+    .agentic-story--lead {
+      background: #fff;
+      border: 1px solid rgba(31,58,95,.08);
+      border-top: 4px solid #1f3a5f;
+      border-radius: .75rem;
+      padding: 1.25rem 1.5rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .agentic-story--standard {
+      background: #eaf1ff;
+      border-left: 4px solid #2f6fed;
+      border-radius: 0 .6rem .6rem 0;
+      padding: .9rem 1.1rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .agentic-story--brief {
+      border-left: 3px solid #5f6b7a;
+      background: #eef1f3;
+      border-radius: 0 .4rem .4rem 0;
+      padding: .5rem .75rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    /* ── Source chips ────────────────────────────────────────────────────── */
+    .story-source {
+      display: inline-block; font-size: .68rem; font-weight: 500;
+      line-height: 1.5; color: #6c757d; background: #fff;
+      border: 1px solid #dee2e6; border-radius: .25rem;
+      padding: 0 .4em; margin-left: .4em;
+      text-decoration: none; vertical-align: middle; white-space: nowrap;
+    }
+    .story-source + .story-source { margin-left: .2em; }
+
+    /* ── Cluster block ───────────────────────────────────────────────────── */
+    .agentic-cluster {
+      background: #e3f6f1;
+      border-left: 4px solid #128f77;
+      border-radius: 0 .6rem .6rem 0;
+      padding: .9rem 1.1rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    /* ── Callout blocks ──────────────────────────────────────────────────── */
+    .agentic-callout { border-radius: .6rem; border: 1px solid transparent; padding: 1rem 1.25rem; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .agentic-callout .an-label { font-size: .8rem; display: flex; align-items: center; gap: .35rem; }
+    .agentic-callout--trend      { background: #eaf1ff; border-color: rgba(47,111,237,.25); }
+    .agentic-callout--trend      .an-label { color: #2f6fed; }
+    .agentic-callout--connection { background: #f3eefc; border-color: rgba(136,84,208,.25); }
+    .agentic-callout--connection .an-label { color: #8854d0; }
+    .agentic-callout--watch      { background: #fdf1df; border-color: rgba(217,130,31,.3); }
+    .agentic-callout--watch      .an-label { color: #d9821f; }
+    .agentic-callout--note       { background: #eef1f3; border-color: rgba(95,107,122,.25); }
+    .agentic-callout--note       .an-label { color: #5f6b7a; }
+
+    /* ── Quote block ─────────────────────────────────────────────────────── */
+    .agentic-quote {
+      background: #f3eefc;
+      border-left: 4px solid #8854d0;
+      border-radius: 0 .6rem .6rem 0;
+      padding: 1rem 1.25rem;
+      font-style: italic;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    /* ── Quick hits block ────────────────────────────────────────────────── */
+    .agentic-quick-hits {
+      background: #fdf1df;
+      border: 1px solid rgba(217,130,31,.35);
+      border-radius: .75rem;
+      padding: 1.1rem 1.3rem;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .agentic-quick-hits__title {
+      font-size: 1.1rem; font-weight: 800; color: #d9821f;
+      display: flex; align-items: center; gap: .4rem; margin-bottom: .65rem;
+    }
+    .agentic-quick-hits ul { list-style: none; padding-left: 0; margin-bottom: 0; display: grid; gap: .5rem; }
+    .agentic-quick-hits li { position: relative; padding-left: 1.4rem; }
+    .agentic-quick-hits li::before { content: "⚡"; position: absolute; left: 0; top: -.05rem; font-size: .85rem; }
+
+    /* ── Divider ─────────────────────────────────────────────────────────── */
+    .agentic-divider { border: none; border-top: 2px dashed rgba(31,58,95,.15); }
+
+    /* ── Edition header ──────────────────────────────────────────────────── */
+    header.mb-4 { border-bottom: 2px solid #dee2e6; padding-bottom: .75rem; margin-bottom: 1.5rem; }
+
+    /* ── Page breaks ─────────────────────────────────────────────────────── */
+    .agentic-section { break-before: auto; }
+    .agentic-item, .agentic-trend, .agentic-more-news,
+    .agentic-story--lead, .agentic-story--standard, .agentic-story--brief,
+    .agentic-cluster, .agentic-callout, .agentic-quote,
+    .agentic-quick-hits { break-inside: avoid; }
+
+    /* ── Suppress box shadows (WeasyPrint renders them flat anyway) ──────── */
+    * { box-shadow: none !important; }
   </style>
 </head>
 <body>

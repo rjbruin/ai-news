@@ -92,6 +92,7 @@ class Config:
 
 class DevConfig(Config):
     SESSION_COOKIE_SECURE = False
+    TEMPLATES_AUTO_RELOAD = True
 
 
 class DebugConfig(DevConfig):
