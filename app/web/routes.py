@@ -475,6 +475,13 @@ def edition_unshare(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/export")
 @login_required
 def edition_export(summary_id: int, run_id: int):
+    import mimetypes
+    import os
+    import re
+
+    from weasyprint import HTML as WPHtml
+    from weasyprint.urls import default_url_fetcher
+
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
@@ -483,9 +490,44 @@ def edition_export(summary_id: int, run_id: int):
         abort(404)
     plugin = summary_registry.get(summary.type_key)
     is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
-    return render_template(
+
+    html_str = render_template(
         "summaries/print.html",
         summary=summary, run=run, is_agentic=is_agentic,
+    )
+
+    static_folder = current_app.static_folder
+    static_url_path = current_app.static_url_path  # '/static'
+
+    def _url_fetcher(url):
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if parsed.path.startswith(static_url_path + "/"):
+            rel = parsed.path[len(static_url_path) + 1:]
+            abs_path = os.path.join(static_folder, rel)
+            if os.path.exists(abs_path):
+                mime = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
+                with open(abs_path, "rb") as fh:
+                    return {"content": fh.read(), "mime_type": mime}
+        return default_url_fetcher(url)
+
+    pdf_bytes = WPHtml(
+        string=html_str,
+        base_url=request.url_root,
+        url_fetcher=_url_fetcher,
+    ).write_pdf()
+
+    label = run.label or run.generated_at.strftime("%Y-%m-%d")
+    safe_label = re.sub(r"[^\w\s.-]", "_", label).strip("_")
+    filename = f"{safe_label}.pdf"
+
+    return Response(
+        pdf_bytes,
+        content_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
     )
 
 
