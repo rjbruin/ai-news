@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "ainews",
-      "runtimeExecutable": "./venv/bin/gunicorn",
-      "runtimeArgs": ["--workers", "1", "--threads", "4", "--bind", "127.0.0.1:5090", "wsgi:app"],
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH exec ./venv/bin/gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5090 wsgi:app"],
       "port": 5090,
       "autoPort": false
     }

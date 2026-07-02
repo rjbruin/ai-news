@@ -34,8 +34,7 @@
       <ul class="dropdown-menu dropdown-menu-end">
         <li>
           <a class="dropdown-item"
-             href="{{ url_for('web.edition_export', summary_id=summary.id, run_id=run.id) }}"
-             target="_blank">PDF</a>
+             href="{{ url_for('web.edition_export', summary_id=summary.id, run_id=run.id) }}">PDF</a>
         </li>
         <li>
           <button class="dropdown-item" onclick="window.print()">Print</button>
