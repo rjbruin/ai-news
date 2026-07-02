@@ -178,7 +178,19 @@ def register_template_helpers(app: Flask) -> None:
 
     @app.context_processor
     def inject_globals():
-        return {"app_version": get_version()}
+        from flask_login import current_user
+        from .models import Alert
+
+        result: dict = {"app_version": get_version(), "active_alerts": []}
+        if current_user.is_authenticated:
+            result["active_alerts"] = (
+                Alert.query
+                .filter_by(user_id=current_user.id)
+                .filter(Alert.dismissed_at.is_(None))
+                .order_by(Alert.created_at.desc())
+                .all()
+            )
+        return result
 
     @app.template_filter("url_domain")
     def url_domain_filter(url):

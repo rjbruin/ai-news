@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 
 from argon2 import PasswordHasher
@@ -10,6 +11,8 @@ from argon2.exceptions import VerifyMismatchError
 from flask_login import UserMixin
 
 from .extensions import db
+
+_log = logging.getLogger(__name__)
 
 _ph = PasswordHasher()
 
@@ -285,6 +288,47 @@ class SummaryRun(db.Model):
     )
 
 
+class Alert(db.Model):
+    """User-visible alert for background job failures.
+
+    At most one undismissed alert per (user_id, key) at any time.
+    After dismissal, the same key can resurface on the next failure.
+    """
+
+    __tablename__ = "alerts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    key = db.Column(db.String(128), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    level = db.Column(db.String(16), default="danger", nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    dismissed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User")
+
+    @classmethod
+    def push(cls, user_id: int, key: str, message: str, level: str = "danger") -> None:
+        """Create an alert unless one with the same key is already undismissed.
+
+        Rolls back any failed transaction first — safe to call from exception handlers.
+        """
+        try:
+            db.session.rollback()
+            existing = (
+                cls.query
+                .filter_by(user_id=user_id, key=key)
+                .filter(cls.dismissed_at.is_(None))
+                .first()
+            )
+            if not existing:
+                db.session.add(cls(user_id=user_id, key=key, message=message, level=level))
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+            _log.exception("Alert.push failed for user %d key %r", user_id, key)
+
+
 class AgentMemory(db.Model):
     """File-like memory for the agentic summary pipeline.
 
@@ -319,6 +363,7 @@ class AgentMemory(db.Model):
 __all__ = [
     "User",
     "AuthToken",
+    "Alert",
     "IngestRun",
     "Source",
     "NewsItem",
