@@ -9,7 +9,11 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="badge text-bg-secondary align-middle">rev {{ run.revision }}</span>
       {% endif %}
-      <i id="read-badge" class="fa-regular fa-envelope-open text-body-secondary ms-2 {{ '' if run.read_at else 'd-none' }}" title="Read"></i>
+      <button id="read-toggle" class="btn btn-link p-0 ms-2 border-0 align-baseline"
+              style="font-size:inherit;line-height:inherit"
+              title="{{ 'Read' if run.read_at else 'Unread' }}">
+        <i id="read-icon" class="{{ 'fa-regular fa-envelope-open text-body-secondary' if run.read_at else 'fa-solid fa-envelope text-primary' }}"></i>
+      </button>
     </h1>
     <div class="small text-body-secondary">{{ summary.name }}</div>
   </div>
@@ -17,11 +21,6 @@
   <a href="{{ url_for('web.settings') }}"
      class="btn btn-sm btn-outline-secondary">Settings</a>
   {% endif %}
-  <form method="post" id="unread-form"
-        action="{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}"
-        class="d-inline {{ '' if run.read_at else 'd-none' }}">
-    <button class="btn btn-sm btn-outline-secondary">Mark as unread</button>
-  </form>
   <form method="post"
         action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
         class="d-inline">
@@ -99,17 +98,33 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
 });
 
 (function () {
-  const alreadyRead = {{ 'true' if run.read_at else 'false' }};
-  if (alreadyRead) return;
-  setTimeout(function () {
-    fetch("{{ url_for('web.edition_mark_read', summary_id=summary.id, run_id=run.id) }}",
-          {method: 'POST'})
+  var readUrl = "{{ url_for('web.edition_mark_read', summary_id=summary.id, run_id=run.id) }}";
+  var unreadUrl = "{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}";
+  var isRead = {{ 'true' if run.read_at else 'false' }};
+  var icon = document.getElementById('read-icon');
+  var btn = document.getElementById('read-toggle');
+
+  function setState(read) {
+    isRead = read;
+    icon.className = read
+      ? 'fa-regular fa-envelope-open text-body-secondary'
+      : 'fa-solid fa-envelope text-primary';
+    btn.title = read ? 'Read' : 'Unread';
+  }
+
+  if (!isRead) {
+    setTimeout(function () {
+      fetch(readUrl, {method: 'POST'})
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (d) setState(true); });
+    }, 10000);
+  }
+
+  btn.addEventListener('click', function () {
+    fetch(isRead ? unreadUrl : readUrl, {method: 'POST'})
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function () {
-        document.getElementById('read-badge').classList.remove('d-none');
-        document.getElementById('unread-form').classList.remove('d-none');
-      });
-  }, 10000);
+      .then(function (d) { if (d !== null) setState(!isRead); });
+  });
 }());
 </script>
 {% endblock %}
