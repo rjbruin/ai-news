@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{% if query %}{{ query }} · {% endif %}Search · AI News{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <form method="get" action="{{ url_for('web.search') }}">
+    <div class="input-group">
+      <input type="search" name="q" class="form-control form-control-lg"
+             value="{{ query }}" placeholder="Search editions and news…" autofocus>
+      <button class="btn btn-primary" type="submit">
+        <i class="fa-solid fa-magnifying-glass"></i> Search
+      </button>
+    </div>
+  </form>
+</div>
+
+{% if query %}
+
+{# ─── Editions ─────────────────────────────────────────────────── #}
+<h2 class="h5 mb-3">
+  Editions
+  <span class="badge text-bg-secondary fw-normal ms-1">{{ edition_total }}</span>
+</h2>
+
+{% if edition_results %}
+<div class="list-group shadow-sm mb-2">
+  {% for r in edition_results %}
+  <a href="{{ url_for('web.edition_view', summary_id=r.summary.id, run_id=r.run.id) }}"
+     class="list-group-item list-group-item-action">
+    <div class="d-flex justify-content-between align-items-baseline gap-2 mb-1">
+      <span class="fw-semibold">{{ r.run.label or r.run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      <span class="text-body-secondary small text-nowrap">{{ r.run.generated_at.strftime('%Y-%m-%d') }}</span>
+    </div>
+    <p class="mb-0 small text-body-secondary">{{ r.excerpt | safe }}</p>
+  </a>
+  {% endfor %}
+</div>
+
+{# pagination #}
+{% set e_pages = ((edition_total - 1) // per_page + 1) %}
+{% if e_pages > 1 %}
+<nav class="mb-4" aria-label="Edition results pages">
+  <ul class="pagination pagination-sm">
+    <li class="page-item {{ 'disabled' if ep <= 1 }}">
+      <a class="page-link" href="{{ url_for('web.search', q=query, ep=ep-1, np=np) }}">‹</a>
+    </li>
+    {% for p in range(1, e_pages + 1) %}
+    <li class="page-item {{ 'active' if p == ep }}">
+      <a class="page-link" href="{{ url_for('web.search', q=query, ep=p, np=np) }}">{{ p }}</a>
+    </li>
+    {% endfor %}
+    <li class="page-item {{ 'disabled' if ep >= e_pages }}">
+      <a class="page-link" href="{{ url_for('web.search', q=query, ep=ep+1, np=np) }}">›</a>
+    </li>
+  </ul>
+</nav>
+{% else %}
+<div class="mb-4"></div>
+{% endif %}
+
+{% else %}
+<p class="text-body-secondary mb-4">No editions matched <em>{{ query }}</em>.</p>
+{% endif %}
+
+
+{# ─── News items ───────────────────────────────────────────────── #}
+<h2 class="h5 mb-3">
+  News items
+  <span class="badge text-bg-secondary fw-normal ms-1">{{ news_total }}</span>
+</h2>
+
+{% if news_results %}
+<div class="list-group shadow-sm mb-2">
+  {% for r in news_results %}
+  <div class="list-group-item">
+    <div class="d-flex justify-content-between align-items-baseline gap-2 mb-1">
+      {% if r.item.url %}
+      <a href="{{ r.item.url }}" class="fw-semibold text-decoration-none"
+         target="_blank" rel="noopener">{{ r.item.title }}</a>
+      {% else %}
+      <span class="fw-semibold">{{ r.item.title }}</span>
+      {% endif %}
+      <span class="text-body-secondary small text-nowrap">
+        {{ r.item.fetched_at.strftime('%Y-%m-%d') }}
+      </span>
+    </div>
+    <p class="mb-0 small text-body-secondary">{{ r.excerpt | safe }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+{# pagination #}
+{% set n_pages = ((news_total - 1) // per_page + 1) %}
+{% if n_pages > 1 %}
+<nav aria-label="News results pages">
+  <ul class="pagination pagination-sm">
+    <li class="page-item {{ 'disabled' if np <= 1 }}">
+      <a class="page-link" href="{{ url_for('web.search', q=query, ep=ep, np=np-1) }}">‹</a>
+    </li>
+    {% for p in range(1, n_pages + 1) %}
+    <li class="page-item {{ 'active' if p == np }}">
+      <a class="page-link" href="{{ url_for('web.search', q=query, ep=ep, np=p) }}">{{ p }}</a>
+    </li>
+    {% endfor %}
+    <li class="page-item {{ 'disabled' if np >= n_pages }}">
+      <a class="page-link" href="{{ url_for('web.search', q=query, ep=ep, np=np+1) }}">›</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<p class="text-body-secondary">No news items matched <em>{{ query }}</em>.</p>
+{% endif %}
+
+{% endif %}{# /if query #}
+{% endblock %}

@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · AI News{% endblock %}
 {% block content %}
+
+{% if is_shared_view %}
+<div class="alert alert-secondary mb-4" role="alert">
+  <strong>AI News</strong> is a personal AI-powered newsletter app that monitors sources and generates daily digests.
+  This edition was shared by its owner.
+</div>
+{% endif %}
+
 <div class="d-flex align-items-center gap-3 mb-3">
   <div class="flex-grow-1">
     <h1 class="h3 mb-0">
@@ -8,22 +16,71 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="badge text-bg-secondary align-middle">rev {{ run.revision }}</span>
       {% endif %}
+      {% if not is_shared_view %}
       <button id="read-toggle" class="btn btn-link p-0 ms-2 border-0 align-baseline"
               style="font-size:inherit;line-height:inherit"
               title="{{ 'Read' if run.read_at else 'Unread' }}">
         <i id="read-icon" class="{{ 'fa-regular fa-envelope-open text-body-secondary' if run.read_at else 'fa-solid fa-envelope text-primary' }}"></i>
       </button>
+      {% endif %}
     </h1>
   </div>
-  <form method="post"
-        action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
-        class="d-inline">
-    <button class="btn btn-sm btn-outline-danger">Delete edition</button>
-  </form>
+  {% if not is_shared_view %}
+  <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
+    <div class="dropdown">
+      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+        Export
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+          <a class="dropdown-item"
+             href="{{ url_for('web.edition_export', summary_id=summary.id, run_id=run.id) }}"
+             target="_blank">PDF</a>
+        </li>
+        <li>
+          <button class="dropdown-item" onclick="window.print()">Print</button>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item"
+             href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}">
+            Podcast
+          </a>
+        </li>
+      </ul>
+    </div>
+    {% if run.share_token %}
+    {% set share_url = url_for('web.edition_shared', token=run.share_token, _external=True) %}
+    <input type="text" id="share-url-input" class="form-control form-control-sm"
+           value="{{ share_url }}" readonly
+           style="width:auto;max-width:260px;font-size:.8rem">
+    <button class="btn btn-sm btn-outline-secondary"
+            onclick="var inp=document.getElementById('share-url-input');navigator.clipboard.writeText(inp.value);this.textContent='Copied!'">
+      Copy link
+    </button>
+    <form method="post"
+          action="{{ url_for('web.edition_unshare', summary_id=summary.id, run_id=run.id) }}"
+          class="d-inline">
+      <button class="btn btn-sm btn-outline-danger">Revoke</button>
+    </form>
+    {% else %}
+    <form method="post"
+          action="{{ url_for('web.edition_share', summary_id=summary.id, run_id=run.id) }}"
+          class="d-inline">
+      <button class="btn btn-sm btn-outline-secondary">Share</button>
+    </form>
+    {% endif %}
+    <form method="post"
+          action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
+          class="d-inline">
+      <button class="btn btn-sm btn-outline-danger">Delete edition</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 
-{% if is_agentic and revisions and revisions|length > 1 %}
-<div class="mb-3">
+{% if is_agentic and not is_shared_view and revisions and revisions|length > 1 %}
+<div class="mb-3 d-print-none">
   <span class="small text-body-secondary me-2">Revisions:</span>
   {% for r in revisions %}
   <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=r.id) }}"
@@ -57,8 +114,8 @@
   <p class="text-body-secondary">This edition has no stored content.</p>
 {% endif %}
 
-{% if is_agentic %}
-<div class="card shadow-sm mt-4">
+{% if is_agentic and not is_shared_view %}
+<div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
     <h2 class="h6">Give feedback to the editor</h2>
     <p class="small text-body-secondary mb-2">
@@ -91,6 +148,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
   }
 });
 
+{% if not is_shared_view %}
 (function () {
   var readUrl = "{{ url_for('web.edition_mark_read', summary_id=summary.id, run_id=run.id) }}";
   var unreadUrl = "{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}";
@@ -120,5 +178,6 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
       .then(function (d) { if (d !== null) setState(!isRead); });
   });
 }());
+{% endif %}
 </script>
 {% endblock %}

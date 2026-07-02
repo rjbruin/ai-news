@@ -59,7 +59,22 @@ a[target="_blank"]:not(.btn)::after {
 }
 
 @media print {
-  .app-navbar, footer, .btn { display: none !important; }
+  .app-navbar, footer, .btn, .d-print-none { display: none !important; }
+  body { background: white !important; }
+
+  /* keep rich block colours on paper */
+  .agentic-item, .agentic-trend, .agentic-more-news,
+  .agentic-story--lead, .agentic-story--standard, .agentic-story--brief,
+  .agentic-cluster, .agentic-callout, .agentic-quote,
+  .agentic-quick-hits { break-inside: avoid; box-shadow: none !important; }
+
+  .agentic-section { break-before: auto; }
+
+  /* suppress external-link arrows and underlines */
+  a[target="_blank"]::after { display: none !important; }
+  a { text-decoration: none; }
+
+  @page { margin: 1.5cm 2cm; }
 }
 
 /* Agentic summary heading scale — explicit and monotonic, independent of
