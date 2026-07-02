@@ -99,6 +99,68 @@ a[target="_blank"]:not(.btn)::after {
   padding: 1rem 1.25rem;
 }
 
+/* Item block — unified content block (current generation). No emphasis
+   variants: the structure (section title, position) provides hierarchy. */
+.agentic-item {
+  background: #fff;
+  border-left: 4px solid var(--ag-blue);
+  border-radius: 0 .6rem .6rem 0;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, .07);
+  padding: .9rem 1.1rem;
+}
+.agentic-item__subheader {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--bs-body-color);
+}
+.agentic-item__summary {
+  font-size: .9rem;
+}
+.agentic-item__summary p:last-child { margin-bottom: 0; }
+
+/* Trend block — insight / pattern callout. */
+.agentic-trend {
+  background: var(--ag-purple-tint);
+  border-left: 4px solid var(--ag-purple);
+  border-radius: 0 .6rem .6rem 0;
+  padding: .9rem 1.1rem;
+}
+.agentic-trend__headline {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--ag-purple);
+  margin-bottom: .25rem;
+}
+.agentic-trend__text { font-size: .9rem; }
+.agentic-trend__text p:last-child { margin-bottom: 0; }
+
+/* More news block — closing digest of minor-but-notable items. */
+.agentic-more-news {
+  background: var(--ag-amber-tint);
+  border-left: 4px solid var(--ag-amber);
+  border-radius: 0 .6rem .6rem 0;
+  padding: .75rem 1.1rem 1rem;
+}
+.agentic-more-news__title {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ag-amber);
+  margin-bottom: .5rem;
+}
+.agentic-more-news ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.agentic-more-news li {
+  padding: .3rem 0;
+  font-size: .875rem;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.agentic-more-news li:last-child { border-bottom: none; }
+
 /* Stories — every emphasis level gets a real, visibly-filled box (never
    bg-body-tertiary, which equals the page background and is invisible). */
 .agentic-story--lead {

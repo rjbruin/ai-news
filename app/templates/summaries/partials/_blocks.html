@@ -11,6 +11,8 @@
 
 {% macro render_block(block) %}
 {%- set t = block.type -%}
+
+{# ── Structural blocks ─────────────────────────────────────────────────── #}
 {%- if t == 'edition_header' -%}
   <header class="mb-4 pb-3 border-bottom border-2">
     <h1 class="an-h1 mb-1">{{ block.title }}</h1>
@@ -27,11 +29,43 @@
     {% if block.description %}<p class="text-body-secondary mb-0">{{ block.description }}</p>{% endif %}
   </section>
 
+{%- elif t == 'divider' -%}
+  <hr class="agentic-divider my-4">
+
+{# ── Content blocks (current generation) ──────────────────────────────── #}
+{%- elif t == 'item' -%}
+  <article class="agentic-item mb-3">
+    <h3 class="an-h3 mb-0">
+      {{ block.headline }}
+      {%- for src in (block.sources or []) %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
+    </h3>
+    <p class="agentic-item__subheader mb-1">{{ block.subheader }}</p>
+    <div class="agentic-item__summary">{{ block.summary | md }}</div>
+  </article>
+
+{%- elif t == 'trend' -%}
+  <aside class="agentic-trend my-3">
+    <div class="agentic-trend__headline">📈 {{ block.headline }}</div>
+    <div class="agentic-trend__text">{{ block.text | md }}</div>
+  </aside>
+
+{%- elif t == 'more_news' -%}
+  <div class="agentic-more-news my-3">
+    <div class="agentic-more-news__title">More news</div>
+    <ul>
+      {% for it in block['items'] %}
+      <li>
+        <span>{{ it.headline | safe }}</span>
+        {%- if it.url %}<a href="{{ it.url }}" class="story-source" target="_blank" rel="noopener">{{ it.url | url_domain }}</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+{# ── Legacy blocks (stored documents from before the redesign) ─────────── #}
 {%- elif t == 'story' -%}
   {%- set lead = block.emphasis == 'lead' -%}
   {%- set brief = block.emphasis == 'brief' -%}
-  {#- Backward-compat: old blocks have url/source strings but no sources list.
-      Always derive domain from url directly — block.source may be stale. -#}
   {%- set _srcs = block.sources if block.sources else ([{'url': block.url, 'domain': block.url | url_domain}] if block.url else []) -%}
   {%- if brief -%}
   <article class="agentic-story agentic-story--brief d-flex align-items-baseline gap-2 mb-2">
@@ -72,7 +106,7 @@
 
 {%- elif t == 'quote' -%}
   <blockquote class="agentic-quote blockquote my-3">
-    <p class="mb-1">“{{ block.text }}”</p>
+    <p class="mb-1">"{{ block.text }}"</p>
     {% if block.attribution %}<footer class="blockquote-footer">{{ block.attribution }}</footer>{% endif %}
   </blockquote>
 
@@ -85,9 +119,6 @@
       {% endfor %}
     </ul>
   </div>
-
-{%- elif t == 'divider' -%}
-  <hr class="agentic-divider my-4">
 
 {%- endif -%}
 {% endmacro %}
