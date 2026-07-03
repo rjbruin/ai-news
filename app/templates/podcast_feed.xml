@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>{{ feed_title }}</title>
+    <link>{{ feed_link }}</link>
+    <language>en</language>
+    <description>{{ feed_description }}</description>
+    <itunes:author>{{ feed_author }}</itunes:author>
+    <itunes:summary>{{ feed_description }}</itunes:summary>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:category text="Technology"/>
+    <itunes:image href="{{ feed_image_url }}"/>
+    <image>
+      <url>{{ feed_image_url }}</url>
+      <title>{{ feed_title }}</title>
+      <link>{{ feed_link }}</link>
+    </image>
+    {% for ep in episodes %}
+    <item>
+      <title>{{ ep.title }}</title>
+      <description>{{ ep.description }}</description>
+      <itunes:summary>{{ ep.description }}</itunes:summary>
+      <pubDate>{{ ep.pub_date }}</pubDate>
+      <enclosure url="{{ ep.audio_url }}" length="{{ ep.size_bytes }}" type="audio/mpeg"/>
+      <guid isPermaLink="false">{{ ep.guid }}</guid>
+      <itunes:duration>{{ ep.duration }}</itunes:duration>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    {% endfor %}
+  </channel>
+</rss>

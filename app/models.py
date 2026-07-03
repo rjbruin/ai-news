@@ -60,6 +60,10 @@ class User(UserMixin, db.Model):
     podcast_auto_generate = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
     pdf_font_scale = db.Column(db.Integer, default=80, nullable=False, server_default="80")
 
+    # Secret token embedded in the personal podcast RSS feed URL, so podcast
+    # apps (which can't do session login) can fetch the feed and its MP3s.
+    podcast_feed_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
+
     featured_summary_id = db.Column(
         db.Integer, db.ForeignKey("summaries.id"), nullable=True
     )
@@ -103,6 +107,23 @@ class User(UserMixin, db.Model):
     @property
     def has_openrouter_key(self) -> bool:
         return bool(self.openrouter_api_key_enc)
+
+    def get_or_create_feed_token(self) -> str:
+        """Return the podcast-feed token, generating and persisting one if absent."""
+        import secrets
+
+        if not self.podcast_feed_token:
+            self.podcast_feed_token = secrets.token_urlsafe(32)
+            db.session.commit()
+        return self.podcast_feed_token
+
+    def reset_feed_token(self) -> str:
+        """Rotate the podcast-feed token, invalidating any existing feed URL."""
+        import secrets
+
+        self.podcast_feed_token = secrets.token_urlsafe(32)
+        db.session.commit()
+        return self.podcast_feed_token
 
     def check_password(self, password: str) -> bool:
         if not self.password_hash:
