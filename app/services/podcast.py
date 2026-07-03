@@ -179,6 +179,27 @@ def generate_script_revision_stream(run, user, api_key: str, model: str, current
     )
 
 
+def _strip_id3v2(data: bytes) -> bytes:
+    """Strip the ID3v2 tag from the start of an MP3 chunk.
+
+    Each ElevenLabs segment carries its own ID3 header with a TLEN tag covering
+    only that segment's duration. Concatenating chunks naively leaves the first
+    segment's short TLEN in place, so players report the wrong total duration.
+    Stripping before joining lets players derive duration from the CBR frame data.
+    """
+    if len(data) < 10 or data[:3] != b"ID3":
+        return data
+    # Bytes 6-9 encode the tag body size as a synchsafe integer.
+    size = (
+        (data[6] & 0x7F) << 21 |
+        (data[7] & 0x7F) << 14 |
+        (data[8] & 0x7F) << 7 |
+        (data[9] & 0x7F)
+    )
+    has_footer = bool(data[5] & 0x10)
+    return data[10 + size + (10 if has_footer else 0):]
+
+
 def parse_segments(script: str) -> list[dict]:
     """Parse a HOST A/HOST B script into a list of {host, text} dicts."""
     segments = []
@@ -255,7 +276,7 @@ def generate_audio(script: str, user) -> tuple[str, str]:
     for seg in segments:
         voice_id = voice_a if seg["host"] == "A" else voice_b
         chunk = _tts_segment(seg["text"], voice_id, api_key, el_model)
-        mp3_chunks.append(chunk)
+        mp3_chunks.append(_strip_id3v2(chunk))
 
     audio_bytes = b"".join(mp3_chunks)
 
