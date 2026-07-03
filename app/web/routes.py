@@ -961,6 +961,72 @@ def edition_podcast_generate_audio(summary_id: int, run_id: int):
     return jsonify({"audio_url": audio_url})
 
 
+@bp.route(
+    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/generate-audio-stream"
+)
+@login_required
+def edition_podcast_generate_audio_stream(summary_id: int, run_id: int):
+    """SSE audio generation: streams per-segment progress, then the audio URL.
+
+    Reads the saved script from the DB (EventSource is GET-only). Emitting a
+    progress event per TTS segment keeps the connection active so a long news
+    read-through never trips the nginx/gunicorn 120s read-timeout.
+    """
+    from ..services import podcast as podcast_svc
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    podcast_type = request.args.get("type", "discussion")
+    script = (
+        run.news_podcast_script if podcast_type == "news" else run.podcast_script
+    ) or ""
+
+    def _err(msg):
+        def _gen():
+            yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
+        return Response(
+            stream_with_context(_gen()),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if not script:
+        return _err("No saved script to generate audio from. Generate a script first.")
+
+    user_obj = current_user._get_current_object()
+    rid = run.id
+
+    def _generate():
+        try:
+            filename = None
+            for event in podcast_svc.generate_audio_stream(script, user_obj):
+                if event[0] == "progress":
+                    yield f"data: {json.dumps({'type': 'progress', 'done': event[1], 'total': event[2]})}\n\n"
+                elif event[0] == "done":
+                    filename = event[1]
+            run_obj = db.session.get(SummaryRun, rid)
+            if podcast_type == "news":
+                run_obj.news_podcast_audio = filename
+            else:
+                run_obj.podcast_audio = filename
+            db.session.commit()
+            audio_url = url_for("web.serve_podcast", filename=filename)
+            yield f"data: {json.dumps({'type': 'done', 'audio_url': audio_url})}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_generate()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])
 @login_required
 def edition_delete(summary_id: int, run_id: int):

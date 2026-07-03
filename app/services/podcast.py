@@ -423,11 +423,16 @@ def _tts_segment(text: str, voice_id: str, api_key: str, el_model: str) -> bytes
     return resp.content
 
 
-def generate_audio(script: str, user) -> tuple[str, str]:
-    """Generate podcast MP3 from a script.
+def generate_audio_stream(script: str, user):
+    """Generate a podcast MP3, yielding progress as each segment is synthesized.
 
-    Returns (absolute_path, web_filename) where web_filename can be used in
-    url_for('static', filename=f'podcasts/{filename}').
+    Yields ``("progress", done, total)`` after every TTS segment, then finally
+    ``("done", filename)`` once the joined MP3 is written to the instance folder.
+    Raises the same validation errors as ``generate_audio``.
+
+    A long news read-through can take several minutes; emitting per-segment
+    events keeps the SSE connection active so proxy/worker read-timeouts
+    (nginx/gunicorn, 120s) never fire on a silent long request.
     """
     api_key = user.get_elevenlabs_key()
     if not api_key:
@@ -446,10 +451,12 @@ def generate_audio(script: str, user) -> tuple[str, str]:
         raise ValueError("No HOST A/HOST B lines found in the script.")
 
     mp3_chunks = []
-    for seg in segments:
+    total = len(segments)
+    for i, seg in enumerate(segments, 1):
         voice_id = voice_a if seg["host"] == "A" else voice_b
         chunk = _tts_segment(seg["text"], voice_id, api_key, el_model)
         mp3_chunks.append(_strip_xing_frame(_strip_id3v2(chunk)))
+        yield ("progress", i, total)
 
     audio_bytes = b"".join(mp3_chunks)
 
@@ -461,4 +468,17 @@ def generate_audio(script: str, user) -> tuple[str, str]:
     with open(path, "wb") as f:
         f.write(audio_bytes)
 
+    yield ("done", filename)
+
+
+def generate_audio(script: str, user) -> tuple[str, str]:
+    """Generate podcast MP3 from a script (non-streaming convenience wrapper).
+
+    Returns (absolute_path, web_filename).
+    """
+    filename = None
+    for event in generate_audio_stream(script, user):
+        if event[0] == "done":
+            filename = event[1]
+    path = os.path.join(current_app.instance_path, "podcasts", filename)
     return path, filename
