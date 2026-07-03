@@ -691,6 +691,7 @@ def edition_podcast(summary_id: int, run_id: int):
         "summaries/podcast.html",
         summary=summary, run=run,
         auto_generate=current_user.podcast_auto_generate,
+        saved_script=run.podcast_script or "",
     )
 
 
@@ -724,6 +725,82 @@ def edition_podcast_stream(summary_id: int, run_id: int):
     def _generate():
         try:
             for token in podcast_svc.generate_script_stream(run_obj, user_obj, api_key, model):
+                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_generate()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@bp.route(
+    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/save-script",
+    methods=["POST"],
+)
+@login_required
+def edition_podcast_save_script(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+    data = request.get_json(silent=True) or {}
+    script = (data.get("script") or "").strip()
+    if not script:
+        return jsonify({"error": "No script provided."}), 400
+    run.podcast_script = script
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast/revise-stream")
+@login_required
+def edition_podcast_revise_stream(summary_id: int, run_id: int):
+    from ..agent.creds import resolve as resolve_creds, MissingCredentials
+    from ..services import podcast as podcast_svc
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    feedback = request.args.get("feedback", "").strip()
+    current_script = run.podcast_script or ""
+
+    def _err(msg):
+        def _gen():
+            yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
+        return Response(
+            stream_with_context(_gen()),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if not feedback:
+        return _err("No feedback provided.")
+    if not current_script:
+        return _err("No saved script to revise. Generate a script first.")
+
+    try:
+        api_key, model = resolve_creds(current_user)
+    except MissingCredentials as exc:
+        return _err(str(exc))
+
+    user_obj = current_user._get_current_object()
+    run_obj = run
+
+    def _generate():
+        try:
+            for token in podcast_svc.generate_script_revision_stream(
+                run_obj, user_obj, api_key, model, current_script, feedback
+            ):
                 yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception as exc:  # noqa: BLE001

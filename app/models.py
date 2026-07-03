@@ -300,6 +300,8 @@ class SummaryRun(db.Model):
     agent_log = db.Column(JSONEncodedDict, nullable=True)
     agent_cost = db.Column(db.Float, nullable=True)
 
+    podcast_script = db.Column(db.Text, nullable=True)
+
     read_at = db.Column(db.DateTime, nullable=True)
     share_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
