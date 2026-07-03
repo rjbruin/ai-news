@@ -259,11 +259,11 @@ def generate_audio(script: str, user) -> tuple[str, str]:
 
     audio_bytes = b"".join(mp3_chunks)
 
-    static_dir = os.path.join(current_app.root_path, "static", "podcasts")
-    os.makedirs(static_dir, exist_ok=True)
+    podcast_dir = os.path.join(current_app.instance_path, "podcasts")
+    os.makedirs(podcast_dir, exist_ok=True)
 
     filename = f"podcast_{int(time.time())}.mp3"
-    path = os.path.join(static_dir, filename)
+    path = os.path.join(podcast_dir, filename)
     with open(path, "wb") as f:
         f.write(audio_bytes)
 
