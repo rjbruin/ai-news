@@ -58,6 +58,7 @@ class User(UserMixin, db.Model):
     elevenlabs_voice_host_b = db.Column(db.String(120), nullable=True)
     elevenlabs_model = db.Column(db.String(120), nullable=True)
     podcast_auto_generate = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+    pdf_font_scale = db.Column(db.Integer, default=80, nullable=False, server_default="80")
 
     featured_summary_id = db.Column(
         db.Integer, db.ForeignKey("summaries.id"), nullable=True

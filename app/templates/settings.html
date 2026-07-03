@@ -146,6 +146,20 @@
   </div>
 
   <div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">PDF export</div>
+    <div class="card-body">
+      <div class="mb-0">
+        <label class="form-label" for="pdf_font_scale">Font scale (%)</label>
+        <input type="number" name="pdf_font_scale" id="pdf_font_scale"
+               class="form-control" style="max-width: 120px;"
+               min="50" max="150" step="5"
+               value="{{ current_user.pdf_font_scale or 80 }}">
+        <div class="form-text">Scales all text in PDF exports. 80% is a good fit for A4. Range: 50–150.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
     <div class="card-header fw-semibold">ElevenLabs <span class="fw-normal text-body-secondary">(podcast export)</span></div>
     <div class="card-body">
       <div class="mb-3">
