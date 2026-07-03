@@ -10,7 +10,7 @@
 </div>
 <h1 class="h4 mb-4">Podcast export</h1>
 
-<div id="phase-generating">
+<div id="phase-generating" class="d-none">
   <div class="d-flex align-items-center gap-2 mb-3">
     <div class="spinner-border spinner-border-sm text-primary" id="spinner" role="status">
       <span class="visually-hidden">Generating…</span>
@@ -42,8 +42,19 @@
                 style="resize:vertical;border-radius:0 0 .375rem .375rem !important"></textarea>
     </div>
   </div>
-  <div class="text-end">
+  <div class="text-end mb-5">
     <button id="btn-generate" class="btn btn-primary">Generate podcast</button>
+  </div>
+
+  <hr>
+  <div class="mt-4">
+    <p class="fw-semibold small mb-1">Revise script with feedback</p>
+    <p class="text-body-secondary small mb-2">Describe what to change. The AI will rewrite the script based on your input.</p>
+    <textarea id="feedback-text"
+              class="form-control mb-2"
+              rows="3"
+              placeholder="e.g. Make it shorter, focus more on the GPT-5 story, add more back-and-forth between hosts…"></textarea>
+    <button id="btn-revise" class="btn btn-outline-secondary">Revise script</button>
   </div>
 </div>
 
@@ -52,7 +63,7 @@
   <audio controls class="w-100 mb-3" id="audio-player"></audio>
   <div class="d-flex gap-2">
     <a id="download-link" class="btn btn-outline-secondary" download>Download MP3</a>
-    <button class="btn btn-outline-secondary" id="btn-regenerate">Edit script &amp; regenerate</button>
+    <button class="btn btn-outline-secondary" id="btn-back-to-review">Edit script &amp; regenerate</button>
   </div>
 </div>
 
@@ -65,9 +76,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
-const STREAM_URL = {{ url_for('web.edition_podcast_stream', summary_id=summary.id, run_id=run.id) | tojson }};
-const AUDIO_URL  = {{ url_for('web.edition_podcast_generate_audio', summary_id=summary.id, run_id=run.id) | tojson }};
-const AUTO_GENERATE = {{ 'true' if auto_generate else 'false' }};
+const STREAM_URL      = {{ url_for('web.edition_podcast_stream', summary_id=summary.id, run_id=run.id) | tojson }};
+const REVISE_URL      = {{ url_for('web.edition_podcast_revise_stream', summary_id=summary.id, run_id=run.id) | tojson }};
+const SAVE_SCRIPT_URL = {{ url_for('web.edition_podcast_save_script', summary_id=summary.id, run_id=run.id) | tojson }};
+const AUDIO_URL       = {{ url_for('web.edition_podcast_generate_audio', summary_id=summary.id, run_id=run.id) | tojson }};
+const AUTO_GENERATE   = {{ 'true' if auto_generate else 'false' }};
+const SAVED_SCRIPT    = {{ saved_script | tojson }};
 
 const phaseGenerating = document.getElementById('phase-generating');
 const phaseReview     = document.getElementById('phase-review');
@@ -79,6 +93,7 @@ const spinner         = document.getElementById('spinner');
 const statusMsg       = document.getElementById('status-msg');
 
 let fullScript = '';
+let activeEs = null;
 
 function showPhase(name) {
   [phaseGenerating, phaseReview, phaseAudio, phaseError].forEach(el => el.classList.add('d-none'));
@@ -90,6 +105,14 @@ function showError(msg) {
   showPhase('error');
 }
 
+function saveScript(script) {
+  return fetch(SAVE_SCRIPT_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({script}),
+  }).then(r => r.json()).catch(() => ({}));
+}
+
 function generateAudio(script) {
   showPhase('generating');
   statusMsg.textContent = 'Generating podcast audio… (this may take a minute)';
@@ -99,7 +122,7 @@ function generateAudio(script) {
   fetch(AUDIO_URL, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({script: script}),
+    body: JSON.stringify({script}),
   })
   .then(r => r.json())
   .then(data => {
@@ -114,33 +137,59 @@ function generateAudio(script) {
   .catch(err => showError('Failed to generate audio: ' + err));
 }
 
-// Stream the script from the LLM.
-const es = new EventSource(STREAM_URL);
-es.onmessage = function(e) {
-  const data = JSON.parse(e.data);
-  if (data.type === 'token') {
-    fullScript += data.text;
-    scriptOutput.textContent = fullScript;
-    scriptOutput.scrollTop = scriptOutput.scrollHeight;
-  } else if (data.type === 'done') {
-    es.close();
-    spinner.classList.add('d-none');
-    statusMsg.textContent = 'Script complete.';
-    if (AUTO_GENERATE) {
-      generateAudio(fullScript);
-    } else {
-      scriptText.value = fullScript;
-      showPhase('review');
+function startStream(url, statusText) {
+  if (activeEs) { activeEs.close(); activeEs = null; }
+
+  fullScript = '';
+  scriptOutput.textContent = '';
+  statusMsg.textContent = statusText || 'Generating podcast script…';
+  spinner.classList.remove('d-none');
+  showPhase('generating');
+
+  const es = new EventSource(url);
+  activeEs = es;
+
+  es.onmessage = function(e) {
+    const data = JSON.parse(e.data);
+    if (data.type === 'token') {
+      fullScript += data.text;
+      scriptOutput.textContent = fullScript;
+      scriptOutput.scrollTop = scriptOutput.scrollHeight;
+    } else if (data.type === 'done') {
+      es.close();
+      activeEs = null;
+      spinner.classList.add('d-none');
+      statusMsg.textContent = 'Script complete.';
+      saveScript(fullScript).then(() => {
+        if (AUTO_GENERATE && statusText === null) {
+          generateAudio(fullScript);
+        } else {
+          scriptText.value = fullScript;
+          document.getElementById('feedback-text').value = '';
+          showPhase('review');
+        }
+      });
+    } else if (data.type === 'error') {
+      es.close();
+      activeEs = null;
+      showError(data.message || 'An error occurred during script generation.');
     }
-  } else if (data.type === 'error') {
+  };
+  es.onerror = function() {
     es.close();
-    showError(data.message || 'An error occurred during script generation.');
-  }
-};
-es.onerror = function() {
-  es.close();
-  showError('Connection lost during script generation. Please try again.');
-};
+    activeEs = null;
+    showError('Connection lost during script generation. Please try again.');
+  };
+}
+
+// On page load: show existing script in review, or start generating.
+if (SAVED_SCRIPT) {
+  scriptText.value = SAVED_SCRIPT;
+  fullScript = SAVED_SCRIPT;
+  showPhase('review');
+} else {
+  startStream(STREAM_URL, null);
+}
 
 // Review → generate audio.
 document.getElementById('btn-generate').addEventListener('click', function() {
@@ -149,10 +198,24 @@ document.getElementById('btn-generate').addEventListener('click', function() {
   generateAudio(script);
 });
 
-// Show script for editing after audio is done.
-document.getElementById('btn-regenerate').addEventListener('click', function() {
+// Review → back to script editor after audio.
+document.getElementById('btn-back-to-review').addEventListener('click', function() {
   if (!scriptText.value) scriptText.value = fullScript;
   showPhase('review');
+});
+
+// Revise script with feedback.
+document.getElementById('btn-revise').addEventListener('click', function() {
+  const feedback = document.getElementById('feedback-text').value.trim();
+  if (!feedback) return;
+  const script = scriptText.value.trim();
+  if (!script) return;
+
+  // Save current textarea first so server has the latest version to revise.
+  saveScript(script).then(() => {
+    const url = REVISE_URL + '?feedback=' + encodeURIComponent(feedback);
+    startStream(url, 'Revising script…');
+  });
 });
 </script>
 {% endblock %}

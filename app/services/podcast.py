@@ -147,6 +147,38 @@ def generate_script_stream(run, user, api_key: str, model: str):
     )
 
 
+def generate_script_revision_stream(run, user, api_key: str, model: str, current_script: str, feedback: str):
+    """Generator that yields revised LLM text tokens, given the current script and feedback."""
+    from ..llm.openrouter import chat_stream
+
+    podcast_format = _get_podcast_format(user)
+    edition_text = edition_to_text(run)
+    label = run.label or run.generated_at.strftime("%Y-%m-%d")
+
+    system = (
+        "You are a professional podcast scriptwriter.\n\n"
+        + podcast_format
+    )
+    original_request = (
+        f"Here is today's AI news digest — \"{label}\".\n\n"
+        f"Turn it into a podcast script following the format instructions above.\n\n"
+        f"---\n{edition_text}\n---"
+    )
+
+    yield from chat_stream(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": original_request},
+            {"role": "assistant", "content": current_script},
+            {"role": "user", "content": f"Please revise the script based on this feedback:\n\n{feedback}"},
+        ],
+        api_key=api_key,
+        model=model,
+        temperature=0.85,
+        timeout=300.0,
+    )
+
+
 def parse_segments(script: str) -> list[dict]:
     """Parse a HOST A/HOST B script into a list of {host, text} dicts."""
     segments = []
