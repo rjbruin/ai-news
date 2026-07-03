@@ -107,7 +107,7 @@ const TYPE_PARAM      = '?type=' + encodeURIComponent(PODCAST_TYPE);
 const STREAM_URL      = {{ url_for('web.edition_podcast_stream', summary_id=summary.id, run_id=run.id) | tojson }} + TYPE_PARAM;
 const REVISE_URL      = {{ url_for('web.edition_podcast_revise_stream', summary_id=summary.id, run_id=run.id) | tojson }} + TYPE_PARAM;
 const SAVE_SCRIPT_URL = {{ url_for('web.edition_podcast_save_script', summary_id=summary.id, run_id=run.id) | tojson }};
-const AUDIO_URL       = {{ url_for('web.edition_podcast_generate_audio', summary_id=summary.id, run_id=run.id) | tojson }};
+const AUDIO_STREAM_URL = {{ url_for('web.edition_podcast_generate_audio_stream', summary_id=summary.id, run_id=run.id) | tojson }} + TYPE_PARAM;
 const AUTO_GENERATE   = {{ 'true' if auto_generate else 'false' }};
 const SAVED_SCRIPT    = {{ saved_script | tojson }};
 const SAVED_AUDIO_URL = {{ saved_audio_url | tojson }};
@@ -150,24 +150,35 @@ function showAudio(url) {
 
 function generateAudio(script) {
   showPhase('generating');
-  statusMsg.textContent = 'Generating podcast audio… (this may take a minute)';
+  statusMsg.textContent = 'Generating podcast audio… (this may take a few minutes)';
   spinner.classList.remove('d-none');
   scriptOutput.textContent = '';
 
-  fetch(AUDIO_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({script, podcast_type: PODCAST_TYPE}),
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.error) {
-      showError(data.error);
-    } else {
-      showAudio(data.audio_url);
-    }
-  })
-  .catch(err => showError('Failed to generate audio: ' + err));
+  // Persist the current script first so the GET stream endpoint reads the
+  // latest version, then stream generation with per-segment progress.
+  saveScript(script).then(() => {
+    if (activeEs) { activeEs.close(); activeEs = null; }
+    const es = new EventSource(AUDIO_STREAM_URL);
+    activeEs = es;
+    es.onmessage = function(e) {
+      const data = JSON.parse(e.data);
+      if (data.type === 'progress') {
+        statusMsg.textContent =
+          'Generating podcast audio… segment ' + data.done + ' of ' + data.total;
+      } else if (data.type === 'done') {
+        es.close(); activeEs = null;
+        spinner.classList.add('d-none');
+        showAudio(data.audio_url);
+      } else if (data.type === 'error') {
+        es.close(); activeEs = null;
+        showError(data.message || 'Failed to generate audio.');
+      }
+    };
+    es.onerror = function() {
+      es.close(); activeEs = null;
+      showError('Connection lost during audio generation. Please try again.');
+    };
+  });
 }
 
 function startStream(url, statusText) {
