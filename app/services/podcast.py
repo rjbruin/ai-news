@@ -141,10 +141,12 @@ def _doc_to_text(document: list) -> str:
                     parts.append(f"\n## {block['title']}")
                 _walk(block.get("blocks", []))
             elif t in ("item", "story"):
-                if block.get("title"):
-                    parts.append(f"\n### {block['title']}")
-                if block.get("summary"):
-                    parts.append(_strip_html(str(block["summary"])))
+                title = block.get("title") or block.get("headline") or ""
+                body = block.get("summary") or block.get("body") or block.get("dek") or ""
+                if title:
+                    parts.append(f"\n### {_strip_html(str(title))}")
+                if body:
+                    parts.append(_strip_html(str(body)))
             elif t == "trend":
                 if block.get("headline"):
                     parts.append(f"Trend: {block['headline']}")
