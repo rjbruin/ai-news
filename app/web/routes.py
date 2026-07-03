@@ -167,6 +167,10 @@ def settings():
             (request.form.get("elevenlabs_model") or "").strip() or None
         )
         current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
+        try:
+            current_user.pdf_font_scale = max(50, min(150, int(request.form.get("pdf_font_scale") or 80)))
+        except (ValueError, TypeError):
+            pass
         db.session.commit()
 
         # Podcast format memory (user-level, no summary)
@@ -491,9 +495,11 @@ def edition_export(summary_id: int, run_id: int):
     plugin = summary_registry.get(summary.type_key)
     is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
 
+    font_scale = max(50, min(150, current_user.pdf_font_scale or 80))
     html_str = render_template(
         "summaries/print.html",
         summary=summary, run=run, is_agentic=is_agentic,
+        font_scale=font_scale,
     )
 
     static_folder = current_app.static_folder

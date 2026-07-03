@@ -34,29 +34,38 @@
       @bottom-right {
         content: counter(page) " / " counter(pages);
         font-family: "Inter", Helvetica, Arial, sans-serif;
-        font-size: 8pt;
+        font-size: 0.67rem;
         color: #6c757d;
       }
+    }
+
+    /* ── Root font scale + full page width ───────────────────────────────
+       html font-size drives all rem values. At 80%: 1rem = 12.8px.
+       Width: 100% ensures content fills the entire A4 content area. ──── */
+    html {
+      font-size: {{ font_scale }}%;
+      width: 100%;
     }
 
     /* ── Base ────────────────────────────────────────────────────────────── */
     body {
       font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-      font-size: 10pt;
+      font-size: 0.83rem; /* ≈ 10pt at 100%, ≈ 8pt at 80% */
       line-height: 1.55;
       color: #212529;
       background: white;
+      width: 100%;
     }
 
     a { color: #1f3a5f; text-decoration: none; }
     a[target="_blank"]::after { display: none !important; }
 
-    /* ── Heading scale ───────────────────────────────────────────────────── */
-    .an-h1 { font-size: 20pt; font-weight: 800; }
-    .an-h2 { font-size: 14pt; font-weight: 800; color: #1f3a5f; }
-    .an-h3 { font-size: 11pt; font-weight: 700; }
-    .an-h4 { font-size: 10pt; font-weight: 600; }
-    .an-h5 { font-size: 9.5pt; font-weight: 600; }
+    /* ── Heading scale (rem so they scale with html font-size) ──────────── */
+    .an-h1 { font-size: 1.67rem; font-weight: 800; }  /* ≈ 20pt at 100% */
+    .an-h2 { font-size: 1.17rem; font-weight: 800; color: #1f3a5f; }  /* ≈ 14pt */
+    .an-h3 { font-size: 0.92rem; font-weight: 700; }  /* ≈ 11pt */
+    .an-h4 { font-size: 0.83rem; font-weight: 600; }  /* ≈ 10pt */
+    .an-h5 { font-size: 0.79rem; font-weight: 600; }  /* ≈ 9.5pt */
     .an-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; }
 
     /* ── Section header ──────────────────────────────────────────────────── */
