@@ -200,6 +200,52 @@ def _strip_id3v2(data: bytes) -> bytes:
     return data[10 + size + (10 if has_footer else 0):]
 
 
+def _strip_xing_frame(data: bytes) -> bytes:
+    """Strip the Xing/Info CBR/VBR info frame from the first audio frame if present.
+
+    After stripping the ID3 tag, ElevenLabs segments still begin with an 'Info'
+    frame that records the frame count for that segment only. Players use it to
+    derive duration: removing it forces a full frame scan instead.
+    """
+    if len(data) < 4:
+        return data
+
+    # Locate the first MP3 sync word (0xFF followed by 0xE0–0xFF).
+    for i in range(min(len(data) - 4, 256)):
+        if data[i] != 0xFF or (data[i + 1] & 0xE0) != 0xE0:
+            continue
+
+        # Check for Xing / Info / VBRI marker within this frame's payload.
+        search = data[i: i + 200]
+        if b"Xing" not in search and b"Info" not in search and b"VBRI" not in search:
+            return data  # first sync word has no info frame — nothing to do
+
+        # Parse frame header to compute exact frame size.
+        hdr = int.from_bytes(data[i: i + 4], "big")
+        mpeg_v  = (hdr >> 19) & 3   # 3 = MPEG1
+        layer   = (hdr >> 17) & 3   # 1 = Layer III
+        br_idx  = (hdr >> 12) & 0xF
+        sr_idx  = (hdr >> 10) & 3
+        padding = (hdr >>  9) & 1
+
+        _BITRATES  = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0]
+        _SR_MPEG1  = [44100, 48000, 32000, 0]
+
+        if mpeg_v == 3 and layer == 1 and 0 < br_idx < 15:
+            samplerate = _SR_MPEG1[sr_idx]
+            if samplerate:
+                frame_size = 144 * _BITRATES[br_idx] * 1000 // samplerate + padding
+                return data[:i] + data[i + frame_size:]
+
+        # Fallback: skip to the next sync word.
+        for j in range(i + 4, len(data) - 1):
+            if data[j] == 0xFF and (data[j + 1] & 0xE0) == 0xE0:
+                return data[:i] + data[j:]
+        return data
+
+    return data
+
+
 def parse_segments(script: str) -> list[dict]:
     """Parse a HOST A/HOST B script into a list of {host, text} dicts."""
     segments = []
@@ -276,7 +322,7 @@ def generate_audio(script: str, user) -> tuple[str, str]:
     for seg in segments:
         voice_id = voice_a if seg["host"] == "A" else voice_b
         chunk = _tts_segment(seg["text"], voice_id, api_key, el_model)
-        mp3_chunks.append(_strip_id3v2(chunk))
+        mp3_chunks.append(_strip_xing_frame(_strip_id3v2(chunk)))
 
     audio_bytes = b"".join(mp3_chunks)
 
