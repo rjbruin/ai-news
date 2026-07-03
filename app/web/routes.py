@@ -1004,16 +1004,20 @@ def edition_podcast_generate_audio_stream(summary_id: int, run_id: int):
     def _generate():
         try:
             filename = None
+            chapters = []
             for event in podcast_svc.generate_audio_stream(script, user_obj):
                 if event[0] == "progress":
                     yield f"data: {json.dumps({'type': 'progress', 'done': event[1], 'total': event[2]})}\n\n"
                 elif event[0] == "done":
                     filename = event[1]
+                    chapters = event[2]
             run_obj = db.session.get(SummaryRun, rid)
             if podcast_type == "news":
                 run_obj.news_podcast_audio = filename
+                run_obj.news_podcast_chapters = chapters
             else:
                 run_obj.podcast_audio = filename
+                run_obj.podcast_chapters = chapters
             db.session.commit()
             audio_url = url_for("web.serve_podcast", filename=filename)
             yield f"data: {json.dumps({'type': 'done', 'audio_url': audio_url})}\n\n"

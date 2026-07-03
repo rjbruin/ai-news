@@ -38,10 +38,28 @@ HOST B: [dialogue]
 
 Do not include stage directions, sound effects, bracketed notes, or any other markup.
 Aim for 5–10 minutes of audio (roughly 900–1,500 words of dialogue).
+
+## Chapter markers
+Break the episode into chapters so the podcast player can show a table of contents.
+Put a Markdown heading on its own line at the start of the intro, before each story you
+discuss, and before the sign-off:
+
+# Intro
+HOST A: [dialogue]
+# GPT-5 launch
+HOST A: [dialogue]
+# Wrap-up
+HOST A: [dialogue]
+
+These heading lines are NOT spoken — they only mark chapter boundaries. Keep titles short
+(2–5 words). Every heading must be followed by at least one HOST line.
 """
 
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
+
+# ElevenLabs output is CBR MP3 at 128 kbps, so audio seconds ≈ bytes * 8 / bitrate.
+_BITRATE_BPS = 128_000
 
 DEFAULT_NEWS_PODCAST_FORMAT = """\
 # News podcast format
@@ -77,8 +95,23 @@ Every spoken line must be prefixed with HOST A: or HOST B: (all caps), followed 
 HOST A: [dialogue]
 HOST B: [dialogue]
 
-Do not include stage directions, sound effects, bracketed notes, section headers as spoken \
-lines, or any other markup.
+Do not include stage directions, sound effects, bracketed notes, or other markup on spoken lines.
+
+## Chapter markers
+Break the episode into chapters so the podcast player can show a table of contents.
+Put a Markdown heading on its own line at the start of the intro and before each section,
+using the section's title:
+
+# Intro
+HOST A: [dialogue]
+# Developer Tools & Infrastructure
+HOST A: [dialogue]
+# Wrap-up
+HOST A: [dialogue]
+
+These heading lines are NOT spoken — they only mark chapter boundaries. Put `# Intro` before
+the opening and `# Wrap-up` before the sign-off. Every heading must be followed by at least
+one HOST line.
 """
 
 
@@ -373,33 +406,58 @@ def _strip_xing_frame(data: bytes) -> bytes:
     return data
 
 
-def parse_segments(script: str) -> list[dict]:
-    """Parse a HOST A/HOST B script into a list of {host, text} dicts."""
-    segments = []
-    current_host = None
-    current_lines = []
+# A chapter marker is a Markdown heading on its own line; its text is the title.
+_CHAPTER_RE = re.compile(r"^#{1,6}\s+(.*\S)\s*$")
 
-    for line in script.splitlines():
-        line = line.strip()
+
+def parse_script_parts(script: str) -> list[dict]:
+    """Parse a script into an ordered list of chapter markers and spoken segments.
+
+    Returns dicts of either ``{"type": "chapter", "title": str}`` or
+    ``{"type": "segment", "host": "A"|"B", "text": str}``. Chapter markers are
+    Markdown heading lines (``# Title``) — they are not spoken; they only mark
+    where a chapter begins for the podcast player's table of contents.
+    """
+    parts: list[dict] = []
+    host = None
+    buf: list[str] = []
+
+    def flush():
+        nonlocal host, buf
+        if host and buf:
+            text = " ".join(buf).strip()
+            if text:
+                parts.append({"type": "segment", "host": host, "text": text})
+        host, buf = None, []
+
+    for raw in script.splitlines():
+        line = raw.strip()
         if not line:
             continue
-        if line.upper().startswith("HOST A:"):
-            if current_host and current_lines:
-                segments.append({"host": current_host, "text": " ".join(current_lines).strip()})
-            current_host = "A"
-            current_lines = [line[7:].strip()]
+        m = _CHAPTER_RE.match(line)
+        if m:
+            flush()
+            parts.append({"type": "chapter", "title": m.group(1).strip()})
+        elif line.upper().startswith("HOST A:"):
+            flush()
+            host, buf = "A", [line[7:].strip()]
         elif line.upper().startswith("HOST B:"):
-            if current_host and current_lines:
-                segments.append({"host": current_host, "text": " ".join(current_lines).strip()})
-            current_host = "B"
-            current_lines = [line[7:].strip()]
-        elif current_host:
-            current_lines.append(line)
+            flush()
+            host, buf = "B", [line[7:].strip()]
+        elif host:
+            buf.append(line)
 
-    if current_host and current_lines:
-        segments.append({"host": current_host, "text": " ".join(current_lines).strip()})
+    flush()
+    return parts
 
-    return [s for s in segments if s["text"]]
+
+def parse_segments(script: str) -> list[dict]:
+    """Parse a HOST A/HOST B script into a list of {host, text} dicts."""
+    return [
+        {"host": p["host"], "text": p["text"]}
+        for p in parse_script_parts(script)
+        if p["type"] == "segment"
+    ]
 
 
 def _tts_segment(text: str, voice_id: str, api_key: str, el_model: str) -> bytes:
@@ -446,17 +504,26 @@ def generate_audio_stream(script: str, user):
         )
 
     el_model = (user.elevenlabs_model or "").strip() or DEFAULT_ELEVENLABS_MODEL
-    segments = parse_segments(script)
-    if not segments:
+    parts = parse_script_parts(script)
+    total = sum(1 for p in parts if p["type"] == "segment")
+    if total == 0:
         raise ValueError("No HOST A/HOST B lines found in the script.")
 
     mp3_chunks = []
-    total = len(segments)
-    for i, seg in enumerate(segments, 1):
-        voice_id = voice_a if seg["host"] == "A" else voice_b
-        chunk = _tts_segment(seg["text"], voice_id, api_key, el_model)
-        mp3_chunks.append(_strip_xing_frame(_strip_id3v2(chunk)))
-        yield ("progress", i, total)
+    chapters = []            # [{"title": str, "start": int-seconds}]
+    elapsed = 0.0            # audio seconds emitted so far
+    done = 0
+    for part in parts:
+        if part["type"] == "chapter":
+            # A chapter starts at the current elapsed offset (before its segments).
+            chapters.append({"title": part["title"], "start": int(elapsed)})
+            continue
+        voice_id = voice_a if part["host"] == "A" else voice_b
+        chunk = _strip_xing_frame(_strip_id3v2(_tts_segment(part["text"], voice_id, api_key, el_model)))
+        mp3_chunks.append(chunk)
+        elapsed += len(chunk) * 8 / _BITRATE_BPS
+        done += 1
+        yield ("progress", done, total)
 
     audio_bytes = b"".join(mp3_chunks)
 
@@ -468,7 +535,7 @@ def generate_audio_stream(script: str, user):
     with open(path, "wb") as f:
         f.write(audio_bytes)
 
-    yield ("done", filename)
+    yield ("done", filename, chapters)
 
 
 def generate_audio(script: str, user) -> tuple[str, str]:
