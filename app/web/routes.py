@@ -24,7 +24,7 @@ from flask_login import current_user, login_required
 
 from ..agent.runner import AgentCancelled
 from ..extensions import db
-from ..models import Alert, NewsItem, Summary, SummaryRun, utcnow
+from ..models import Alert, NewsItem, Summary, SummaryRun, User, utcnow
 from ..services import generation_registry, summarize
 from ..summaries import registry as summary_registry
 
@@ -37,6 +37,52 @@ def serve_podcast(filename: str):
     """Serve podcast MP3 files from the instance folder (writable across releases)."""
     import os
     from flask import send_from_directory
+    podcast_dir = os.path.join(current_app.instance_path, "podcasts")
+    return send_from_directory(podcast_dir, filename, mimetype="audio/mpeg")
+
+
+@bp.route("/podcast/feed/<token>")
+def podcast_feed(token: str):
+    """Public RSS feed of a user's generated podcasts, keyed by a secret token.
+
+    Podcast apps can't authenticate with a session cookie, so access is gated
+    on the unguessable per-user ``podcast_feed_token`` embedded in the URL.
+    """
+    from ..services import podcast_feed as feed_svc
+
+    user = User.query.filter_by(podcast_feed_token=token).first() or abort(404)
+    episodes = feed_svc.build_episodes(user)
+    for ep in episodes:
+        ep["audio_url"] = url_for(
+            "web.podcast_feed_audio", token=token, filename=ep["filename"],
+            _external=True,
+        )
+    xml = render_template(
+        "podcast_feed.xml",
+        feed_title=f"AI News · {user.username}",
+        feed_description="Auto-generated audio editions of your AI news digest.",
+        feed_link=url_for("web.dashboard", _external=True),
+        feed_author=user.username,
+        feed_image_url=url_for("static", filename="icons/icon-512.png", _external=True),
+        episodes=episodes,
+    )
+    return Response(xml, mimetype="application/rss+xml")
+
+
+@bp.route("/podcast/feed/<token>/audio/<filename>")
+def podcast_feed_audio(token: str, filename: str):
+    """Serve a podcast MP3 to a podcast app, gated by the feed token.
+
+    Validates that the file actually belongs to the token's owner so one user's
+    token can't be used to fetch another user's audio from the shared folder.
+    """
+    import os
+    from flask import send_from_directory
+    from ..services import podcast_feed as feed_svc
+
+    user = User.query.filter_by(podcast_feed_token=token).first() or abort(404)
+    if not feed_svc.owns_audio(user, filename):
+        abort(404)
     podcast_dir = os.path.join(current_app.instance_path, "podcasts")
     return send_from_directory(podcast_dir, filename, mimetype="audio/mpeg")
 
@@ -225,6 +271,9 @@ def settings():
     podcast_format = _get_podcast_format(current_user)
     news_podcast_format = _get_news_podcast_format(current_user)
 
+    feed_token = current_user.get_or_create_feed_token()
+    podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
+
     return render_template(
         "settings.html",
         summary=summary, types=types,
@@ -233,7 +282,17 @@ def settings():
         default_podcast_format=DEFAULT_PODCAST_FORMAT,
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
+        podcast_feed_url=podcast_feed_url,
     )
+
+
+@bp.route("/settings/podcast-feed/regenerate", methods=["POST"])
+@login_required
+def regenerate_podcast_feed_token():
+    """Rotate the podcast-feed token, invalidating the old feed URL."""
+    current_user.reset_feed_token()
+    flash("Podcast feed URL regenerated. Update the subscription in your podcast app.", "success")
+    return redirect(url_for("web.settings"))
 
 
 # ───────────────────────── News ─────────────────────────

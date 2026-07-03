@@ -216,6 +216,28 @@
   </div>
 
   <div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">Podcast feed <span class="fw-normal text-body-secondary">(subscribe on your phone)</span></div>
+    <div class="card-body">
+      <p class="form-text mt-0 mb-2">
+        Add this private URL in any podcast app (Overcast, Pocket Casts, Apple Podcasts →
+        “Add a show by URL”). New editions appear automatically once their audio is generated.
+        Keep it secret — anyone with the link can hear your podcasts.
+      </p>
+      <div class="input-group">
+        <input type="text" class="form-control font-monospace" id="podcast-feed-url"
+               value="{{ podcast_feed_url }}" readonly>
+        <button class="btn btn-outline-secondary" type="button" id="copy-feed-url">Copy</button>
+      </div>
+      <div class="form-text mt-2">
+        Lost or leaked the link?
+        <button type="submit" form="regen-feed-form"
+                class="btn btn-link btn-sm p-0 align-baseline">Regenerate URL</button>
+        (the old one stops working).
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
     <div class="card-header fw-semibold">Discussion podcast — format instructions</div>
     <div class="card-body">
       <p class="form-text mb-2">
@@ -250,10 +272,25 @@
   </div>
 
 </form>
+
+<form id="regen-feed-form" method="post"
+      action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
 </div></div>
 {% endblock %}
 {% block scripts %}
 <script>
+const copyFeedBtn = document.getElementById('copy-feed-url');
+if (copyFeedBtn) {
+  copyFeedBtn.addEventListener('click', function() {
+    const input = document.getElementById('podcast-feed-url');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(function() {
+      copyFeedBtn.textContent = 'Copied';
+      setTimeout(function() { copyFeedBtn.textContent = 'Copy'; }, 1500);
+    });
+  });
+}
+
 const DEFAULT_PODCAST_FORMAT = {{ default_podcast_format | tojson }};
 const resetLink = document.getElementById('reset-podcast-format');
 if (resetLink) {
