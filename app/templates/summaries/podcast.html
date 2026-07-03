@@ -85,11 +85,11 @@
 </div>
 
 <div id="phase-audio" class="d-none">
-  <div class="alert alert-success mb-3">Podcast generated!</div>
   <audio controls class="w-100 mb-3" id="audio-player"></audio>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap">
     <a id="download-link" class="btn btn-outline-secondary" download>Download MP3</a>
-    <button class="btn btn-outline-secondary" id="btn-back-to-review">Edit script &amp; regenerate</button>
+    <button class="btn btn-outline-secondary" id="btn-back-to-review">Edit script</button>
+    <button class="btn btn-outline-secondary" id="btn-regenerate-audio">Regenerate audio</button>
   </div>
 </div>
 
@@ -110,6 +110,7 @@ const SAVE_SCRIPT_URL = {{ url_for('web.edition_podcast_save_script', summary_id
 const AUDIO_URL       = {{ url_for('web.edition_podcast_generate_audio', summary_id=summary.id, run_id=run.id) | tojson }};
 const AUTO_GENERATE   = {{ 'true' if auto_generate else 'false' }};
 const SAVED_SCRIPT    = {{ saved_script | tojson }};
+const SAVED_AUDIO_URL = {{ saved_audio_url | tojson }};
 
 const phaseGenerating = document.getElementById('phase-generating');
 const phaseReview     = document.getElementById('phase-review');
@@ -141,6 +142,12 @@ function saveScript(script) {
   }).then(r => r.json()).catch(() => ({}));
 }
 
+function showAudio(url) {
+  document.getElementById('audio-player').src = url;
+  document.getElementById('download-link').href = url;
+  showPhase('audio');
+}
+
 function generateAudio(script) {
   showPhase('generating');
   statusMsg.textContent = 'Generating podcast audio… (this may take a minute)';
@@ -150,16 +157,14 @@ function generateAudio(script) {
   fetch(AUDIO_URL, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({script}),
+    body: JSON.stringify({script, podcast_type: PODCAST_TYPE}),
   })
   .then(r => r.json())
   .then(data => {
     if (data.error) {
       showError(data.error);
     } else {
-      document.getElementById('audio-player').src = data.audio_url;
-      document.getElementById('download-link').href = data.audio_url;
-      showPhase('audio');
+      showAudio(data.audio_url);
     }
   })
   .catch(err => showError('Failed to generate audio: ' + err));
@@ -210,8 +215,12 @@ function startStream(url, statusText) {
   };
 }
 
-// On page load: show existing script in review, or start generating.
-if (SAVED_SCRIPT) {
+// On page load: restore state.
+if (SAVED_AUDIO_URL) {
+  scriptText.value = SAVED_SCRIPT;
+  fullScript = SAVED_SCRIPT;
+  showAudio(SAVED_AUDIO_URL);
+} else if (SAVED_SCRIPT) {
   scriptText.value = SAVED_SCRIPT;
   fullScript = SAVED_SCRIPT;
   showPhase('review');
@@ -226,10 +235,17 @@ document.getElementById('btn-generate').addEventListener('click', function() {
   generateAudio(script);
 });
 
-// Review → back to script editor after audio.
+// Audio → back to script editor.
 document.getElementById('btn-back-to-review').addEventListener('click', function() {
   if (!scriptText.value) scriptText.value = fullScript;
   showPhase('review');
+});
+
+// Audio → regenerate from current script without editing.
+document.getElementById('btn-regenerate-audio').addEventListener('click', function() {
+  const script = scriptText.value.trim() || fullScript;
+  if (!script) return;
+  generateAudio(script);
 });
 
 // Revise script with feedback.
