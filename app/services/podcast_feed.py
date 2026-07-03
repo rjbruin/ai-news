@@ -5,7 +5,8 @@ import os
 from datetime import timezone
 from email.utils import format_datetime
 
-from flask import current_app
+from flask import current_app, url_for
+from markupsafe import escape
 from sqlalchemy import or_
 
 from ..models import Summary, SummaryRun
@@ -30,11 +31,38 @@ def _rfc822(dt) -> str:
     return format_datetime(dt.astimezone(timezone.utc))
 
 
-def _duration_str(size_bytes: int) -> str:
-    seconds = int(size_bytes * 8 / _BITRATE_BPS)
-    h, rem = divmod(seconds, 3600)
+def _hms(seconds: int) -> str:
+    h, rem = divmod(int(seconds), 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _duration_str(size_bytes: int) -> str:
+    return _hms(size_bytes * 8 / _BITRATE_BPS)
+
+
+def _description_text(label: str, type_label: str, chapters, edition_url: str) -> str:
+    """Plain-text show notes: summary, chapter list with timestamps, edition link."""
+    lines = [f"{type_label} podcast for the “{label}” edition."]
+    if chapters:
+        lines.append("")
+        lines.append("Chapters:")
+        lines.extend(f"{_hms(ch['start'])} {ch['title']}" for ch in chapters)
+    lines.append("")
+    lines.append(f"Full edition: {edition_url}")
+    return "\n".join(lines)
+
+
+def _description_html(label: str, type_label: str, chapters, edition_url: str) -> str:
+    """HTML show notes (rendered inside CDATA) so line breaks and the link display."""
+    parts = [f"<p>{escape(type_label)} podcast for the “{escape(label)}” edition.</p>"]
+    if chapters:
+        rows = "".join(
+            f"{_hms(ch['start'])} {escape(ch['title'])}<br>" for ch in chapters
+        )
+        parts.append(f"<p><strong>Chapters</strong><br>{rows}</p>")
+    parts.append(f'<p><a href="{escape(edition_url)}">View the full edition</a></p>')
+    return "".join(parts)
 
 
 def owns_audio(user, filename: str) -> bool:
@@ -81,9 +109,13 @@ def build_episodes(user) -> list[dict]:
     episodes = []
     for run in runs:
         label = run.label or run.generated_at.strftime("%Y-%m-%d")
-        for ptype, filename in (
-            ("discussion", run.podcast_audio),
-            ("news", run.news_podcast_audio),
+        edition_url = url_for(
+            "web.edition_view",
+            summary_id=run.summary_id, run_id=run.id, _external=True,
+        )
+        for ptype, filename, chapters in (
+            ("discussion", run.podcast_audio, run.podcast_chapters),
+            ("news", run.news_podcast_audio, run.news_podcast_chapters),
         ):
             if not filename:
                 continue
@@ -91,9 +123,12 @@ def build_episodes(user) -> list[dict]:
             if not os.path.isfile(path):
                 continue
             size_bytes = os.path.getsize(path)
+            type_label = _TYPE_LABELS[ptype]
+            chapters = chapters or []
             episodes.append({
-                "title": f"{label} — {_TYPE_LABELS[ptype]}",
-                "description": f"{_TYPE_LABELS[ptype]} podcast for the “{label}” edition.",
+                "title": f"{label} — {type_label}",
+                "description_text": _description_text(label, type_label, chapters, edition_url),
+                "description_html": _description_html(label, type_label, chapters, edition_url),
                 "filename": filename,
                 "size_bytes": size_bytes,
                 "duration": _duration_str(size_bytes),

@@ -20,8 +20,9 @@
     {% for ep in episodes %}
     <item>
       <title>{{ ep.title }}</title>
-      <description>{{ ep.description }}</description>
-      <itunes:summary>{{ ep.description }}</itunes:summary>
+      <description>{{ ep.description_text }}</description>
+      <itunes:summary>{{ ep.description_text }}</itunes:summary>
+      <content:encoded><![CDATA[{{ ep.description_html | safe }}]]></content:encoded>
       <pubDate>{{ ep.pub_date }}</pubDate>
       <enclosure url="{{ ep.audio_url }}" length="{{ ep.size_bytes }}" type="audio/mpeg"/>
       <guid isPermaLink="false">{{ ep.guid }}</guid>
