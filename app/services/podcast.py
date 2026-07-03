@@ -43,6 +43,44 @@ Aim for 5–10 minutes of audio (roughly 900–1,500 words of dialogue).
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
 
+DEFAULT_NEWS_PODCAST_FORMAT = """\
+# News podcast format
+
+You write scripts for **AI Dispatch News**, a complete read-through of the daily AI and \
+technology news digest. The same two hosts alternate between reading sections and \
+providing brief analysis.
+
+**Host A (Alex)** — Thoughtful analyst; adds context and perspective when analysing.
+**Host B (Sam)** — Engaged enthusiast; brings energy and clarity when reading.
+
+## Structure
+The edition is divided into sections. Work through every section in order:
+1. One host reads all the items in that section — concisely but completely, covering \
+every item.
+2. The other host then gives brief analysis of the section (2–4 sentences): key themes, \
+what stands out, or what it means in the bigger picture.
+3. Roles alternate with every section: if Alex reads section 1, Sam reads section 2, \
+Alex reads section 3, and so on. The analyst for each section is always the other host.
+
+## Style
+- The reading host sounds like a news anchor: clear, natural, and slightly conversational — \
+not robotic. Don't read out sub-headings; weave items together naturally.
+- Cover every item in every section. Do not skip or combine items beyond natural phrasing.
+- The analysis should add perspective — not repeat what was just read.
+- Brief transitions between sections are fine ("Moving to…", "Up next…").
+- Open with a short joint intro from both hosts (a few lines).
+- Close with a brief sign-off.
+
+## Required script format
+Every spoken line must be prefixed with HOST A: or HOST B: (all caps), followed by a space.
+
+HOST A: [dialogue]
+HOST B: [dialogue]
+
+Do not include stage directions, sound effects, bracketed notes, section headers as spoken \
+lines, or any other markup.
+"""
+
 
 def _get_podcast_format(user) -> str:
     from ..models import AgentMemory
@@ -60,6 +98,27 @@ def _set_podcast_format(user, content: str) -> None:
     ).first()
     if row is None:
         row = AgentMemory(user_id=user.id, summary_id=None, kind="podcast_format")
+        db.session.add(row)
+    row.content = content
+    db.session.commit()
+
+
+def _get_news_podcast_format(user) -> str:
+    from ..models import AgentMemory
+    row = AgentMemory.query.filter_by(
+        user_id=user.id, summary_id=None, kind="news_podcast_format"
+    ).first()
+    return (row.content or DEFAULT_NEWS_PODCAST_FORMAT) if row else DEFAULT_NEWS_PODCAST_FORMAT
+
+
+def _set_news_podcast_format(user, content: str) -> None:
+    from ..extensions import db
+    from ..models import AgentMemory
+    row = AgentMemory.query.filter_by(
+        user_id=user.id, summary_id=None, kind="news_podcast_format"
+    ).first()
+    if row is None:
+        row = AgentMemory(user_id=user.id, summary_id=None, kind="news_podcast_format")
         db.session.add(row)
     row.content = content
     db.session.commit()
@@ -175,6 +234,72 @@ def generate_script_revision_stream(run, user, api_key: str, model: str, current
         api_key=api_key,
         model=model,
         temperature=0.85,
+        timeout=300.0,
+    )
+
+
+def generate_news_script_stream(run, user, api_key: str, model: str):
+    """Generator that yields LLM tokens for a news-reading podcast script."""
+    from ..llm.openrouter import chat_stream
+
+    podcast_format = _get_news_podcast_format(user)
+    edition_text = edition_to_text(run)
+    label = run.label or run.generated_at.strftime("%Y-%m-%d")
+
+    system = (
+        "You are a professional podcast scriptwriter.\n\n"
+        + podcast_format
+    )
+    user_msg = (
+        f"Here is today's AI news digest — \"{label}\".\n\n"
+        f"Turn it into a complete news podcast script following the format instructions above. "
+        f"Cover every section and every item.\n\n"
+        f"---\n{edition_text}\n---"
+    )
+
+    yield from chat_stream(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg},
+        ],
+        api_key=api_key,
+        model=model,
+        temperature=0.7,
+        timeout=300.0,
+    )
+
+
+def generate_news_script_revision_stream(
+    run, user, api_key: str, model: str, current_script: str, feedback: str
+):
+    """Generator that yields revised tokens for the news podcast script."""
+    from ..llm.openrouter import chat_stream
+
+    podcast_format = _get_news_podcast_format(user)
+    edition_text = edition_to_text(run)
+    label = run.label or run.generated_at.strftime("%Y-%m-%d")
+
+    system = (
+        "You are a professional podcast scriptwriter.\n\n"
+        + podcast_format
+    )
+    original_request = (
+        f"Here is today's AI news digest — \"{label}\".\n\n"
+        f"Turn it into a complete news podcast script following the format instructions above. "
+        f"Cover every section and every item.\n\n"
+        f"---\n{edition_text}\n---"
+    )
+
+    yield from chat_stream(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": original_request},
+            {"role": "assistant", "content": current_script},
+            {"role": "user", "content": f"Please revise the script based on this feedback:\n\n{feedback}"},
+        ],
+        api_key=api_key,
+        model=model,
+        temperature=0.7,
         timeout=300.0,
     )
 

@@ -183,10 +183,13 @@ def settings():
             pass
         db.session.commit()
 
-        # Podcast format memory (user-level, no summary)
+        # Podcast format memories (user-level, no summary)
         if "mem_podcast_format" in request.form:
             from ..services.podcast import _set_podcast_format
             _set_podcast_format(current_user, request.form.get("mem_podcast_format", ""))
+        if "mem_news_podcast_format" in request.form:
+            from ..services.podcast import _set_news_podcast_format
+            _set_news_podcast_format(current_user, request.form.get("mem_news_podcast_format", ""))
 
         # Summary schedule + memory
         if summary:
@@ -203,7 +206,10 @@ def settings():
         flash("Settings saved.", "success")
         return redirect(url_for("web.settings"))
 
-    from ..services.podcast import _get_podcast_format, DEFAULT_PODCAST_FORMAT
+    from ..services.podcast import (
+        _get_podcast_format, DEFAULT_PODCAST_FORMAT,
+        _get_news_podcast_format, DEFAULT_NEWS_PODCAST_FORMAT,
+    )
     files, headlines = {}, []
     retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
     if summary:
@@ -217,6 +223,7 @@ def settings():
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
     podcast_format = _get_podcast_format(current_user)
+    news_podcast_format = _get_news_podcast_format(current_user)
 
     return render_template(
         "settings.html",
@@ -224,6 +231,8 @@ def settings():
         files=files, headlines=headlines, retention=retention,
         podcast_format=podcast_format,
         default_podcast_format=DEFAULT_PODCAST_FORMAT,
+        news_podcast_format=news_podcast_format,
+        default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
     )
 
 
@@ -697,11 +706,18 @@ def edition_podcast(summary_id: int, run_id: int):
     if not current_user.has_elevenlabs_key:
         flash("Add your ElevenLabs API key in Settings before generating a podcast.", "warning")
         return redirect(url_for("web.settings"))
+    podcast_type = request.args.get("type", "discussion")
+    if podcast_type not in ("discussion", "news"):
+        podcast_type = "discussion"
+    saved_script = (
+        run.news_podcast_script if podcast_type == "news" else run.podcast_script
+    ) or ""
     return render_template(
         "summaries/podcast.html",
         summary=summary, run=run,
+        podcast_type=podcast_type,
         auto_generate=current_user.podcast_auto_generate,
-        saved_script=run.podcast_script or "",
+        saved_script=saved_script,
     )
 
 
@@ -731,10 +747,16 @@ def edition_podcast_stream(summary_id: int, run_id: int):
 
     user_obj = current_user._get_current_object()
     run_obj = run
+    podcast_type = request.args.get("type", "discussion")
 
     def _generate():
         try:
-            for token in podcast_svc.generate_script_stream(run_obj, user_obj, api_key, model):
+            gen = (
+                podcast_svc.generate_news_script_stream(run_obj, user_obj, api_key, model)
+                if podcast_type == "news"
+                else podcast_svc.generate_script_stream(run_obj, user_obj, api_key, model)
+            )
+            for token in gen:
                 yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception as exc:  # noqa: BLE001
@@ -763,7 +785,11 @@ def edition_podcast_save_script(summary_id: int, run_id: int):
     script = (data.get("script") or "").strip()
     if not script:
         return jsonify({"error": "No script provided."}), 400
-    run.podcast_script = script
+    podcast_type = data.get("podcast_type", "discussion")
+    if podcast_type == "news":
+        run.news_podcast_script = script
+    else:
+        run.podcast_script = script
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -782,7 +808,10 @@ def edition_podcast_revise_stream(summary_id: int, run_id: int):
         abort(404)
 
     feedback = request.args.get("feedback", "").strip()
-    current_script = run.podcast_script or ""
+    podcast_type = request.args.get("type", "discussion")
+    current_script = (
+        run.news_podcast_script if podcast_type == "news" else run.podcast_script
+    ) or ""
 
     def _err(msg):
         def _gen():
@@ -808,9 +837,16 @@ def edition_podcast_revise_stream(summary_id: int, run_id: int):
 
     def _generate():
         try:
-            for token in podcast_svc.generate_script_revision_stream(
-                run_obj, user_obj, api_key, model, current_script, feedback
-            ):
+            gen = (
+                podcast_svc.generate_news_script_revision_stream(
+                    run_obj, user_obj, api_key, model, current_script, feedback
+                )
+                if podcast_type == "news"
+                else podcast_svc.generate_script_revision_stream(
+                    run_obj, user_obj, api_key, model, current_script, feedback
+                )
+            )
+            for token in gen:
                 yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception as exc:  # noqa: BLE001

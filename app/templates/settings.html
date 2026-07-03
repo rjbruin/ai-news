@@ -216,16 +216,31 @@
   </div>
 
   <div class="card shadow-sm mb-4">
-    <div class="card-header fw-semibold">Podcast format instructions</div>
+    <div class="card-header fw-semibold">Discussion podcast — format instructions</div>
     <div class="card-body">
       <p class="form-text mb-2">
-        Markdown instructions sent to the LLM when generating podcast scripts.
+        Markdown instructions sent to the LLM when generating discussion podcast scripts.
         The script must use <code>HOST A:</code> / <code>HOST B:</code> line prefixes.
       </p>
       <textarea name="mem_podcast_format" class="form-control font-monospace" rows="14"
                 spellcheck="false">{{ podcast_format }}</textarea>
       <div class="form-text mt-2">
         <a href="#" id="reset-podcast-format">Reset to default</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">News podcast — format instructions</div>
+    <div class="card-body">
+      <p class="form-text mb-2">
+        Markdown instructions sent to the LLM when generating news read-through podcast scripts.
+        The script must use <code>HOST A:</code> / <code>HOST B:</code> line prefixes.
+      </p>
+      <textarea name="mem_news_podcast_format" class="form-control font-monospace" rows="14"
+                spellcheck="false">{{ news_podcast_format }}</textarea>
+      <div class="form-text mt-2">
+        <a href="#" id="reset-news-podcast-format">Reset to default</a>
       </div>
     </div>
   </div>
@@ -245,6 +260,15 @@ if (resetLink) {
   resetLink.addEventListener('click', function(e) {
     e.preventDefault();
     document.querySelector('textarea[name="mem_podcast_format"]').value = DEFAULT_PODCAST_FORMAT;
+  });
+}
+
+const DEFAULT_NEWS_PODCAST_FORMAT = {{ default_news_podcast_format | tojson }};
+const resetNewsLink = document.getElementById('reset-news-podcast-format');
+if (resetNewsLink) {
+  resetNewsLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    document.querySelector('textarea[name="mem_news_podcast_format"]').value = DEFAULT_NEWS_PODCAST_FORMAT;
   });
 }
 </script>
