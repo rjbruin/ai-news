@@ -302,6 +302,8 @@ class SummaryRun(db.Model):
 
     podcast_script = db.Column(db.Text, nullable=True)
     news_podcast_script = db.Column(db.Text, nullable=True)
+    podcast_audio = db.Column(db.Text, nullable=True)
+    news_podcast_audio = db.Column(db.Text, nullable=True)
 
     read_at = db.Column(db.DateTime, nullable=True)
     share_token = db.Column(db.String(64), nullable=True, unique=True, index=True)

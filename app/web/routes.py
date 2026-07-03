@@ -712,12 +712,19 @@ def edition_podcast(summary_id: int, run_id: int):
     saved_script = (
         run.news_podcast_script if podcast_type == "news" else run.podcast_script
     ) or ""
+    saved_audio = (
+        run.news_podcast_audio if podcast_type == "news" else run.podcast_audio
+    ) or ""
+    saved_audio_url = (
+        url_for("web.serve_podcast", filename=saved_audio) if saved_audio else ""
+    )
     return render_template(
         "summaries/podcast.html",
         summary=summary, run=run,
         podcast_type=podcast_type,
         auto_generate=current_user.podcast_auto_generate,
         saved_script=saved_script,
+        saved_audio_url=saved_audio_url,
     )
 
 
@@ -878,11 +885,18 @@ def edition_podcast_generate_audio(summary_id: int, run_id: int):
     script = (data.get("script") or "").strip()
     if not script:
         return jsonify({"error": "No script provided."}), 400
+    podcast_type = data.get("podcast_type", "discussion")
 
     try:
         _path, filename = podcast_svc.generate_audio(script, current_user._get_current_object())
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 400
+
+    if podcast_type == "news":
+        run.news_podcast_audio = filename
+    else:
+        run.podcast_audio = filename
+    db.session.commit()
 
     audio_url = url_for("web.serve_podcast", filename=filename)
     return jsonify({"audio_url": audio_url})
