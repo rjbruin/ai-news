@@ -31,6 +31,16 @@ from ..summaries import registry as summary_registry
 bp = Blueprint("web", __name__)
 
 
+@bp.route("/podcast-audio/<filename>")
+@login_required
+def serve_podcast(filename: str):
+    """Serve podcast MP3 files from the instance folder (writable across releases)."""
+    import os
+    from flask import send_from_directory
+    podcast_dir = os.path.join(current_app.instance_path, "podcasts")
+    return send_from_directory(podcast_dir, filename, mimetype="audio/mpeg")
+
+
 @bp.route("/")
 def index():
     if current_user.is_authenticated:
@@ -838,7 +848,7 @@ def edition_podcast_generate_audio(summary_id: int, run_id: int):
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 400
 
-    audio_url = url_for("static", filename=f"podcasts/{filename}")
+    audio_url = url_for("web.serve_podcast", filename=filename)
     return jsonify({"audio_url": audio_url})
 
 
