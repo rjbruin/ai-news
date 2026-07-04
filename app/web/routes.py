@@ -504,10 +504,16 @@ def edition_view(summary_id: int, run_id: int):
     plugin = summary_registry.get(summary.type_key)
     is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
     chain = summarize.revision_chain(run) if is_agentic else [run]
+
+    coverage = None
+    if is_agentic and run.document:
+        from ..services.coverage import edition_coverage
+        coverage = edition_coverage(run)
+
     return render_template(
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
-        is_shared_view=False,
+        is_shared_view=False, coverage=coverage,
     )
 
 

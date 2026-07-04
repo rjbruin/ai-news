@@ -113,6 +113,49 @@
   <p class="text-body-secondary">This edition has no stored content.</p>
 {% endif %}
 
+{% if coverage and coverage.scope_count %}
+<style>
+  .coverage-chevron { transition: transform .15s ease; }
+  .coverage-toggle[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
+</style>
+<div class="card shadow-sm mt-4 d-print-none">
+  <div class="card-body">
+    <button class="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-2 w-100 text-start coverage-toggle"
+            type="button" data-bs-toggle="collapse" data-bs-target="#coverage-box"
+            aria-expanded="false" aria-controls="coverage-box">
+      <i class="fa-solid fa-chevron-right small coverage-chevron text-body-secondary"></i>
+      <span class="fw-semibold text-body">Coverage</span>
+      <span class="text-body-secondary small">
+        {{ coverage.included_count }} of {{ coverage.scope_count }} in-scope items included{% if coverage.not_covered %} · {{ coverage.not_covered|length }} left out{% endif %}
+      </span>
+    </button>
+    <div class="collapse mt-3" id="coverage-box">
+      {% if coverage.not_covered %}
+      <p class="small text-body-secondary mb-2">
+        These items were in scope for this edition's window but did not make it in:
+      </p>
+      <ul class="list-unstyled mb-0 small">
+        {% for item in coverage.not_covered %}
+        <li class="mb-2">
+          {% if item.url %}
+            <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+          {% else %}
+            {{ item.title }}
+          {% endif %}
+          {% if item.source and item.source.name %}
+            <span class="text-body-secondary">· {{ item.source.name }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="small text-body-secondary mb-0">Every in-scope item was included in this edition.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if is_agentic and not is_shared_view %}
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
