@@ -70,15 +70,16 @@ def edition_coverage(run) -> dict:
 
     included_ids, included_urls = _document_references(run.document)
 
-    not_covered = [
-        item
-        for item in scope
-        if item.id not in included_ids
-        and not (item.url and _norm_url(item.url) in included_urls)
-    ]
+    covered, not_covered = [], []
+    for item in scope:
+        if item.id in included_ids or (item.url and _norm_url(item.url) in included_urls):
+            covered.append(item)
+        else:
+            not_covered.append(item)
 
     return {
         "scope_count": len(scope),
-        "included_count": len(scope) - len(not_covered),
+        "included_count": len(covered),
+        "covered": covered,
         "not_covered": not_covered,
     }
