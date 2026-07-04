@@ -172,22 +172,33 @@
 {% endif %}
 
 {% if is_agentic and not is_shared_view %}
+<style>
+  .coverage-chevron { transition: transform .15s ease; }
+  .coverage-toggle[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
+</style>
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
-    <h2 class="h6">Give feedback to the editor</h2>
-    <p class="small text-body-secondary mb-2">
-      Ask for changes to this edition, or state a lasting preference (topics to
-      include/exclude, how much of each, structure). A new revision is created;
-      lasting preferences are remembered for future editions.
-    </p>
-    <form method="post"
-          action="{{ url_for('web.edition_feedback', summary_id=summary.id, run_id=run.id) }}">
-      <textarea name="feedback" class="form-control mb-2" rows="3"
-                placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
-      <div class="text-end">
-        <button class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
-      </div>
-    </form>
+    <button class="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-2 w-100 text-start coverage-toggle"
+            type="button" data-bs-toggle="collapse" data-bs-target="#feedback-box"
+            aria-expanded="false" aria-controls="feedback-box">
+      <i class="fa-solid fa-chevron-right small coverage-chevron text-body-secondary"></i>
+      <span class="fw-semibold text-body">Give feedback to the editor</span>
+    </button>
+    <div class="collapse mt-3" id="feedback-box">
+      <p class="small text-body-secondary mb-2">
+        Ask for changes to this edition, or state a lasting preference (topics to
+        include/exclude, how much of each, structure). A new revision is created;
+        lasting preferences are remembered for future editions.
+      </p>
+      <form method="post"
+            action="{{ url_for('web.edition_feedback', summary_id=summary.id, run_id=run.id) }}">
+        <textarea name="feedback" class="form-control mb-2" rows="3"
+                  placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
+        <div class="text-end">
+          <button class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endif %}
