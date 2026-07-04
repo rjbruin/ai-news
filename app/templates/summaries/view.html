@@ -130,12 +130,9 @@
       </span>
     </button>
     <div class="collapse mt-3" id="coverage-box">
-      {% if coverage.not_covered %}
-      <p class="small text-body-secondary mb-2">
-        These items were in scope for this edition's window but did not make it in:
-      </p>
+      {% macro coverage_list(items) %}
       <ul class="list-unstyled mb-0 small">
-        {% for item in coverage.not_covered %}
+        {% for item in items %}
         <li class="mb-2">
           {% if item.url %}
             <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
@@ -148,6 +145,24 @@
         </li>
         {% endfor %}
       </ul>
+      {% endmacro %}
+
+      <p class="fw-semibold small mb-2">
+        <i class="fa-solid fa-check text-success me-1"></i>
+        Included ({{ coverage.covered|length }})
+      </p>
+      {% if coverage.covered %}
+      {{ coverage_list(coverage.covered) }}
+      {% else %}
+      <p class="small text-body-secondary mb-0">No in-scope items were matched to this edition.</p>
+      {% endif %}
+
+      <p class="fw-semibold small mb-2 mt-3">
+        <i class="fa-solid fa-xmark text-body-secondary me-1"></i>
+        Left out ({{ coverage.not_covered|length }})
+      </p>
+      {% if coverage.not_covered %}
+      {{ coverage_list(coverage.not_covered) }}
       {% else %}
       <p class="small text-body-secondary mb-0">Every in-scope item was included in this edition.</p>
       {% endif %}
