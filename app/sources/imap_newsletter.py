@@ -24,10 +24,25 @@ _DEFAULT_LOOKBACK_DAYS = 30
 
 
 def html_to_text(html: str) -> str:
-    """Strip HTML to readable text, dropping scripts/styles."""
+    """Strip HTML to readable text, dropping scripts/styles.
+
+    Link targets are preserved: each ``<a href="…">`` becomes ``text (url)`` so
+    the downstream LLM extractor can capture the source URL. Plain ``get_text()``
+    keeps only the anchor's visible text and discards the href, which is why
+    hyperlink-only newsletters previously produced items with no URL.
+    """
     soup = BeautifulSoup(html or "", "html.parser")
     for tag in soup(["script", "style", "head"]):
         tag.decompose()
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href.lower().startswith(("http://", "https://")):
+            continue  # skip mailto:, #anchors, javascript:, etc.
+        text = a.get_text(" ", strip=True)
+        # Skip when the visible text already contains the URL (nothing to add).
+        if href in text:
+            continue
+        a.replace_with(f"{text} ({href})" if text else href)
     text = soup.get_text(separator="\n")
     cleaned = bleach.clean(text, tags=[], strip=True)
     lines = [ln.strip() for ln in cleaned.splitlines()]
@@ -83,7 +98,12 @@ class ImapNewsletterSource(NewsSource):
             p["username"], p["password"], initial_folder=p["folder"]
         ) as mailbox:
             for msg in mailbox.fetch(criteria, mark_seen=p["mark_seen"]):
-                body = msg.text or html_to_text(msg.html or "")
+                # Prefer the HTML part: after html_to_text() it carries the link
+                # targets, which the plain-text alternative usually lacks. Fall
+                # back to the plain-text part only when there is no usable HTML.
+                body = html_to_text(msg.html) if msg.html else ""
+                if not body.strip():
+                    body = (msg.text or "").strip()
                 if not body.strip():
                     continue
                 # Prefer the stable Message-ID header; fall back to IMAP UID.
