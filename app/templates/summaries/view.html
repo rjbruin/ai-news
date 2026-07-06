@@ -15,7 +15,7 @@
     <h1 class="h3 mb-0">
       {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
       {% if is_agentic and run.revision and run.revision > 1 %}
-      <span class="badge text-bg-secondary align-middle">rev {{ run.revision }}</span>
+      <span class="pill pill-slate align-middle">rev {{ run.revision }}</span>
       {% endif %}
       {% if not is_shared_view %}
       <button id="read-toggle" class="btn btn-link p-0 ms-2 border-0 align-baseline"
@@ -26,10 +26,12 @@
       {% endif %}
     </h1>
     {% if not is_shared_view %}
-    <div class="d-flex align-items-center gap-3 mt-1 small text-body-secondary">
+    <div class="d-flex align-items-center gap-2 mt-1">
       <span title="Channels">{{ channel_icons(run) }}</span>
       {% if run.agent_cost is not none %}
-      <span title="Generation cost"><i class="fa-solid fa-coins me-1"></i>${{ '%.4f'|format(run.agent_cost) }}</span>
+      <span class="pill pill-amber" title="Generation cost">
+        <i class="fa-solid fa-coins" aria-hidden="true"></i>${{ '%.4f'|format(run.agent_cost) }}
+      </span>
       {% endif %}
     </div>
     {% endif %}
