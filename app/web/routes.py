@@ -602,6 +602,16 @@ def edition_export(summary_id: int, run_id: int):
     safe_label = re.sub(r"[^\w\s.-]", "_", label).strip("_")
     filename = f"{safe_label}.pdf"
 
+    # Persist the PDF so it becomes a "created" channel for this edition.
+    pdf_dir = os.path.join(current_app.instance_path, "pdfs")
+    os.makedirs(pdf_dir, exist_ok=True)
+    stored_name = f"edition_{run.id}.pdf"
+    with open(os.path.join(pdf_dir, stored_name), "wb") as fh:
+        fh.write(pdf_bytes)
+    if run.pdf_file != stored_name:
+        run.pdf_file = stored_name
+        db.session.commit()
+
     return Response(
         pdf_bytes,
         content_type="application/pdf",
@@ -610,6 +620,23 @@ def edition_export(summary_id: int, run_id: int):
             "Content-Length": str(len(pdf_bytes)),
         },
     )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/pdf")
+@login_required
+def serve_edition_pdf(summary_id: int, run_id: int):
+    """Serve the persisted PDF export for an edition (the PDF channel)."""
+    import os
+    from flask import send_from_directory
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id or not run.pdf_file:
+        abort(404)
+    pdf_dir = os.path.join(current_app.instance_path, "pdfs")
+    return send_from_directory(pdf_dir, run.pdf_file, mimetype="application/pdf")
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback", methods=["POST"])
