@@ -57,6 +57,11 @@
       <span class="badge text-bg-light border text-body-secondary small">
         {{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}
       </span>
+      {% if run.agent_cost is not none %}
+      <span class="badge text-bg-light border text-body-secondary small" title="Generation cost">
+        ${{ '%.4f'|format(run.agent_cost) }}
+      </span>
+      {% endif %}
       <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
          class="btn btn-sm btn-outline-primary">Open</a>
       {% if run.agent_log %}

@@ -29,7 +29,10 @@
   <p class="mb-1 text-body-secondary small">{{ item.summary_text }}</p>
   {% endif %}
   <div class="d-flex align-items-center gap-2 flex-wrap mt-1">
-    {% if item.source %}
+    {% set newsletter_domain = item.newsletter_domain %}
+    {% if newsletter_domain %}
+    <small class="text-body-secondary"><i class="fa-regular fa-envelope me-1"></i>{{ newsletter_domain }}</small>
+    {% elif item.source %}
     <small class="text-body-secondary">{{ item.source.name }}</small>
     {% endif %}
     {% if item.full_text and not item.url %}

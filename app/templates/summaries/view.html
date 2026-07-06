@@ -24,6 +24,11 @@
       </button>
       {% endif %}
     </h1>
+    {% if not is_shared_view and run.agent_cost is not none %}
+    <div class="small text-body-secondary mt-1" title="Generation cost">
+      <i class="fa-solid fa-coins me-1"></i>Generation cost: ${{ '%.4f'|format(run.agent_cost) }}
+    </div>
+    {% endif %}
   </div>
   {% if not is_shared_view %}
   <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
@@ -35,9 +40,6 @@
         <li>
           <a class="dropdown-item"
              href="{{ url_for('web.edition_export', summary_id=summary.id, run_id=run.id) }}">PDF</a>
-        </li>
-        <li>
-          <button class="dropdown-item" onclick="window.print()">Print</button>
         </li>
         <li><hr class="dropdown-divider"></li>
         <li>
