@@ -762,25 +762,39 @@ def edition_podcast(summary_id: int, run_id: int):
     if not current_user.has_elevenlabs_key:
         flash("Add your ElevenLabs API key in Settings before generating a podcast.", "warning")
         return redirect(url_for("web.settings"))
+    from ..services import podcast_registry
     saved_script = run.news_podcast_script or ""
     saved_audio = run.news_podcast_audio or ""
     saved_audio_url = (
         url_for("web.serve_podcast", filename=saved_audio) if saved_audio else ""
     )
+    active_job = podcast_registry.get(run.id)
     return render_template(
         "summaries/podcast.html",
         summary=summary, run=run,
-        auto_generate=current_user.podcast_auto_generate,
+        auto_generate_on_release=current_user.podcast_auto_generate,
         saved_script=saved_script,
         saved_audio_url=saved_audio_url,
+        active_kind=active_job.kind if active_job else "",
     )
 
 
-@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast/stream")
+@bp.route(
+    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/start",
+    methods=["POST"],
+)
 @login_required
-def edition_podcast_stream(summary_id: int, run_id: int):
-    from ..agent.creds import resolve as resolve_creds, MissingCredentials
+def edition_podcast_start(summary_id: int, run_id: int):
+    """Start a background podcast job (script / audio / full / revise).
+
+    Returns immediately; the browser watches progress via the events stream.
+    If a job is already running for this run, it is left alone (idempotent
+    re-attach), so a double click or a stale tab can't spawn a duplicate.
+    """
+    import threading
+
     from ..services import podcast as podcast_svc
+    from ..services import podcast_registry
 
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
@@ -789,31 +803,66 @@ def edition_podcast_stream(summary_id: int, run_id: int):
     if run.summary_id != summary_id:
         abort(404)
 
-    try:
-        api_key, model = resolve_creds(current_user)
-    except MissingCredentials as exc:
-        def _err():
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+    existing = podcast_registry.get(run.id)
+    if existing is not None:
+        return jsonify({"ok": True, "kind": existing.kind, "already_running": True})
+
+    data = request.get_json(silent=True) or {}
+    kind = data.get("kind", "full")
+    if kind not in ("script", "audio", "full", "revise"):
+        return jsonify({"error": "Invalid job kind."}), 400
+    feedback = (data.get("feedback") or "").strip() or None
+    if kind == "revise" and not feedback:
+        return jsonify({"error": "No feedback provided."}), 400
+
+    job = podcast_registry.start(run.id, kind, feedback)
+    app = current_app._get_current_object()
+    threading.Thread(
+        target=podcast_svc.run_podcast_job,
+        args=(app, job, run.id, current_user.id),
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "kind": kind})
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast/events")
+@login_required
+def edition_podcast_events(summary_id: int, run_id: int):
+    """SSE stream of the active podcast job's events (re-attachable)."""
+    from ..services import podcast_registry
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    job = podcast_registry.get(run.id)
+
+    def _idle():
+        yield f"data: {json.dumps({'type': 'idle'})}\n\n"
+
+    if job is None:
         return Response(
-            stream_with_context(_err()),
+            stream_with_context(_idle()),
             content_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    user_obj = current_user._get_current_object()
-    run_obj = run
-
-    def _generate():
+    def _stream():
+        q = job.subscribe()
         try:
-            gen = podcast_svc.generate_news_script_stream(run_obj, user_obj, api_key, model)
-            for token in gen:
-                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception as exc:  # noqa: BLE001
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            while True:
+                event = q.get()
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("done", "error"):
+                    break
+        finally:
+            job.unsubscribe(q)
 
     return Response(
-        stream_with_context(_generate()),
+        stream_with_context(_stream()),
         content_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -840,155 +889,20 @@ def edition_podcast_save_script(summary_id: int, run_id: int):
     return jsonify({"ok": True})
 
 
-@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast/revise-stream")
-@login_required
-def edition_podcast_revise_stream(summary_id: int, run_id: int):
-    from ..agent.creds import resolve as resolve_creds, MissingCredentials
-    from ..services import podcast as podcast_svc
-
-    summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
-        abort(403)
-    run = db.session.get(SummaryRun, run_id) or abort(404)
-    if run.summary_id != summary_id:
-        abort(404)
-
-    feedback = request.args.get("feedback", "").strip()
-    current_script = run.news_podcast_script or ""
-
-    def _err(msg):
-        def _gen():
-            yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
-        return Response(
-            stream_with_context(_gen()),
-            content_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    if not feedback:
-        return _err("No feedback provided.")
-    if not current_script:
-        return _err("No saved script to revise. Generate a script first.")
-
-    try:
-        api_key, model = resolve_creds(current_user)
-    except MissingCredentials as exc:
-        return _err(str(exc))
-
-    user_obj = current_user._get_current_object()
-    run_obj = run
-
-    def _generate():
-        try:
-            gen = podcast_svc.generate_news_script_revision_stream(
-                run_obj, user_obj, api_key, model, current_script, feedback
-            )
-            for token in gen:
-                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception as exc:  # noqa: BLE001
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-
-    return Response(
-        stream_with_context(_generate()),
-        content_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
 @bp.route(
-    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/generate-audio",
+    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/set-auto-generate",
     methods=["POST"],
 )
 @login_required
-def edition_podcast_generate_audio(summary_id: int, run_id: int):
-    from ..services import podcast as podcast_svc
-
+def edition_podcast_set_auto(summary_id: int, run_id: int):
+    """Persist the user's 'auto-generate podcast on edition release' preference."""
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
-    run = db.session.get(SummaryRun, run_id) or abort(404)
-    if run.summary_id != summary_id:
-        abort(404)
-
     data = request.get_json(silent=True) or {}
-    script = (data.get("script") or "").strip()
-    if not script:
-        return jsonify({"error": "No script provided."}), 400
-
-    try:
-        _path, filename = podcast_svc.generate_audio(script, current_user._get_current_object())
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": str(exc)}), 400
-
-    run.news_podcast_audio = filename
+    current_user.podcast_auto_generate = bool(data.get("enabled"))
     db.session.commit()
-
-    audio_url = url_for("web.serve_podcast", filename=filename)
-    return jsonify({"audio_url": audio_url})
-
-
-@bp.route(
-    "/summaries/<int:summary_id>/editions/<int:run_id>/podcast/generate-audio-stream"
-)
-@login_required
-def edition_podcast_generate_audio_stream(summary_id: int, run_id: int):
-    """SSE audio generation: streams per-segment progress, then the audio URL.
-
-    Reads the saved script from the DB (EventSource is GET-only). Emitting a
-    progress event per TTS segment keeps the connection active so a long news
-    read-through never trips the nginx/gunicorn 120s read-timeout.
-    """
-    from ..services import podcast as podcast_svc
-
-    summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
-        abort(403)
-    run = db.session.get(SummaryRun, run_id) or abort(404)
-    if run.summary_id != summary_id:
-        abort(404)
-
-    script = run.news_podcast_script or ""
-
-    def _err(msg):
-        def _gen():
-            yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
-        return Response(
-            stream_with_context(_gen()),
-            content_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    if not script:
-        return _err("No saved script to generate audio from. Generate a script first.")
-
-    user_obj = current_user._get_current_object()
-    rid = run.id
-
-    def _generate():
-        try:
-            filename = None
-            chapters = []
-            for event in podcast_svc.generate_audio_stream(script, user_obj):
-                if event[0] == "progress":
-                    yield f"data: {json.dumps({'type': 'progress', 'done': event[1], 'total': event[2]})}\n\n"
-                elif event[0] == "done":
-                    filename = event[1]
-                    chapters = event[2]
-            run_obj = db.session.get(SummaryRun, rid)
-            run_obj.news_podcast_audio = filename
-            run_obj.news_podcast_chapters = chapters
-            db.session.commit()
-            audio_url = url_for("web.serve_podcast", filename=filename)
-            yield f"data: {json.dumps({'type': 'done', 'audio_url': audio_url})}\n\n"
-        except Exception as exc:  # noqa: BLE001
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-
-    return Response(
-        stream_with_context(_generate()),
-        content_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return jsonify({"ok": True, "enabled": current_user.podcast_auto_generate})
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/delete", methods=["POST"])
