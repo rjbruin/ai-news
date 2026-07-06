@@ -227,6 +227,25 @@ class NewsItem(db.Model):
         norm = (title or "").strip().lower() + "|" + (url or "").strip().lower()
         return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
+    @property
+    def newsletter_domain(self) -> str | None:
+        """For newsletter-sourced items, the sender's email domain.
+
+        e.g. an item extracted from a "TLDR" email sent by news@tldrnewsletter.com
+        returns 'tldrnewsletter.com'. Returns None when there is no sender on the
+        originating ingest run (non-newsletter sources, or legacy items).
+        """
+        from email.utils import parseaddr
+
+        run = self.ingest_run
+        if run is None or not run.sender:
+            return None
+        addr = parseaddr(run.sender)[1] or run.sender
+        if "@" not in addr:
+            return None
+        domain = addr.rsplit("@", 1)[1].strip().lower()
+        return domain or None
+
 
 # ─────────────────────────────── Tags ───────────────────────────────
 class Tag(db.Model):
