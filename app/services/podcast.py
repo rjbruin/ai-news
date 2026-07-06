@@ -421,3 +421,82 @@ def generate_audio(script: str, user) -> tuple[str, str]:
             filename = event[1]
     path = os.path.join(current_app.instance_path, "podcasts", filename)
     return path, filename
+
+
+def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
+    """Background worker: run a podcast job to completion, emitting events.
+
+    Runs in a daemon thread so generation survives the user navigating away;
+    the podcast page re-attaches to ``job``'s event stream on the next visit.
+    ``job.kind`` selects the phases (script / audio / full / revise). Runs in a
+    request context so ``url_for`` can build the audio URL.
+    """
+    from flask import url_for
+
+    from ..agent.creds import MissingCredentials, resolve as resolve_creds
+    from ..extensions import db
+    from ..models import SummaryRun, User
+    from . import podcast_registry
+
+    with app.test_request_context():
+        try:
+            run = db.session.get(SummaryRun, run_id)
+            user = db.session.get(User, user_id)
+            if run is None or user is None:
+                job.emit({"type": "error", "message": "Edition not found."})
+                return
+
+            # ── Script phase ──────────────────────────────────────────────
+            if job.kind in ("script", "full", "revise"):
+                job.emit({"type": "phase", "phase": "script"})
+                try:
+                    api_key, model = resolve_creds(user)
+                except MissingCredentials as exc:
+                    job.emit({"type": "error", "message": str(exc)})
+                    return
+
+                if job.kind == "revise":
+                    gen = generate_news_script_revision_stream(
+                        run, user, api_key, model,
+                        run.news_podcast_script or "", job.feedback or "",
+                    )
+                else:
+                    gen = generate_news_script_stream(run, user, api_key, model)
+
+                script = ""
+                for token in gen:
+                    script += token
+                    job.emit({"type": "script_token", "text": token})
+                run.news_podcast_script = script
+                db.session.commit()
+                job.emit({"type": "script_done", "script": script})
+
+                if job.kind in ("script", "revise"):
+                    job.emit({"type": "done", "phase": "script"})
+                    return
+
+            # ── Audio phase (kind "audio" or "full") ──────────────────────
+            script = run.news_podcast_script or ""
+            if not script:
+                job.emit({"type": "error", "message": "No saved script to generate audio from."})
+                return
+
+            job.emit({"type": "phase", "phase": "audio"})
+            filename, chapters = None, []
+            for event in generate_audio_stream(script, user):
+                if event[0] == "progress":
+                    job.emit({"type": "audio_progress", "done": event[1], "total": event[2]})
+                elif event[0] == "done":
+                    filename, chapters = event[1], event[2]
+
+            run.news_podcast_audio = filename
+            run.news_podcast_chapters = chapters
+            db.session.commit()
+            job.emit({
+                "type": "done", "phase": "audio",
+                "audio_url": url_for("web.serve_podcast", filename=filename),
+            })
+        except Exception as exc:  # noqa: BLE001
+            job.emit({"type": "error", "message": str(exc)})
+        finally:
+            podcast_registry.finish(job)

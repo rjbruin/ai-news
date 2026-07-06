@@ -208,9 +208,9 @@
         <input type="checkbox" name="podcast_auto_generate" value="1" class="form-check-input"
                id="podcast_auto_generate" {{ 'checked' if current_user.podcast_auto_generate else '' }}>
         <label class="form-check-label" for="podcast_auto_generate">
-          Auto-generate audio (skip script review)
+          Auto-generate podcast on edition release
         </label>
-        <div class="form-text">When enabled, audio generation starts immediately after the script is written.</div>
+        <div class="form-text">When enabled, each newly released edition automatically generates its podcast (script and audio) in the background. Off by default.</div>
       </div>
     </div>
   </div>

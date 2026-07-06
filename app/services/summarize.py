@@ -429,6 +429,12 @@ def cut_due_editions(force: bool = False) -> int:
                     except Exception:  # noqa: BLE001
                         logger.exception("Failed to send email for edition %d", run.id)
 
+                if run is not None:
+                    try:
+                        _maybe_autogenerate_podcast(summary, run)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Failed to start auto podcast for edition %d", run.id)
+
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to cut edition for summary %d", summary.id)
                 Alert.push(
@@ -489,6 +495,36 @@ ul,ol{margin-bottom:1rem;padding-left:2rem}
 .email-header{background:#1f3a5f;color:#fff;padding:14px 20px;font-weight:600;font-size:1.1rem}
 .email-body{padding:20px;background:#fff}
 """
+
+
+def _maybe_autogenerate_podcast(summary: Summary, run: SummaryRun) -> None:
+    """Kick off a background podcast job for a freshly-cut edition, if opted in.
+
+    Gated on the user's ``podcast_auto_generate`` preference (off by default)
+    and a configured ElevenLabs key. Runs the full script→audio pipeline in a
+    daemon thread; failures surface as job events, not exceptions here.
+    """
+    import threading
+
+    user = summary.user
+    if user is None or not getattr(user, "podcast_auto_generate", False):
+        return
+    if not user.has_elevenlabs_key:
+        return
+
+    from . import podcast as podcast_svc
+    from . import podcast_registry
+
+    if podcast_registry.get(run.id) is not None:
+        return
+    job = podcast_registry.start(run.id, "full")
+    app = current_app._get_current_object()
+    threading.Thread(
+        target=podcast_svc.run_podcast_job,
+        args=(app, job, run.id, user.id),
+        daemon=True,
+    ).start()
+    logger.info("Auto-generating podcast for edition %d", run.id)
 
 
 def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> None:
