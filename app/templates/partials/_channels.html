@@ -9,14 +9,20 @@
 
 {% macro channel_icons(run) %}
 <span class="d-inline-flex align-items-center gap-2">
-  <i class="fa-solid fa-newspaper text-body-secondary" title="Written edition"></i>
+  <span class="channel-icon channel-icon--edition" title="Written edition">
+    <i class="fa-solid fa-newspaper" aria-hidden="true"></i>
+  </span>
   {% if run.news_podcast_audio %}
   <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
-     class="text-body-secondary" title="Podcast"><i class="fa-solid fa-microphone-lines"></i></a>
+     class="channel-icon channel-icon--podcast" title="Podcast">
+    <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>
+  </a>
   {% endif %}
   {% if run.pdf_file %}
   <a href="{{ url_for('web.serve_edition_pdf', summary_id=run.summary_id, run_id=run.id) }}"
-     class="text-body-secondary" title="PDF"><i class="fa-solid fa-file-pdf"></i></a>
+     class="channel-icon channel-icon--pdf" title="PDF">
+    <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+  </a>
   {% endif %}
 </span>
 {% endmacro %}
@@ -28,14 +34,14 @@
     <span class="small text-body-secondary me-1">Also available as:</span>
     {% if run.news_podcast_audio %}
     <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
-       class="btn btn-sm btn-outline-secondary">
-      <i class="fa-solid fa-microphone-lines me-1"></i>Podcast
+       class="channel-pill channel-pill--podcast">
+      <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>Podcast
     </a>
     {% endif %}
     {% if run.pdf_file %}
     <a href="{{ url_for('web.serve_edition_pdf', summary_id=run.summary_id, run_id=run.id) }}"
-       class="btn btn-sm btn-outline-secondary">
-      <i class="fa-solid fa-file-pdf me-1"></i>PDF
+       class="channel-pill channel-pill--pdf">
+      <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>PDF
     </a>
     {% endif %}
   </div>

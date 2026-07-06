@@ -18,24 +18,36 @@
   --ag-teal-tint: #e3f6f1;
   --ag-slate: #5f6b7a;
   --ag-slate-tint: #eef1f3;
+  --ag-coral: #993c1d;
+  --ag-coral-tint: #faece7;
 }
 
 body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
 .app-navbar {
-  background: linear-gradient(90deg, var(--brand-dark), var(--brand));
+  background: linear-gradient(120deg, var(--brand-dark), var(--brand) 55%, var(--ag-teal));
+  border-bottom: 2px solid var(--accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
 }
 .app-navbar .navbar-brand { letter-spacing: .2px; }
 .brand-mark { filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
 
 .btn-primary {
-  --bs-btn-bg: var(--brand);
   --bs-btn-border-color: var(--brand);
-  --bs-btn-hover-bg: var(--brand-dark);
   --bs-btn-hover-border-color: var(--brand-dark);
-  --bs-btn-active-bg: var(--brand-dark);
+  --bs-btn-active-border-color: var(--brand-dark);
+  background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+  border: none;
+  box-shadow: 0 4px 10px rgba(31, 58, 95, .28);
+  transition: transform .15s ease, box-shadow .15s ease;
 }
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--brand-dark), #0f2030);
+  box-shadow: 0 6px 16px rgba(31, 58, 95, .32);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); }
+
 .btn-outline-primary {
   --bs-btn-color: var(--brand);
   --bs-btn-border-color: var(--brand);
@@ -43,8 +55,75 @@ body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-se
   --bs-btn-hover-border-color: var(--brand);
 }
 
-.card { border-color: rgba(0,0,0,.07); }
+.card { border-color: rgba(0,0,0,.07); border-radius: .75rem; }
 .badge { font-weight: 500; }
+
+/* Hover-lift — a small affordance for clickable cards/rows (dashboard
+   featured edition, Editions list rows, agentic content blocks). Kept to a
+   single shared utility so the effect (and its cost) stays consistent. */
+.hover-lift {
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .12);
+}
+
+/* Pills — colored chips for small stats (item count, generation cost,
+   revision number). One tint per palette color, reusing the same
+   light-fill/dark-text pairing as the agentic block colors above. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .72rem;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: .18rem .65rem;
+  white-space: nowrap;
+}
+.pill-blue   { background: var(--ag-blue-tint);  color: #0c447c; }
+.pill-amber  { background: var(--ag-amber-tint); color: #854f0b; }
+.pill-teal   { background: var(--ag-teal-tint);  color: #085041; }
+.pill-coral  { background: var(--ag-coral-tint); color: var(--ag-coral); }
+.pill-slate  { background: var(--ag-slate-tint); color: #444441; }
+
+/* Channel icons — small tinted circle per channel, used wherever an
+   edition's channels are listed at a glance (dashboard, Editions list,
+   edition header). */
+.channel-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .68rem;
+  flex-shrink: 0;
+}
+.channel-icon--edition { background: var(--ag-blue-tint);  color: #185fa5; }
+.channel-icon--podcast { background: var(--ag-teal-tint);  color: var(--ag-teal); }
+.channel-icon--pdf     { background: var(--ag-coral-tint); color: var(--ag-coral); }
+
+/* Channel pill links — the "Also available as" hero on the edition page. */
+.channel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .8rem;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: .35rem .85rem;
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.channel-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .12);
+  text-decoration: none;
+}
+.channel-pill--podcast { background: var(--ag-teal-tint);  color: var(--ag-teal); }
+.channel-pill--pdf     { background: var(--ag-coral-tint); color: var(--ag-coral); }
 
 a { color: var(--brand); }
 a:hover { color: var(--brand-dark); }
@@ -122,6 +201,11 @@ a[target="_blank"]:not(.btn)::after {
   border-radius: 0 .6rem .6rem 0;
   box-shadow: 0 1px 5px rgba(15, 23, 42, .07);
   padding: .9rem 1.1rem;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.agentic-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .12);
 }
 .agentic-item__subheader {
   font-size: .9rem;
