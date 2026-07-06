@@ -1,14 +1,33 @@
 {% extends "base.html" %}
 {% block title %}Settings · AI News{% endblock %}
 {% block content %}
-<div class="row justify-content-center"><div class="col-md-7">
 <h1 class="h3 mb-4">Settings</h1>
+<div class="row g-4">
+
+<div class="col-lg-3 d-none d-lg-block">
+  <nav id="settings-nav" class="nav flex-column position-sticky" style="top:5rem">
+    {% if summary %}
+    <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
+    <a class="nav-link px-2 py-1" href="#sec-interests">Interests</a>
+    <a class="nav-link px-2 py-1" href="#sec-content">Content</a>
+    <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
+    <a class="nav-link px-2 py-1" href="#sec-headlines">Recent headlines</a>
+    {% endif %}
+    <a class="nav-link px-2 py-1" href="#sec-account">Account</a>
+    <a class="nav-link px-2 py-1" href="#sec-pdf">PDF export</a>
+    <a class="nav-link px-2 py-1" href="#sec-elevenlabs">Podcast voices</a>
+    <a class="nav-link px-2 py-1" href="#sec-podcast-format">Podcast format</a>
+    <a class="nav-link px-2 py-1" href="#sec-feed">Podcast feed</a>
+  </nav>
+</div>
+
+<div class="col-lg-9">
 <form method="post">
 
 {% if summary %}
   {% set cur_cls = types.get(summary.type_key) %}
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-schedule" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Schedule</div>
     <div class="card-body">
       <div class="mb-3">
@@ -63,7 +82,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-interests" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Interests</div>
     <div class="card-body">
       <p class="form-text mb-2">Your evolving interests. Shared across all agentic editions.</p>
@@ -72,7 +91,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-content" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Content configuration</div>
     <div class="card-body">
       <p class="form-text mb-2">Structure and content preferences — sections, how many items, citation style, etc.</p>
@@ -81,7 +100,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-notes" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Running notes</div>
     <div class="card-body">
       <p class="form-text mb-2">Notes the agent keeps for trend-spotting across editions.</p>
@@ -90,7 +109,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-headlines" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">
       Recent headlines
       <span class="text-body-secondary fw-normal">(last {{ retention }} days, read-only)</span>
@@ -112,7 +131,7 @@
 
 {% endif %}
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-account" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Account</div>
     <div class="card-body">
       <h2 class="h6 text-body-secondary">OpenRouter</h2>
@@ -145,7 +164,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-pdf" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">PDF export</div>
     <div class="card-body">
       <div class="mb-0">
@@ -159,7 +178,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-elevenlabs" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">ElevenLabs <span class="fw-normal text-body-secondary">(podcast export)</span></div>
     <div class="card-body">
       <div class="mb-3">
@@ -215,7 +234,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-feed" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Podcast feed <span class="fw-normal text-body-secondary">(subscribe on your phone)</span></div>
     <div class="card-body">
       <p class="form-text mt-0 mb-2">
@@ -237,7 +256,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4">
+  <div class="card shadow-sm mb-4" id="sec-podcast-format" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Podcast — format instructions</div>
     <div class="card-body">
       <p class="form-text mb-2">
@@ -264,6 +283,29 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// Highlight the settings-nav link for the section currently in view.
+(function () {
+  const nav = document.getElementById('settings-nav');
+  if (!nav) return;
+  const links = Array.from(nav.querySelectorAll('a[href^="#sec-"]'));
+  const byId = {};
+  links.forEach(a => { byId[a.getAttribute('href').slice(1)] = a; });
+  const sections = links
+    .map(a => document.getElementById(a.getAttribute('href').slice(1)))
+    .filter(Boolean);
+  if (!('IntersectionObserver' in window) || !sections.length) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(a => a.classList.remove('active', 'fw-semibold'));
+        const a = byId[e.target.id];
+        if (a) a.classList.add('active', 'fw-semibold');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => obs.observe(s));
+})();
+
 const copyFeedBtn = document.getElementById('copy-feed-url');
 if (copyFeedBtn) {
   copyFeedBtn.addEventListener('click', function() {
