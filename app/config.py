@@ -61,7 +61,7 @@ class Config:
     SMTP_USE_TLS = _bool(os.environ.get("SMTP_USE_TLS"), True)
     SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-    MAIL_FROM = os.environ.get("MAIL_FROM", "AI News <noreply@example.com>")
+    MAIL_FROM = os.environ.get("MAIL_FROM", "Dispatch <noreply@example.com>")
 
     # IMAP (default newsletter mailbox)
     IMAP_HOST = os.environ.get("IMAP_HOST", "")

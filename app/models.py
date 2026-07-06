@@ -1,4 +1,4 @@
-"""SQLAlchemy models for AI News."""
+"""SQLAlchemy models for Dispatch."""
 from __future__ import annotations
 
 import hashlib

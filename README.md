@@ -1,4 +1,4 @@
-# AI News
+# Dispatch
 
 Collects AI news from pluggable **sources**, analyses & **tags** it against a
 shared taxonomy, and delivers it through pluggable **summary** formats

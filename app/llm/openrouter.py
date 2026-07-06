@@ -64,7 +64,7 @@ def chat_json(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "X-Title": "AI News",
+        "X-Title": "Dispatch",
     }
     pub = current_app.config.get("PUBLIC_URL")
     if pub:
@@ -137,7 +137,7 @@ def chat_stream(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "X-Title": "AI News",
+        "X-Title": "Dispatch",
     }
     pub = current_app.config.get("PUBLIC_URL")
     if pub:
@@ -215,7 +215,7 @@ def chat(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "X-Title": "AI News",
+        "X-Title": "Dispatch",
     }
     pub = current_app.config.get("PUBLIC_URL")
     if pub:

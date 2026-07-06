@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from "partials/_channels.html" import channel_icons, channel_hero %}
-{% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · AI News{% endblock %}
+{% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · Dispatch{% endblock %}
 {% block content %}
 
 {% if is_shared_view %}
 <div class="alert alert-secondary mb-4" role="alert">
-  <strong>AI News</strong> is a personal AI-powered newsletter app that monitors sources and generates daily digests.
+  <strong>Dispatch</strong> is a personal AI-powered newsletter app that monitors sources and generates daily digests.
   This edition was shared by its owner.
 </div>
 {% endif %}

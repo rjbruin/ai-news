@@ -1,4 +1,4 @@
-"""Application factory for AI News."""
+"""Application factory for Dispatch."""
 from __future__ import annotations
 
 import os

@@ -76,7 +76,7 @@ class PrintedSummary(NewsSummary):
                     grouped.setdefault(best.tag.name, []).append(item)
             grouped = dict(sorted(grouped.items(), key=lambda kv: kv[0].lower()))
 
-        title = "AI News Digest"
+        title = "Dispatch Digest"
         html = render_template(
             "summaries/printed_content.html",
             title=title,

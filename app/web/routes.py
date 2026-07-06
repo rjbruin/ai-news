@@ -59,7 +59,7 @@ def podcast_feed(token: str):
         )
     xml = render_template(
         "podcast_feed.xml",
-        feed_title=f"AI News · {user.username}",
+        feed_title=f"Dispatch · {user.username}",
         feed_description="Auto-generated audio editions of your AI news digest.",
         feed_link=url_for("web.dashboard", _external=True),
         feed_author=user.username,

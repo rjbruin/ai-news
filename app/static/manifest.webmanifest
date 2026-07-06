@@ -1,6 +1,6 @@
 {
-  "name": "AI News",
-  "short_name": "AI News",
+  "name": "Dispatch",
+  "short_name": "Dispatch",
   "description": "Collects, tags and summarises AI news.",
   "start_url": "/",
   "scope": "/",
