@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Revising · {{ summary.name }} · AI News{% endblock %}
+{% block title %}Revising · {{ summary.name }} · Dispatch{% endblock %}
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
   <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"

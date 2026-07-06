@@ -553,7 +553,7 @@ def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> No
 <style>{_EMAIL_CSS}</style>
 </head>
 <body>
-<div class="email-header">📰 AI News</div>
+<div class="email-header">📰 Dispatch</div>
 <div class="email-body">
 <p style="color:#6c757d;font-size:.875rem;margin-bottom:1rem">{summary.name} · {run.label or ''}</p>
 <p style="margin-bottom:1.5rem"><a href="{open_url}">Open this edition in the app →</a></p>

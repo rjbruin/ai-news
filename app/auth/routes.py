@@ -74,7 +74,7 @@ def magic_link():
             link = url_for("auth.magic_login", token=token, _external=True)
             send_email(
                 user.email,
-                "Your AI News sign-in link",
+                "Your Dispatch sign-in link",
                 f"Click to sign in (valid 30 minutes):\n\n{link}\n",
             )
     flash("If that email exists, a sign-in link has been sent.", "info")
@@ -123,8 +123,8 @@ def _send_verification(user: User) -> None:
     link = url_for("auth.verify_email", token=token, _external=True)
     send_email(
         user.email,
-        "Verify your AI News account",
-        f"Welcome to AI News! Verify your email:\n\n{link}\n",
+        "Verify your Dispatch account",
+        f"Welcome to Dispatch! Verify your email:\n\n{link}\n",
     )
 
 

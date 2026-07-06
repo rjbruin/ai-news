@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f3a5f">
-  <title>{% block title %}AI News{% endblock %}</title>
+  <title>{% block title %}Dispatch{% endblock %}</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon.svg') }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
@@ -18,7 +18,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="{{ url_for('web.index') }}">
-      <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="24" height="24" class="brand-mark"> AI News
+      <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="24" height="24" class="brand-mark"> Dispatch
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
       <span class="navbar-toggler-icon"></span>
@@ -67,7 +67,7 @@
 </main>
 
 <footer class="text-center text-body-secondary py-4 small">
-  AI News · v{{ app_version }}
+  Dispatch · v{{ app_version }}
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
