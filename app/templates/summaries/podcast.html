@@ -8,33 +8,12 @@
     ← {{ run.label or run.generated_at.strftime('%Y-%m-%d') }}
   </a>
 </div>
-<h1 class="h4 mb-3">Podcast export</h1>
+<h1 class="h4 mb-3">Podcast</h1>
 
-<ul class="nav nav-tabs mb-4">
-  <li class="nav-item">
-    <a class="nav-link {{ 'active' if podcast_type == 'discussion' else '' }}"
-       href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}">
-      Discussion
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link {{ 'active' if podcast_type == 'news' else '' }}"
-       href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id, type='news') }}">
-      News read-through
-    </a>
-  </li>
-</ul>
-
-{% if podcast_type == 'news' %}
 <p class="text-body-secondary small mb-4">
   A complete read-through of the edition. Both hosts alternate between reading sections and
   providing brief analysis — no stories are skipped.
 </p>
-{% else %}
-<p class="text-body-secondary small mb-4">
-  A conversational discussion of the most interesting stories from the edition.
-</p>
-{% endif %}
 
 <div id="phase-generating" class="d-none">
   <div class="d-flex align-items-center gap-2 mb-3">
@@ -95,19 +74,17 @@
 
 <div id="phase-error" class="d-none">
   <div class="alert alert-danger" id="error-msg"></div>
-  <a href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id, type=podcast_type) }}"
+  <a href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}"
      class="btn btn-outline-secondary btn-sm">Try again</a>
 </div>
 
 {% endblock %}
 {% block scripts %}
 <script>
-const PODCAST_TYPE    = {{ podcast_type | tojson }};
-const TYPE_PARAM      = '?type=' + encodeURIComponent(PODCAST_TYPE);
-const STREAM_URL      = {{ url_for('web.edition_podcast_stream', summary_id=summary.id, run_id=run.id) | tojson }} + TYPE_PARAM;
-const REVISE_URL      = {{ url_for('web.edition_podcast_revise_stream', summary_id=summary.id, run_id=run.id) | tojson }} + TYPE_PARAM;
+const STREAM_URL      = {{ url_for('web.edition_podcast_stream', summary_id=summary.id, run_id=run.id) | tojson }};
+const REVISE_URL      = {{ url_for('web.edition_podcast_revise_stream', summary_id=summary.id, run_id=run.id) | tojson }};
 const SAVE_SCRIPT_URL = {{ url_for('web.edition_podcast_save_script', summary_id=summary.id, run_id=run.id) | tojson }};
-const AUDIO_STREAM_URL = {{ url_for('web.edition_podcast_generate_audio_stream', summary_id=summary.id, run_id=run.id) | tojson }} + TYPE_PARAM;
+const AUDIO_STREAM_URL = {{ url_for('web.edition_podcast_generate_audio_stream', summary_id=summary.id, run_id=run.id) | tojson }};
 const AUTO_GENERATE   = {{ 'true' if auto_generate else 'false' }};
 const SAVED_SCRIPT    = {{ saved_script | tojson }};
 const SAVED_AUDIO_URL = {{ saved_audio_url | tojson }};
@@ -138,7 +115,7 @@ function saveScript(script) {
   return fetch(SAVE_SCRIPT_URL, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({script, podcast_type: PODCAST_TYPE}),
+    body: JSON.stringify({script}),
   }).then(r => r.json()).catch(() => ({}));
 }
 
@@ -268,7 +245,7 @@ document.getElementById('btn-revise').addEventListener('click', function() {
 
   // Save current textarea first so server has the latest version to revise.
   saveScript(script).then(() => {
-    const url = REVISE_URL + '&feedback=' + encodeURIComponent(feedback);
+    const url = REVISE_URL + '?feedback=' + encodeURIComponent(feedback);
     startStream(url, 'Revising script…');
   });
 });

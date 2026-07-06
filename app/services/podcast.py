@@ -10,51 +10,6 @@ import time
 import httpx
 from flask import current_app
 
-DEFAULT_PODCAST_FORMAT = """\
-# Podcast format
-
-You write scripts for **AI Dispatch**, a daily podcast about AI and technology news. \
-The show is hosted by two friends who discuss the day's most interesting stories.
-
-**Host A (Alex)** — The analyst. Thoughtful, provides context, connects dots, \
-references broader trends and research.
-**Host B (Sam)** — The enthusiast. Curious and energetic, asks the questions \
-listeners are thinking, occasionally plays devil's advocate.
-
-## Style
-- Sound like a real conversation between two people who genuinely find this interesting.
-- Use natural speech: contractions, short sentences, the occasional filler ("right", \
-"exactly", "huh"), and moments where they finish each other's thoughts.
-- The hosts should push back on each other sometimes — mild disagreement is good.
-- Pick 3–5 stories to discuss in depth. Skip minor items rather than racing through everything.
-- Open with a hook that draws the listener in immediately — not "Welcome to the show".
-- Close with a brief, warm sign-off that feels like wrapping up a coffee chat.
-
-## Required script format
-Every spoken line must be prefixed with HOST A: or HOST B: (all caps), followed by a space.
-
-HOST A: [dialogue]
-HOST B: [dialogue]
-
-Do not include stage directions, sound effects, bracketed notes, or any other markup.
-Aim for 5–10 minutes of audio (roughly 900–1,500 words of dialogue).
-
-## Chapter markers
-Break the episode into chapters so the podcast player can show a table of contents.
-Put a Markdown heading on its own line at the start of the intro, before each story you
-discuss, and before the sign-off:
-
-# Intro
-HOST A: [dialogue]
-# GPT-5 launch
-HOST A: [dialogue]
-# Wrap-up
-HOST A: [dialogue]
-
-These heading lines are NOT spoken — they only mark chapter boundaries. Keep titles short
-(2–5 words). Every heading must be followed by at least one HOST line.
-"""
-
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
 
@@ -113,27 +68,6 @@ These heading lines are NOT spoken — they only mark chapter boundaries. Put `#
 the opening and `# Wrap-up` before the sign-off. Every heading must be followed by at least
 one HOST line.
 """
-
-
-def _get_podcast_format(user) -> str:
-    from ..models import AgentMemory
-    row = AgentMemory.query.filter_by(
-        user_id=user.id, summary_id=None, kind="podcast_format"
-    ).first()
-    return (row.content or DEFAULT_PODCAST_FORMAT) if row else DEFAULT_PODCAST_FORMAT
-
-
-def _set_podcast_format(user, content: str) -> None:
-    from ..extensions import db
-    from ..models import AgentMemory
-    row = AgentMemory.query.filter_by(
-        user_id=user.id, summary_id=None, kind="podcast_format"
-    ).first()
-    if row is None:
-        row = AgentMemory(user_id=user.id, summary_id=None, kind="podcast_format")
-        db.session.add(row)
-    row.content = content
-    db.session.commit()
 
 
 def _get_news_podcast_format(user) -> str:
@@ -209,68 +143,6 @@ def edition_to_text(run) -> str:
     if run.content:
         return _strip_html(run.content)
     return ""
-
-
-def generate_script_stream(run, user, api_key: str, model: str):
-    """Generator that yields LLM text tokens for the podcast script."""
-    from ..llm.openrouter import chat_stream
-
-    podcast_format = _get_podcast_format(user)
-    edition_text = edition_to_text(run)
-    label = run.label or run.generated_at.strftime("%Y-%m-%d")
-
-    system = (
-        "You are a professional podcast scriptwriter.\n\n"
-        + podcast_format
-    )
-    user_msg = (
-        f"Here is today's AI news digest — \"{label}\".\n\n"
-        f"Turn it into a podcast script following the format instructions above.\n\n"
-        f"---\n{edition_text}\n---"
-    )
-
-    yield from chat_stream(
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_msg},
-        ],
-        api_key=api_key,
-        model=model,
-        temperature=0.85,
-        timeout=300.0,
-    )
-
-
-def generate_script_revision_stream(run, user, api_key: str, model: str, current_script: str, feedback: str):
-    """Generator that yields revised LLM text tokens, given the current script and feedback."""
-    from ..llm.openrouter import chat_stream
-
-    podcast_format = _get_podcast_format(user)
-    edition_text = edition_to_text(run)
-    label = run.label or run.generated_at.strftime("%Y-%m-%d")
-
-    system = (
-        "You are a professional podcast scriptwriter.\n\n"
-        + podcast_format
-    )
-    original_request = (
-        f"Here is today's AI news digest — \"{label}\".\n\n"
-        f"Turn it into a podcast script following the format instructions above.\n\n"
-        f"---\n{edition_text}\n---"
-    )
-
-    yield from chat_stream(
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": original_request},
-            {"role": "assistant", "content": current_script},
-            {"role": "user", "content": f"Please revise the script based on this feedback:\n\n{feedback}"},
-        ],
-        api_key=api_key,
-        model=model,
-        temperature=0.85,
-        timeout=300.0,
-    )
 
 
 def generate_news_script_stream(run, user, api_key: str, model: str):
