@@ -347,6 +347,10 @@ class SummaryRun(db.Model):
     podcast_chapters = db.Column(JSONEncodedDict, nullable=True)
     news_podcast_chapters = db.Column(JSONEncodedDict, nullable=True)
 
+    # Persisted PDF export (filename under instance/pdfs), so PDF counts as a
+    # "created" channel for this edition once it has been generated.
+    pdf_file = db.Column(db.Text, nullable=True)
+
     read_at = db.Column(db.DateTime, nullable=True)
     share_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 

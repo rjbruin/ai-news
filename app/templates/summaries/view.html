@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_channels.html" import channel_icons, channel_hero %}
 {% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · AI News{% endblock %}
 {% block content %}
 
@@ -24,9 +25,12 @@
       </button>
       {% endif %}
     </h1>
-    {% if not is_shared_view and run.agent_cost is not none %}
-    <div class="small text-body-secondary mt-1" title="Generation cost">
-      <i class="fa-solid fa-coins me-1"></i>Generation cost: ${{ '%.4f'|format(run.agent_cost) }}
+    {% if not is_shared_view %}
+    <div class="d-flex align-items-center gap-3 mt-1 small text-body-secondary">
+      <span title="Channels">{{ channel_icons(run) }}</span>
+      {% if run.agent_cost is not none %}
+      <span title="Generation cost"><i class="fa-solid fa-coins me-1"></i>${{ '%.4f'|format(run.agent_cost) }}</span>
+      {% endif %}
     </div>
     {% endif %}
   </div>
@@ -34,7 +38,7 @@
   <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
     <div class="dropdown">
       <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-        Export
+        Create
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
         <li>
@@ -90,6 +94,10 @@
   </a>
   {% endfor %}
 </div>
+{% endif %}
+
+{% if not is_shared_view %}
+{{ channel_hero(run) }}
 {% endif %}
 
 {% if run.artifact_ref and run.artifact_ref.endswith('.pdf') %}
