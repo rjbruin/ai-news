@@ -538,7 +538,15 @@ def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> No
         return
 
     user = summary.user
-    if not user or not user.email:
+    if not user:
+        return
+
+    from ..models import EditionRecipient
+
+    recipients = [
+        r.email for r in user.edition_recipients.filter(EditionRecipient.confirmed_at.isnot(None))
+    ]
+    if not recipients:
         return
 
     subject = f"{summary.name} – {run.label or 'Edition'}"
@@ -568,7 +576,7 @@ def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> No
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = cfg.get("SMTP_USERNAME", "noreply@ainews")
-    msg["To"] = user.email
+    msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(full_html, "html", "utf-8"))
 
     use_tls = cfg.get("SMTP_USE_TLS", True)
@@ -581,9 +589,9 @@ def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> No
             s.starttls()
         if username:
             s.login(username, password)
-        s.sendmail(msg["From"], [user.email], msg.as_string())
+        s.sendmail(msg["From"], recipients, msg.as_string())
 
-    logger.info("Sent edition email '%s' to %s", subject, user.email)
+    logger.info("Sent edition email '%s' to %s", subject, ", ".join(recipients))
 
 
 def resend_edition_email(summary: Summary, run: SummaryRun) -> None:

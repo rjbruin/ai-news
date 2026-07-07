@@ -68,6 +68,15 @@ class Config:
     IMAP_USERNAME = os.environ.get("IMAP_USERNAME", "")
     IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "")
     IMAP_FOLDER = os.environ.get("IMAP_FOLDER", "INBOX")
+    # SMTP host for sending FROM the newsletter mailbox itself (edition
+    # recipient add/remove confirmation mail — see app/services/edition_mail.py).
+    # Most providers (Gmail, Outlook, Yahoo) mirror their IMAP host under
+    # smtp.<domain>, so that's the default; override explicitly if not.
+    IMAP_SMTP_HOST = os.environ.get(
+        "IMAP_SMTP_HOST",
+        IMAP_HOST.replace("imap.", "smtp.", 1) if IMAP_HOST.startswith("imap.") else IMAP_HOST,
+    )
+    IMAP_SMTP_PORT = int(os.environ.get("IMAP_SMTP_PORT", "587"))
 
     # Scheduler
     POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3600"))
@@ -114,6 +123,15 @@ class IntegrationTestConfig(Config):
     ADMIN_EMAILS = ["admin@example.com"]
     TAGGING_MODE = "nb_only"
     # OPENROUTER_API_KEY is intentionally NOT overridden — inherits from Config
+    # Everything else that could reach a real external service besides
+    # OpenRouter stays blanked — see the matching note on TestConfig.
+    SMTP_HOST = ""
+    SMTP_USERNAME = ""
+    SMTP_PASSWORD = ""
+    IMAP_HOST = ""
+    IMAP_SMTP_HOST = ""
+    IMAP_USERNAME = ""
+    IMAP_PASSWORD = ""
 
 
 class TestConfig(Config):
@@ -126,3 +144,15 @@ class TestConfig(Config):
     ADMIN_EMAILS = ["admin@example.com"]
     OPENROUTER_API_KEY = ""
     TAGGING_MODE = "nb_only"
+    # Blank out every outgoing-mail credential regardless of what's in the
+    # ambient environment (a developer's real .env is often sourced into the
+    # shell running pytest) — tests must never be able to reach a real SMTP
+    # server. send_email()/send_via_newsletter_mailbox() both log-and-return
+    # False when unconfigured, so this keeps the whole suite hermetic.
+    SMTP_HOST = ""
+    SMTP_USERNAME = ""
+    SMTP_PASSWORD = ""
+    IMAP_HOST = ""
+    IMAP_SMTP_HOST = ""
+    IMAP_USERNAME = ""
+    IMAP_PASSWORD = ""

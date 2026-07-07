@@ -58,6 +58,12 @@ def register():
                 user.set_password(form.password.data)
             db.session.add(user)
             db.session.commit()
+
+            from ..models import EditionRecipient
+
+            db.session.add(EditionRecipient(user_id=user.id, email=email, confirmed_at=utcnow()))
+            db.session.commit()
+
             _send_verification(user)
             flash(
                 "Account created. Check your email to verify your address.",

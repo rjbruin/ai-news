@@ -8,6 +8,7 @@
   <nav id="settings-nav" class="nav flex-column position-sticky" style="top:5rem">
     {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
+    <a class="nav-link px-2 py-1" href="#sec-recipients">Email recipients</a>
     <a class="nav-link px-2 py-1" href="#sec-interests">Interests</a>
     <a class="nav-link px-2 py-1" href="#sec-content">Content</a>
     <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
@@ -82,6 +83,40 @@
         </div>
         {% endfor %}
       {% endif %}
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4" id="sec-recipients" style="scroll-margin-top:5rem">
+    <div class="card-header fw-semibold">Email recipients</div>
+    <div class="card-body">
+      <p class="form-text mt-0">
+        Addresses that receive the edition email when "Send as email newsletter" is on. Starts
+        with your account's own email; add more below — each new address needs to confirm via a
+        link before it starts receiving mail.
+      </p>
+      <ul class="list-group mb-3">
+        {% for r in recipients %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span>
+            {{ r.email }}
+            {% if r.is_confirmed %}
+            <span class="badge text-bg-success ms-1">confirmed</span>
+            {% else %}
+            <span class="badge text-bg-warning ms-1">pending confirmation</span>
+            {% endif %}
+          </span>
+          <button type="submit" form="recipient-remove-form-{{ r.id }}"
+                  class="btn btn-sm btn-outline-danger">Remove</button>
+        </li>
+        {% else %}
+        <li class="list-group-item text-body-secondary">No recipients yet.</li>
+        {% endfor %}
+      </ul>
+      <div class="input-group" style="max-width: 420px">
+        <input type="email" name="email" form="recipient-add-form" class="form-control"
+               placeholder="name@example.com" required>
+        <button type="submit" form="recipient-add-form" class="btn btn-outline-primary">Add</button>
+      </div>
     </div>
   </div>
 
@@ -204,6 +239,11 @@
 
 <form id="regen-feed-form" method="post"
       action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
+<form id="recipient-add-form" method="post" action="{{ url_for('web.recipient_add') }}"></form>
+{% for r in recipients %}
+<form id="recipient-remove-form-{{ r.id }}" method="post"
+      action="{{ url_for('web.recipient_remove', recipient_id=r.id) }}"></form>
+{% endfor %}
 </div></div>
 {% endblock %}
 {% block scripts %}
