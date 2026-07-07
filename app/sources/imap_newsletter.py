@@ -21,6 +21,10 @@ from .base import NewsSource, RawDocument
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LOOKBACK_DAYS = 30
+# Regular polling now also runs synchronously from a web request (the
+# "Check now" button on a pending newsletter subscription), so a hung IMAP
+# connection would tie up a request worker rather than just a background job.
+_IMAP_TIMEOUT = 30
 
 
 def html_to_text(html: str) -> str:
@@ -94,7 +98,7 @@ class ImapNewsletterSource(NewsSource):
         criteria = AND(date_gte=floor)
 
         docs: list[RawDocument] = []
-        with MailBox(p["host"], port=p["port"]).login(
+        with MailBox(p["host"], port=p["port"], timeout=_IMAP_TIMEOUT).login(
             p["username"], p["password"], initial_folder=p["folder"]
         ) as mailbox:
             for msg in mailbox.fetch(criteria, mark_seen=p["mark_seen"]):
@@ -136,7 +140,7 @@ class ImapNewsletterSource(NewsSource):
             raise RuntimeError("IMAP source is not configured (host/username/password).")
 
         pairs: list[tuple[str, str]] = []
-        with MailBox(p["host"], port=p["port"]).login(
+        with MailBox(p["host"], port=p["port"], timeout=_IMAP_TIMEOUT).login(
             p["username"], p["password"], initial_folder=p["folder"]
         ) as mailbox:
             for msg in mailbox.fetch(headers_only=True, mark_seen=False, bulk=True):

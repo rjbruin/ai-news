@@ -10,7 +10,7 @@ from email.utils import parseaddr
 
 from ..extensions import db
 from ..llm import openrouter
-from ..models import ApiKey, ApiKeyUsage, IngestRun, NewsItem, Source, Tag, utcnow
+from ..models import Alert, ApiKey, ApiKeyUsage, IngestRun, NewsItem, Source, Tag, User, utcnow
 from ..sources import registry as source_registry
 from ..tagging import engine as tagging_engine
 
@@ -36,6 +36,17 @@ def ingest_source(source: Source) -> dict:
     if source.type_key in _SPLITTING_TYPES and source.parent_source_id is None:
         return _ingest_newsletter_mailbox(source)
     return _ingest_plain_source(source)
+
+
+def default_newsletter_mailbox() -> Source | None:
+    """The mailbox that self-service newsletter subscription requests attach
+    to. Approved users can't configure their own mailbox — there's one shared
+    inbox, set up by an admin — so we just pick the oldest one."""
+    return (
+        Source.query.filter_by(type_key="imap_newsletter", parent_source_id=None)
+        .order_by(Source.created_at)
+        .first()
+    )
 
 
 def _resolve_credentials(source: Source):
@@ -204,7 +215,9 @@ def _get_or_create_newsletter_child(
 ) -> tuple[Source, bool]:
     """Find (or create) the subscription Source for one sender, detected while
     polling the mailbox. Auto-created children inherit the mailbox's owner and
-    API key so they need no separate configuration."""
+    API key so they need no separate configuration, and start out already
+    ``subscribed`` — they were detected from mail already flowing through the
+    mailbox, so there's no confirmation step to wait for."""
     existing = children_by_sender.get(addr)
     if existing is not None:
         return existing, False
@@ -216,6 +229,7 @@ def _get_or_create_newsletter_child(
         api_key_id=mailbox.api_key_id,
         parent_source_id=mailbox.id,
         config={"newsletter_sender": addr, "newsletter_sender_name": display_name},
+        subscription_status="subscribed",
         enabled=True,
     )
     db.session.add(child)
@@ -228,9 +242,15 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
     """Poll a mailbox source, then split its emails into one Source per
     detected newsletter (sender), so each newsletter can be reviewed and
     retracted independently. New senders are auto-registered as new,
-    enabled Sources; disabled subscriptions are skipped without spending
-    any LLM tokens (but their emails are still recorded, so re-enabling
-    doesn't lose history)."""
+    already-``subscribed`` Sources; disabled subscriptions are skipped
+    without spending any LLM tokens (but their emails are still recorded, so
+    re-enabling doesn't lose history).
+
+    Mail matching a user-requested subscription still ``waiting_confirmation``
+    (matched by domain, since its exact sender address isn't known yet) is
+    routed to _handle_pending_confirmation instead of being auto-ingested —
+    see that function for the confirmation-detection flow.
+    """
     api_key_row, secret, model, err = _resolve_credentials(mailbox)
     if err:
         mailbox.last_status = err
@@ -263,13 +283,42 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
     children_by_sender = {
         (c.config or {}).get("newsletter_sender"): c for c in mailbox.children
     }
+    pending_by_domain = {
+        (c.config or {}).get("newsletter_domain"): c
+        for c in mailbox.children
+        if c.subscription_status == "waiting_confirmation" and (c.config or {}).get("newsletter_domain")
+    }
+
     docs_by_child: dict[int, list] = {}
     child_by_id: dict[int, Source] = {}
     for doc in docs:
         addr, display_name = _sender_key((doc.meta or {}).get("from"))
-        child, created = _get_or_create_newsletter_child(mailbox, children_by_sender, addr, display_name)
-        if created:
-            new_subscriptions += 1
+        child = children_by_sender.get(addr)
+
+        if child is None:
+            domain = addr.rsplit("@", 1)[-1] if "@" in addr else ""
+            pending_match = pending_by_domain.get(domain)
+            if pending_match is not None:
+                outcome = _handle_pending_confirmation(pending_match, doc)
+                if pending_match.subscription_status != "waiting_confirmation":
+                    pending_by_domain.pop(domain, None)
+                if outcome == "consumed":
+                    stats["skipped"] += 1
+                    continue
+                # outcome == "content": treat the subscription as active and
+                # also process this email as real newsletter content below.
+                child = pending_match
+                child.config = {
+                    **(child.config or {}), "newsletter_sender": addr,
+                    "newsletter_sender_name": display_name,
+                }
+                children_by_sender[addr] = child
+
+        if child is None:
+            child, created = _get_or_create_newsletter_child(mailbox, children_by_sender, addr, display_name)
+            if created:
+                new_subscriptions += 1
+
         docs_by_child.setdefault(child.id, []).append(doc)
         child_by_id[child.id] = child
 
@@ -298,6 +347,11 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
             child.last_status = "retracted: newsletter disabled, emails recorded but not processed"
             continue
 
+        child_api_key_row, child_secret, child_model, child_err = _resolve_credentials(child)
+        if child_err:
+            child.last_status = child_err
+            continue
+
         child_usage = {"tokens": 0, "cost": 0.0}
 
         def _child_hook(usage: dict, _acc=child_usage) -> None:
@@ -306,7 +360,7 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
 
         child_plugin = source_registry.create(
             mailbox.type_key, mailbox.config or {},
-            api_key=secret, model=model, usage_hook=_child_hook,
+            api_key=child_secret, model=child_model, usage_hook=_child_hook,
         )
         child_stats = _ingest_docs_for_source(child, child_plugin, child_docs, all_tags)
         _merge_stats(stats, child_stats)
@@ -324,7 +378,7 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
             )
         if child_usage["tokens"] or child_usage["cost"]:
             db.session.add(ApiKeyUsage(
-                api_key_id=api_key_row.id,
+                api_key_id=child_api_key_row.id,
                 source_id=child.id,
                 kind="ingest",
                 tokens=child_usage["tokens"],
@@ -341,6 +395,175 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
     mailbox.last_status = summary
     db.session.commit()
     return stats
+
+
+_CONFIRMATION_EMAIL_SYSTEM = (
+    "You are looking at one email received after someone tried to subscribe to a "
+    "newsletter. Determine whether completing the subscription requires clicking a "
+    "link in THIS email (a double opt-in confirmation step), or whether no action is "
+    "needed — e.g. it's a welcome message, a regular newsletter issue, or a notice "
+    "that the subscription is already active.\n\n"
+    'Respond ONLY with valid JSON in this exact format: '
+    '{"requires_click": true or false, "confirmation_url": "https://... or empty string"}'
+)
+
+_CONFIRMATION_RESULT_SYSTEM = (
+    "You are looking at the text content of a web page reached by following a "
+    "newsletter subscription confirmation link. Decide whether the page indicates "
+    "the subscription was confirmed/activated successfully.\n\n"
+    'Respond ONLY with valid JSON in this exact format: {"confirmed": true or false}'
+)
+
+
+def _handle_pending_confirmation(pending_child: Source, doc) -> str:
+    """Try to resolve one newsletter subscription that's waiting_confirmation
+    against a matched email, using the requesting user's own API key.
+
+    Returns "consumed" (this email was a subscription/confirmation email and
+    should not also be treated as newsletter content) or "content" (no click
+    was needed, the subscription is now considered active, and this email
+    should additionally be processed as a normal newsletter item).
+    """
+    api_key_row, secret, model, err = _resolve_credentials(pending_child)
+    if err:
+        logger.warning(
+            "Cannot evaluate pending newsletter confirmation for source %s: %s",
+            pending_child.id, err,
+        )
+        return "consumed"
+
+    usage_totals = {"tokens": 0, "cost": 0.0}
+
+    def _hook(usage: dict) -> None:
+        usage_totals["tokens"] += int(usage.get("total_tokens") or 0)
+        usage_totals["cost"] += float(usage.get("cost") or 0.0)
+
+    try:
+        classification = openrouter.chat_json(
+            [
+                {"role": "system", "content": _CONFIRMATION_EMAIL_SYSTEM},
+                {"role": "user", "content": f"Subject: {doc.subject or '(none)'}\n\nBody:\n{doc.text[:6000]}"},
+            ],
+            schema={
+                "type": "object",
+                "properties": {
+                    "requires_click": {"type": "boolean"},
+                    "confirmation_url": {"type": "string"},
+                },
+                "required": ["requires_click", "confirmation_url"],
+                "additionalProperties": False,
+            },
+            api_key=secret, model=model, usage_hook=_hook,
+        ) or {}
+    except openrouter.LLMError:
+        logger.exception("Confirmation-email classification failed for source %s", pending_child.id)
+        _record_confirm_usage(api_key_row, pending_child, usage_totals)
+        return "consumed"
+
+    if not classification.get("requires_click"):
+        _mark_subscribed(pending_child)
+        _record_confirm_usage(api_key_row, pending_child, usage_totals)
+        return "content"
+
+    url = (classification.get("confirmation_url") or "").strip()
+    if not url:
+        _mark_failed(pending_child, "no confirmation link could be found in the email")
+        _record_confirm_usage(api_key_row, pending_child, usage_totals)
+        return "consumed"
+
+    try:
+        page_text = _fetch_confirmation_page(url)
+        confirmed = bool((openrouter.chat_json(
+            [
+                {"role": "system", "content": _CONFIRMATION_RESULT_SYSTEM},
+                {"role": "user", "content": page_text or "(empty page)"},
+            ],
+            schema={
+                "type": "object",
+                "properties": {"confirmed": {"type": "boolean"}},
+                "required": ["confirmed"],
+                "additionalProperties": False,
+            },
+            api_key=secret, model=model, usage_hook=_hook,
+        ) or {}).get("confirmed"))
+    except Exception:  # noqa: BLE001
+        logger.exception("Confirmation link click failed for source %s", pending_child.id)
+        confirmed = False
+
+    _record_confirm_usage(api_key_row, pending_child, usage_totals)
+    if confirmed:
+        _mark_subscribed(pending_child)
+    else:
+        _mark_failed(pending_child, "clicking the confirmation link did not indicate success")
+    return "consumed"
+
+
+def _record_confirm_usage(api_key_row, source: Source, usage_totals: dict) -> None:
+    if usage_totals["tokens"] or usage_totals["cost"]:
+        db.session.add(ApiKeyUsage(
+            api_key_id=api_key_row.id, source_id=source.id, kind="confirm",
+            tokens=usage_totals["tokens"], cost=usage_totals["cost"],
+        ))
+
+
+def _fetch_confirmation_page(url: str) -> str:
+    """"Clicks" a confirmation link: a plain GET, which is how virtually all
+    double opt-in confirmation links work (no JS/form submission needed)."""
+    import httpx
+    from bs4 import BeautifulSoup
+
+    resp = httpx.get(
+        url, timeout=20.0, follow_redirects=True,
+        headers={"User-Agent": "Dispatch/1.0 (+https://github.com/rjbruin/ai-news)"},
+    )
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    return soup.get_text(separator=" ", strip=True)[:4000]
+
+
+def _mark_subscribed(child: Source) -> None:
+    was_pending = child.subscription_status != "subscribed"
+    child.subscription_status = "subscribed"
+    # Alert.push() does its own defensive rollback+commit, which would wipe
+    # this uncommitted change if it ran first — commit it before pushing.
+    db.session.commit()
+    if was_pending and child.owner_user_id:
+        Alert.push(
+            child.owner_user_id,
+            key=f"newsletter_subscribed_{child.id}",
+            message=f'Your newsletter subscription to "{child.name}" is now active.',
+            level="success",
+        )
+
+
+def _mark_failed(child: Source, reason: str) -> None:
+    child.subscription_status = "failed"
+    db.session.commit()
+    if child.owner_user_id:
+        Alert.push(
+            child.owner_user_id,
+            key=f"newsletter_failed_{child.id}",
+            message=(
+                f'We received a confirmation email for "{child.name}" but could not confirm it '
+                f'automatically ({reason}). An admin will complete this manually.'
+            ),
+            level="warning",
+        )
+    for admin_user in User.query.all():
+        if not admin_user.is_admin:
+            continue
+        Alert.push(
+            admin_user.id,
+            key=f"newsletter_needs_manual_confirm_{child.id}",
+            message=(
+                f'Newsletter "{child.name}" (requested by '
+                f'{child.owner.username if child.owner else "an unknown user"}) needs manual '
+                f'subscription confirmation — see Sources.'
+            ),
+            level="warning",
+        )
 
 
 _REINDEX_BATCH_SIZE = 40

@@ -154,7 +154,58 @@ disables every source that used it; a source's owner (`Source.owner_user_id`,
 checked via `Source.can_manage()`) or any admin can retract (disable) or
 delete it from `/sources`. Self-service creation (`/sources/new`,
 `/keys/new`) is gated behind `User.is_approved` (an admin-set `approved` flag,
-plus admins are always approved).
+plus admins are always approved). Non-admins never see the `seed` (debug
+fixture) source type in that form.
+
+### Newsletter subscription requests
+
+An approved user can't configure the shared mailbox directly, so requesting
+a newsletter via `/sources/new` instead asks for just the newsletter's name,
+its sending domain, and one of the user's own API keys. That creates a child
+`Source` under the mailbox with `subscription_status="waiting_confirmation"`
+(no `newsletter_sender` yet — the exact address isn't known until mail
+arrives) and redirects to `/sources` with a modal showing the mailbox address
+to subscribe with and a rate-limited (10s) "Check now" button
+(`/sources/<id>/poll-confirmation`) that re-polls the mailbox on demand.
+
+Regular mailbox polling (`_ingest_newsletter_mailbox` in
+`app/services/ingest.py`) matches incoming mail against pending subscriptions
+by sender **domain** (exact-address matching, used for already-`subscribed`
+newsletters, can't apply yet). A match is handed to
+`_handle_pending_confirmation`, which classifies the email — using the
+*requesting user's own* API key, not the mailbox's — into either "needs a
+confirmation-link click" or "no action needed" (structured-output LLM call).
+A required link is "clicked" with a plain `httpx.get` (a second LLM call
+judges whether the resulting page indicates success); most double opt-in
+confirmations are simple GET links, so no form/JS automation is attempted.
+Outcomes:
+
+- No click needed → `subscribed` immediately, and — since it's genuine
+  newsletter content, not a system email — this same message is also run
+  through normal extraction/tagging.
+- Click succeeds → `subscribed`; the confirmation email itself is not
+  ingested as content.
+- Click fails, or a click was expected but no link was found → `failed`; an
+  `Alert` (`app/models.py`) is pushed to the requesting user *and* every
+  admin, since a human has to finish it manually (`/admin` → "Mark
+  subscribed" sets `subscribed` and notifies the owner).
+
+`ApiKeyUsage` rows from this flow use `kind="confirm"`, distinct from
+ordinary ingestion (`kind="ingest"`) and admin reindexing (`kind="reindex"`,
+see below).
+
+### Reindexing an existing mailbox
+
+Per-newsletter splitting only discovers a sender the first time it emails
+*after* the mailbox is polled — a mailbox's pre-existing history doesn't
+retroactively populate the newsletter list. `admin.source_reindex_newsletters`
+(admin-only, "Reindex newsletters" button on a top-level `imap_newsletter`
+source) calls `ingest.reindex_newsletter_mailbox()`, which scans every
+message's sender + subject (headers only, via `NewsSource.scan_senders()` —
+no bodies, no items ingested), classifies which senders are genuine
+newsletters via a batched LLM call on the **global** API key (a one-off admin
+action, not per-source ingestion), and creates any missing child `Source`
+rows as already-`subscribed`.
 
 ### Tagging
 
@@ -208,7 +259,8 @@ Key tables (`app/models.py`): `User` (auth, admin derived from
 (owner or `is_global`, encrypted secret / env-backed for the global key,
 optional model override) / `ApiKeyUsage` (per-poll tokens + cost ledger,
 keyed by key and source), `Source` (plugin type + config JSON + poll
-interval + owner + assigned `ApiKey`), `IngestRun` (per-poll audit trail),
+interval + owner + assigned `ApiKey` + `parent_source_id`/`subscription_status`
+for newsletter subscriptions), `IngestRun` (per-poll audit trail),
 `NewsItem` (cleaned text, dedup hash, one-liner, status), `Tag` /
 `NewsItemTag` (taxonomy + per-item matches with confidence/method), `Summary`
 (a configured summary — type, scope mode, schedule, params) / `SummaryRun`

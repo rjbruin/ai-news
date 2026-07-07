@@ -1,6 +1,6 @@
 import pytest
 
-from app.models import ApiKey, IngestRun, NewsItem, Source
+from app.models import Alert, ApiKey, IngestRun, NewsItem, Source, User
 from app.services import ingest
 from app.sources import registry as source_registry
 from app.sources.base import ExtractedItem, NewsSource, RawDocument
@@ -246,3 +246,261 @@ def test_admin_reindex_rejects_child_source(admin_client, db, mailbox, fake_news
     )
     assert resp.status_code == 200
     assert b"top-level" in resp.data
+
+
+# ───────────────────────── subscription confirmation ─────────────────────────
+def _queued_chat_json(*responses):
+    """Stand-in for openrouter.chat_json that returns pre-programmed responses
+    in call order, so a test can script a multi-step LLM conversation."""
+    calls = list(responses)
+
+    def _fn(messages, *, schema=None, model=None, api_key=None, temperature=0.2,
+            timeout=60.0, usage_hook=None):
+        if usage_hook:
+            usage_hook({"total_tokens": 10, "cost": 0.0001})
+        assert calls, "no more queued chat_json responses"
+        return calls.pop(0)
+
+    return _fn
+
+
+@pytest.fixture
+def requester(db):
+    u = User(username="requester", email="requester@example.com", email_verified=True, approved=True)
+    u.set_password("password123")
+    db.session.add(u)
+    db.session.commit()
+    return u
+
+
+@pytest.fixture
+def pending_subscription(db, mailbox, requester):
+    key = ApiKey(owner_user_id=requester.id, label="Alice's key")
+    key.set_key("sk-or-alice")
+    db.session.add(key)
+    db.session.commit()
+    source = Source(
+        type_key="imap_newsletter", name="TLDR AI",
+        owner_user_id=requester.id, api_key_id=key.id, parent_source_id=mailbox.id,
+        config={"newsletter_domain": "tldrnewsletter.com", "newsletter_name": "TLDR AI"},
+        subscription_status="waiting_confirmation", enabled=True,
+    )
+    db.session.add(source)
+    db.session.commit()
+    return source
+
+
+def test_no_click_needed_marks_subscribed_and_ingests_content(
+    db, app, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json",
+        _queued_chat_json({"requires_click": False, "confirmation_url": ""}),
+    )
+
+    stats = ingest.ingest_source(mailbox)
+
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.subscription_status == "subscribed"
+    assert pending_subscription.config.get("newsletter_sender") == "news@tldrnewsletter.com"
+    assert stats["new_items"] == 1  # the email is also real content, so it's ingested
+    assert NewsItem.query.filter_by(source_id=pending_subscription.id).count() == 1
+
+    alert = Alert.query.filter_by(user_id=pending_subscription.owner_user_id).first()
+    assert alert is not None
+    assert "now active" in alert.message
+
+
+def test_click_required_and_succeeds(
+    db, app, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Please confirm")]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json",
+        _queued_chat_json(
+            {"requires_click": True, "confirmation_url": "https://confirm.example/abc"},
+            {"confirmed": True},
+        ),
+    )
+    monkeypatch.setattr(ingest, "_fetch_confirmation_page", lambda url: "You are now subscribed!")
+
+    stats = ingest.ingest_source(mailbox)
+
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.subscription_status == "subscribed"
+    assert stats["new_items"] == 0  # the confirmation email itself isn't newsletter content
+    alert = Alert.query.filter_by(user_id=pending_subscription.owner_user_id).first()
+    assert alert is not None and "now active" in alert.message
+
+
+def test_click_required_and_fails_notifies_owner_and_admins(
+    db, app, admin, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Please confirm")]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json",
+        _queued_chat_json(
+            {"requires_click": True, "confirmation_url": "https://confirm.example/abc"},
+            {"confirmed": False},
+        ),
+    )
+    monkeypatch.setattr(ingest, "_fetch_confirmation_page", lambda url: "Something went wrong")
+
+    ingest.ingest_source(mailbox)
+
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.subscription_status == "failed"
+
+    owner_alert = Alert.query.filter_by(user_id=pending_subscription.owner_user_id).first()
+    assert owner_alert is not None
+    assert "could not confirm" in owner_alert.message
+
+    admin_alert = Alert.query.filter_by(user_id=admin.id).first()
+    assert admin_alert is not None
+    assert "manual" in admin_alert.message.lower()
+
+
+def test_click_required_without_url_fails(
+    db, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Please confirm")]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json",
+        _queued_chat_json({"requires_click": True, "confirmation_url": ""}),
+    )
+
+    ingest.ingest_source(mailbox)
+
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.subscription_status == "failed"
+
+
+def test_subscribed_child_is_not_reevaluated(
+    db, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    pending_subscription.subscription_status = "subscribed"
+    pending_subscription.config = {
+        **pending_subscription.config, "newsletter_sender": "news@tldrnewsletter.com",
+    }
+    db.session.commit()
+
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #2")]
+
+    def _explode(*a, **k):
+        raise AssertionError("chat_json should not be called for an already-subscribed sender")
+
+    monkeypatch.setattr(ingest.openrouter, "chat_json", _explode)
+
+    stats = ingest.ingest_source(mailbox)
+    assert stats["new_items"] == 1  # normal content ingestion, no confirmation check
+
+
+# ───────────────────────── web: self-service newsletter requests ─────────────────────────
+def test_seed_type_hidden_for_non_admin(auth_client, user, db):
+    user.approved = True
+    db.session.commit()
+    resp = auth_client.get("/sources/new")
+    assert b'value="seed"' not in resp.data
+
+
+def test_seed_type_visible_for_admin(admin_client):
+    resp = admin_client.get("/sources/new")
+    assert b'value="seed"' in resp.data
+
+
+def test_newsletter_request_creates_pending_subscription(auth_client, db, user, mailbox):
+    user.approved = True
+    db.session.commit()
+    key = ApiKey(owner_user_id=user.id, label="Mine")
+    key.set_key("sk-or-x")
+    db.session.add(key)
+    db.session.commit()
+
+    resp = auth_client.post(
+        "/sources/new",
+        data={
+            "type_key": "imap_newsletter",
+            "newsletter_name": "Import AI",
+            "newsletter_domain": "substack.com",
+            "api_key_id": str(key.id),
+        },
+    )
+    assert resp.status_code == 302
+    assert resp.headers["Location"].startswith("/sources?subscribe=")
+
+    child = Source.query.filter_by(name="Import AI").first()
+    assert child is not None
+    assert child.parent_source_id == mailbox.id
+    assert child.owner_user_id == user.id
+    assert child.subscription_status == "waiting_confirmation"
+    assert child.config["newsletter_domain"] == "substack.com"
+
+
+def test_newsletter_request_without_mailbox_flashes_error(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+    key = ApiKey(owner_user_id=user.id, label="Mine")
+    key.set_key("sk-or-x")
+    db.session.add(key)
+    db.session.commit()
+
+    resp = auth_client.post(
+        "/sources/new",
+        data={
+            "type_key": "imap_newsletter", "newsletter_name": "X", "newsletter_domain": "x.com",
+            "api_key_id": str(key.id),
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"No newsletter mailbox is configured" in resp.data
+    assert Source.query.filter_by(name="X").first() is None
+
+
+def test_poll_confirmation_route_rate_limited(auth_client, db, user, pending_subscription, monkeypatch):
+    pending_subscription.owner_user_id = user.id
+    db.session.commit()
+
+    calls = {"n": 0}
+    def _fake_ingest_source(source):
+        calls["n"] += 1
+        return {}
+    monkeypatch.setattr(ingest, "ingest_source", _fake_ingest_source)
+
+    resp = auth_client.post(f"/sources/{pending_subscription.id}/poll-confirmation")
+    assert resp.status_code == 200
+    assert calls["n"] == 1
+
+    # Second call right away should be rate-limited server-side and not re-poll.
+    from app.models import utcnow
+    pending_subscription.parent_source.last_polled_at = utcnow()
+    db.session.commit()
+    resp2 = auth_client.post(f"/sources/{pending_subscription.id}/poll-confirmation")
+    assert resp2.status_code == 200
+    assert calls["n"] == 1
+
+
+def test_poll_confirmation_requires_ownership(client, db, admin, pending_subscription):
+    other = User(username="bob", email="bob@example.com", email_verified=True)
+    other.set_password("password123")
+    db.session.add(other)
+    db.session.commit()
+    client.post(
+        "/auth/login",
+        data={"email": other.email, "password": "password123", "submit": "Sign in"},
+        follow_redirects=True,
+    )
+    resp = client.post(f"/sources/{pending_subscription.id}/poll-confirmation")
+    assert resp.status_code == 403
+
+
+def test_admin_mark_subscribed(admin_client, db, pending_subscription):
+    resp = admin_client.post(
+        f"/admin/sources/{pending_subscription.id}/mark-subscribed", follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.subscription_status == "subscribed"
+    alert = Alert.query.filter_by(user_id=pending_subscription.owner_user_id).first()
+    assert alert is not None

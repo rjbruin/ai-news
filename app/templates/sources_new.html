@@ -13,10 +13,6 @@
 <form method="post" class="card shadow-sm">
   <div class="card-body">
     <div class="mb-3">
-      <label class="form-label">Name</label>
-      <input name="name" class="form-control" placeholder="e.g. AI newsletters mailbox">
-    </div>
-    <div class="mb-3">
       <label class="form-label">Type</label>
       <select name="type_key" class="form-select" id="type_key">
         {% for key, cls in types.items() %}
@@ -24,6 +20,30 @@
         {% endfor %}
       </select>
     </div>
+
+    <div class="mb-3 cfg-group cfg-not-imap_newsletter" style="display:none">
+      <label class="form-label">Name</label>
+      <input name="name" class="form-control" placeholder="e.g. AI newsletters mailbox">
+    </div>
+
+    <div class="mb-3 cfg-group cfg-imap_newsletter" style="display:none">
+      <label class="form-label">Newsletter name</label>
+      <input name="newsletter_name" class="form-control" placeholder="e.g. TLDR AI">
+    </div>
+    <div class="mb-3 cfg-group cfg-imap_newsletter" style="display:none">
+      <label class="form-label">Newsletter domain</label>
+      <input name="newsletter_domain" class="form-control" placeholder="e.g. tldrnewsletter.com">
+      <div class="form-text">
+        The domain the newsletter sends from — used to match its confirmation email once you
+        subscribe.
+        {% if mailbox %}
+          We'll watch <strong>{{ mailbox.name }}</strong> for it.
+        {% else %}
+          <span class="text-danger">No newsletter mailbox is configured yet — ask an admin to add one first.</span>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="mb-3">
       <label class="form-label">API key</label>
       <select name="api_key_id" class="form-select">
@@ -33,25 +53,29 @@
       </select>
       <div class="form-text">Pays for fetching and tagging this source's items. Manage your keys in <a href="{{ url_for('web.api_keys') }}">API Keys</a>.</div>
     </div>
-    <div class="mb-3">
+
+    <div class="mb-3 cfg-group cfg-not-imap_newsletter" style="display:none">
       <label class="form-label">Poll interval override (seconds)</label>
       <input name="poll_interval_override" type="number" class="form-control" placeholder="leave blank for global default">
     </div>
+
     <hr>
     {% for key, cls in types.items() %}
-      {% for field, spec in (cls.config_schema or {}).items() %}
-      <div class="mb-3 cfg-group cfg-{{ key }}" style="display:none">
-        {% if spec.type == 'checkbox' %}
-        <div class="form-check">
-          <input type="checkbox" name="cfg_{{ field }}" class="form-check-input" id="c_{{ key }}_{{ field }}">
-          <label class="form-check-label" for="c_{{ key }}_{{ field }}">{{ spec.label }}</label>
+      {% if key != 'imap_newsletter' %}
+        {% for field, spec in (cls.config_schema or {}).items() %}
+        <div class="mb-3 cfg-group cfg-{{ key }}" style="display:none">
+          {% if spec.type == 'checkbox' %}
+          <div class="form-check">
+            <input type="checkbox" name="cfg_{{ field }}" class="form-check-input" id="c_{{ key }}_{{ field }}">
+            <label class="form-check-label" for="c_{{ key }}_{{ field }}">{{ spec.label }}</label>
+          </div>
+          {% else %}
+          <label class="form-label">{{ spec.label }}{% if not spec.required %} <span class="text-body-secondary small">(optional — falls back to server config)</span>{% endif %}</label>
+          <input name="cfg_{{ field }}" type="{{ 'password' if spec.type == 'password' else spec.type }}" class="form-control">
+          {% endif %}
         </div>
-        {% else %}
-        <label class="form-label">{{ spec.label }}{% if not spec.required %} <span class="text-body-secondary small">(optional — falls back to server config)</span>{% endif %}</label>
-        <input name="cfg_{{ field }}" type="{{ 'password' if spec.type == 'password' else spec.type }}" class="form-control">
-        {% endif %}
-      </div>
-      {% endfor %}
+        {% endfor %}
+      {% endif %}
     {% endfor %}
   </div>
   <div class="card-footer d-flex justify-content-between">
@@ -68,6 +92,9 @@
     const key = document.getElementById('type_key').value;
     document.querySelectorAll('.cfg-group').forEach(el => el.style.display = 'none');
     document.querySelectorAll('.cfg-' + key).forEach(el => el.style.display = '');
+    if (key !== 'imap_newsletter') {
+      document.querySelectorAll('.cfg-not-imap_newsletter').forEach(el => el.style.display = '');
+    }
   }
   const typeSelect = document.getElementById('type_key');
   if (typeSelect) {

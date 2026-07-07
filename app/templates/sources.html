@@ -13,6 +13,16 @@
   Newsletter mailboxes are split automatically into one source per newsletter as they're detected.
 </p>
 
+{% macro subscription_badge(status) %}
+  {% if status == 'waiting_confirmation' %}
+    <span class="badge text-bg-warning">waiting for confirmation</span>
+  {% elif status == 'failed' %}
+    <span class="badge text-bg-danger">confirmation failed</span>
+  {% elif status == 'subscribed' %}
+    <span class="badge text-bg-success">subscribed</span>
+  {% endif %}
+{% endmacro %}
+
 {% macro source_row(s, nested=False) %}
   <tr>
     <td>
@@ -35,13 +45,22 @@
     </td>
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">
-      {% if s.last_status %}
+      {% if s.subscription_status %}
+        {{ subscription_badge(s.subscription_status) }}
+        {% if s.subscription_status == 'subscribed' and s.last_status %}
+          <div class="mt-1"><span class="{{ 'text-danger' if 'error' in s.last_status or 'partial' in s.last_status else 'text-success' }}">{{ s.last_status }}</span></div>
+        {% endif %}
+      {% elif s.last_status %}
         <span class="{{ 'text-danger' if 'error' in s.last_status or 'partial' in s.last_status else 'text-success' }}">{{ s.last_status }}</span>
       {% else %}
         <span class="text-body-secondary">never polled</span>
       {% endif %}
     </td>
     <td class="text-nowrap">
+      {% if s.subscription_status and s.can_manage(current_user) %}
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                data-bs-target="#subscribe-modal-{{ s.id }}">Instructions</button>
+      {% endif %}
       {% if s.can_manage(current_user) %}
         {% if s.enabled %}
         <form method="post" action="{{ url_for('web.source_retract', source_id=s.id) }}" class="d-inline"
@@ -74,4 +93,104 @@
     </tbody>
   </table>
 </div>
+
+{% for s in sources %}
+  {% for child in s.children %}
+    {% if child.subscription_status and child.can_manage(current_user) %}
+    <div class="modal fade" id="subscribe-modal-{{ child.id }}" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Subscribe to {{ child.name }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <ol class="mb-3">
+              <li>Go to {{ child.name }}'s website and subscribe using this email address:
+                <div class="input-group input-group-sm my-1">
+                  <input type="text" class="form-control font-monospace" readonly
+                         value="{{ mailbox_addresses.get(s.id, 'the configured mailbox') }}">
+                </div>
+              </li>
+              <li>If the newsletter sends a confirmation email, we'll try to confirm it automatically.</li>
+              <li>Come back here (or press "Check now" below) to see the status update.</li>
+            </ol>
+            <div class="mb-2">
+              Status: <span class="subscribe-status" data-source-id="{{ child.id }}">{{ subscription_badge(child.subscription_status) }}</span>
+            </div>
+            {% if child.subscription_status == 'failed' %}
+            <p class="small text-body-secondary mb-0">
+              We couldn't confirm this automatically — an admin has been notified to complete it manually.
+            </p>
+            {% endif %}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-primary btn-check-now" data-source-id="{{ child.id }}">
+              Check now
+            </button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const STATUS_LABELS = {
+    waiting_confirmation: ['badge text-bg-warning', 'waiting for confirmation'],
+    failed: ['badge text-bg-danger', 'confirmation failed'],
+    subscribed: ['badge text-bg-success', 'subscribed'],
+  };
+  const COOLDOWN_MS = 10000;
+  const lastChecked = {};
+
+  function setStatus(sourceId, status) {
+    const label = STATUS_LABELS[status];
+    if (!label) return;
+    document.querySelectorAll('.subscribe-status[data-source-id="' + sourceId + '"]').forEach(function (el) {
+      el.innerHTML = '<span class="' + label[0] + '">' + label[1] + '</span>';
+    });
+  }
+
+  document.querySelectorAll('.btn-check-now').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const sourceId = btn.getAttribute('data-source-id');
+      const now = Date.now();
+      if (lastChecked[sourceId] && now - lastChecked[sourceId] < COOLDOWN_MS) return;
+      lastChecked[sourceId] = now;
+
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Checking…';
+
+      fetch('/sources/' + sourceId + '/poll-confirmation', { method: 'POST' })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (data && data.status) setStatus(sourceId, data.status);
+        })
+        .catch(function () {})
+        .finally(function () {
+          let remaining = COOLDOWN_MS - (Date.now() - lastChecked[sourceId]);
+          if (remaining < 0) remaining = 0;
+          setTimeout(function () {
+            btn.disabled = false;
+            btn.textContent = originalText;
+          }, remaining);
+        });
+    });
+  });
+
+  const subscribeId = {{ subscribe_id | tojson }};
+  if (subscribeId) {
+    const modalEl = document.getElementById('subscribe-modal-' + subscribeId);
+    if (modalEl && window.bootstrap) {
+      new bootstrap.Modal(modalEl).show();
+    }
+  }
+})();
+</script>
 {% endblock %}
