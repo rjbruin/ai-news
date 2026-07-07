@@ -30,8 +30,10 @@ def chat_json(
     *,
     schema: dict | None = None,
     model: str | None = None,
+    api_key: str | None = None,
     temperature: float = 0.2,
     timeout: float = 60.0,
+    usage_hook=None,
 ) -> dict | list:
     """Call OpenRouter chat completions and return parsed JSON.
 
@@ -39,8 +41,13 @@ def chat_json(
     OpenRouter).  When ``schema`` is provided its structure is described in the
     system prompt so the model follows it — we don't use ``json_schema`` mode
     because it is not supported by all providers on OpenRouter.
+
+    ``api_key``, when given, overrides the global ``OPENROUTER_API_KEY`` (used
+    by per-source/per-user credentials). ``usage_hook``, when given, is called
+    with the response's ``usage`` dict (tokens/cost) for callers that want to
+    record spend without changing this function's return value.
     """
-    api_key = current_app.config.get("OPENROUTER_API_KEY")
+    api_key = api_key or current_app.config.get("OPENROUTER_API_KEY")
     if not api_key:
         raise LLMNotConfigured("OPENROUTER_API_KEY is not set")
 
@@ -60,6 +67,8 @@ def chat_json(
         "messages": messages,
         "temperature": temperature,
         "response_format": response_format,
+        # Ask OpenRouter to report per-call USD cost in `usage.cost`.
+        "usage": {"include": True},
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -91,6 +100,11 @@ def chat_json(
         raise LLMError(f"OpenRouter request failed: {exc}") from exc
 
     data = resp.json()
+    if usage_hook is not None:
+        try:
+            usage_hook(data.get("usage") or {})
+        except Exception:  # noqa: BLE001
+            logger.exception("usage_hook failed")
     try:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as exc:

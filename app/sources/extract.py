@@ -33,9 +33,20 @@ _SYSTEM = (
 )
 
 
-def extract_items(doc: RawDocument) -> list[ExtractedItem]:
-    """Extract items via LLM. Returns [] if the LLM is not configured."""
-    if not openrouter.is_configured():
+def extract_items(
+    doc: RawDocument,
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+    usage_hook=None,
+) -> list[ExtractedItem]:
+    """Extract items via LLM. Returns [] if no LLM credentials are available.
+
+    ``api_key``/``model`` let a source's assigned ApiKey drive extraction
+    instead of the global OPENROUTER_API_KEY; ``usage_hook`` reports token/cost
+    usage back to the caller for per-source/per-key accounting.
+    """
+    if not api_key and not openrouter.is_configured():
         logger.warning("LLM not configured; skipping extraction for %s", doc.external_id)
         return []
 
@@ -49,6 +60,9 @@ def extract_items(doc: RawDocument) -> list[ExtractedItem]:
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": user_content},
             ],
+            api_key=api_key,
+            model=model,
+            usage_hook=usage_hook,
         )
     except openrouter.LLMError as exc:
         logger.error("Extraction failed for %s: %s", doc.external_id, exc)

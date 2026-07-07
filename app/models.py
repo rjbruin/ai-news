@@ -68,6 +68,10 @@ class User(UserMixin, db.Model):
         db.Integer, db.ForeignKey("summaries.id"), nullable=True
     )
 
+    # Gate for self-service source/API-key management. Admins are always
+    # implicitly approved (see is_approved); this flag is for everyone else.
+    approved = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+
     tags = db.relationship("Tag", back_populates="owner", lazy="dynamic")
     summaries = db.relationship(
         "Summary", back_populates="user", lazy="dynamic",
@@ -139,6 +143,15 @@ class User(UserMixin, db.Model):
 
         return self.email.lower() in current_app.config.get("ADMIN_EMAILS", [])
 
+    @property
+    def is_approved(self) -> bool:
+        """Whether this user may add their own sources / API keys.
+
+        Admins are always approved; everyone else needs the ``approved`` flag
+        set by an admin.
+        """
+        return bool(self.approved) or self.is_admin
+
 
 class AuthToken(db.Model):
     """Single-use signed-token records for magic-link login / verification."""
@@ -154,6 +167,125 @@ class AuthToken(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
     user = db.relationship("User")
+
+
+# ─────────────────────────────── API keys ───────────────────────────────
+class ApiKey(db.Model):
+    """A credential (currently always OpenRouter) usable to run a Source's
+    ingestion + tagging.
+
+    ``owner_user_id`` is NULL only for the single seeded global key
+    (``is_global=True``), whose secret lives in the ``OPENROUTER_API_KEY`` env
+    var rather than in this row — it is conceptually owned by every admin
+    rather than any one user, so any admin can view/manage/revoke it.
+    """
+
+    __tablename__ = "api_keys"
+
+    id = db.Column(db.Integer, primary_key=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    label = db.Column(db.String(120), nullable=False)
+    provider = db.Column(db.String(30), default="openrouter", nullable=False)
+    key_enc = db.Column(db.Text, nullable=True)  # NULL for the global key (read from env)
+    model = db.Column(db.String(120), nullable=True)  # optional per-key model override
+    is_global = db.Column(db.Boolean, default=False, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    owner = db.relationship("User", foreign_keys=[owner_user_id])
+    sources = db.relationship("Source", back_populates="api_key", lazy="dynamic")
+    usage_entries = db.relationship(
+        "ApiKeyUsage", back_populates="api_key", cascade="all, delete-orphan", lazy="dynamic",
+    )
+
+    @property
+    def active(self) -> bool:
+        return self.revoked_at is None
+
+    def set_key(self, plaintext: str | None) -> None:
+        from .crypto import encrypt
+
+        self.key_enc = encrypt(plaintext) if plaintext else None
+
+    def get_key(self) -> str | None:
+        """Return the usable secret: the env var for the global key, else the
+        decrypted per-user secret."""
+        if self.is_global:
+            from flask import current_app
+
+            return current_app.config.get("OPENROUTER_API_KEY") or None
+        from .crypto import decrypt
+
+        return decrypt(self.key_enc) if self.key_enc else None
+
+    def resolved_model(self) -> str | None:
+        from flask import current_app
+
+        return self.model or current_app.config.get("OPENROUTER_MODEL")
+
+    def can_manage(self, user: "User") -> bool:
+        if self.is_global:
+            return user.is_admin
+        return self.owner_user_id == user.id or user.is_admin
+
+    @property
+    def total_requests(self) -> int:
+        return self.usage_entries.count()
+
+    @property
+    def total_tokens(self) -> int:
+        return int(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.tokens)).scalar() or 0)
+
+    @property
+    def total_cost(self) -> float:
+        return float(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0)
+
+    @property
+    def last_used_at(self):
+        return self.usage_entries.with_entities(
+            db.func.max(ApiKeyUsage.created_at)
+        ).scalar()
+
+    @classmethod
+    def manageable_by(cls, user: "User") -> list["ApiKey"]:
+        """Keys ``user`` may pick for a source / manage: their own, plus the
+        shared global key if they're an admin."""
+        keys = cls.query.filter_by(owner_user_id=user.id).order_by(cls.created_at).all()
+        if user.is_admin:
+            keys = [cls.get_or_create_global()] + keys
+        return keys
+
+    @classmethod
+    def get_or_create_global(cls) -> "ApiKey":
+        """Return the singleton global key row, creating it if absent."""
+        key = cls.query.filter_by(is_global=True).first()
+        if key is None:
+            key = cls(
+                label="Global OpenRouter key (shared by admins)",
+                provider="openrouter",
+                is_global=True,
+                owner_user_id=None,
+            )
+            db.session.add(key)
+            db.session.commit()
+        return key
+
+
+class ApiKeyUsage(db.Model):
+    """One row per ingestion poll that spent LLM tokens, for cost tracking."""
+
+    __tablename__ = "api_key_usage"
+
+    id = db.Column(db.Integer, primary_key=True)
+    api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=False, index=True)
+    source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=True, index=True)
+    kind = db.Column(db.String(20), default="ingest", nullable=False)  # ingest|tag
+    tokens = db.Column(db.Integer, default=0, nullable=False)
+    cost = db.Column(db.Float, default=0.0, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    api_key = db.relationship("ApiKey", back_populates="usage_entries")
+    source = db.relationship("Source", back_populates="usage_entries")
 
 
 # ─────────────────────────────── Sources ───────────────────────────────
@@ -181,6 +313,7 @@ class Source(db.Model):
     type_key = db.Column(db.String(64), nullable=False)  # plugin key
     name = db.Column(db.String(120), nullable=False)
     owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=True)
     config = db.Column(JSONEncodedDict, default=dict)
     poll_interval_override = db.Column(db.Integer, nullable=True)  # seconds
     enabled = db.Column(db.Boolean, default=True, nullable=False)
@@ -188,11 +321,30 @@ class Source(db.Model):
     last_status = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
+    owner = db.relationship("User", foreign_keys=[owner_user_id])
+    api_key = db.relationship("ApiKey", back_populates="sources")
     items = db.relationship("NewsItem", back_populates="source", lazy="dynamic")
     ingest_runs = db.relationship(
         "IngestRun", back_populates="source", lazy="dynamic",
         cascade="all, delete-orphan",
     )
+    usage_entries = db.relationship(
+        "ApiKeyUsage", back_populates="source", lazy="dynamic",
+    )
+
+    def can_manage(self, user: "User") -> bool:
+        """Whether ``user`` may retract/delete/reconfigure this source."""
+        if user.is_admin:
+            return True
+        return self.owner_user_id is not None and self.owner_user_id == user.id
+
+    @property
+    def usage_tokens(self) -> int:
+        return int(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.tokens)).scalar() or 0)
+
+    @property
+    def usage_cost(self) -> float:
+        return float(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0)
 
 
 class NewsItem(db.Model):
@@ -438,6 +590,8 @@ __all__ = [
     "User",
     "AuthToken",
     "Alert",
+    "ApiKey",
+    "ApiKeyUsage",
     "IngestRun",
     "Source",
     "NewsItem",

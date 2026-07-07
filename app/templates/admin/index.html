@@ -18,7 +18,7 @@
 <h2 class="h5">Sources</h2>
 <div class="table-responsive shadow-sm mb-4">
   <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Name</th><th>Type</th><th>Interval</th><th>Last polled</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>API key</th><th>Usage</th><th>Interval</th><th>Last polled</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
       <tr>
@@ -27,6 +27,15 @@
           {% if not s.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}
         </td>
         <td><code>{{ s.type_key }}</code></td>
+        <td class="small">{{ s.owner.username if s.owner else 'admin (global)' }}</td>
+        <td class="small">
+          {% if s.api_key %}
+            {{ s.api_key.label }}{% if not s.api_key.active %} <span class="badge text-bg-danger">revoked</span>{% endif %}
+          {% else %}
+            <span class="text-danger">none</span>
+          {% endif %}
+        </td>
+        <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
         <td class="small">{{ s.poll_interval_override ~ 's' if s.poll_interval_override else 'default' }}</td>
         <td class="small">{{ s.last_polled_at.strftime('%Y-%m-%d %H:%M') if s.last_polled_at else '—' }}</td>
         <td class="small">
@@ -51,7 +60,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="text-body-secondary">No sources configured.</td></tr>
+      <tr><td colspan="9" class="text-body-secondary">No sources configured.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -60,7 +69,7 @@
 <h2 class="h5">Users</h2>
 <div class="table-responsive shadow-sm mb-4">
   <table class="table bg-white mb-0">
-    <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th></tr></thead>
+    <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th><th>Approved</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       <tr>
@@ -68,6 +77,14 @@
         <td>{{ u.email }}</td>
         <td>{{ '✓' if u.email_verified else '—' }}</td>
         <td>{{ 'admin' if u.is_admin else 'user' }}</td>
+        <td>{{ '✓' if u.is_approved else '—' }}</td>
+        <td>
+          {% if not u.is_admin %}
+          <form method="post" action="{{ url_for('admin.user_approve', user_id=u.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">{{ 'Revoke approval' if u.approved else 'Approve' }}</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>

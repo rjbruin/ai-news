@@ -56,6 +56,9 @@ def classify(
     *,
     mode: str | None = None,
     threshold: float | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+    usage_hook=None,
 ) -> dict[int, tuple[float, str]]:
     """Return {tag_id: (confidence, method)} for tags judged to apply."""
     if not tags:
@@ -85,7 +88,9 @@ def classify(
             {"name": t.name, "keywords": t.keyword_list, "explanation": t.explanation}
             for t in tags
         ]
-        llm_scores = llm.score_item(item_text, tag_dicts)
+        llm_scores = llm.score_item(
+            item_text, tag_dicts, api_key=api_key, model=model, usage_hook=usage_hook,
+        )
         for name, conf in llm_scores.items():
             tag = by_name.get(name)
             if tag and conf >= 0.5:
@@ -94,11 +99,25 @@ def classify(
     return {tid: v for tid, v in result.items() if tid in by_id}
 
 
-def apply_to_item(item: NewsItem, tags: list[Tag] | None = None) -> int:
-    """Classify a NewsItem and persist tag links. Returns number of tags applied."""
+def apply_to_item(
+    item: NewsItem,
+    tags: list[Tag] | None = None,
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+    usage_hook=None,
+) -> int:
+    """Classify a NewsItem and persist tag links. Returns number of tags applied.
+
+    ``api_key``/``model`` are the credentials the item's owning Source was
+    assigned (see services.ingest) — LLM tagging fallback runs on that key
+    rather than the global one so cost is attributed correctly.
+    """
     if tags is None:
         tags = Tag.query.all()
-    scores = classify(_item_text(item), tags)
+    scores = classify(
+        _item_text(item), tags, api_key=api_key, model=model, usage_hook=usage_hook,
+    )
 
     applied = 0
     for tag_id, (conf, method) in scores.items():

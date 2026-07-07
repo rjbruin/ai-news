@@ -22,13 +22,31 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
+from functools import wraps
+
 from ..agent.runner import AgentCancelled
 from ..extensions import db
-from ..models import Alert, NewsItem, Summary, SummaryRun, User, utcnow
+from ..models import ApiKey, Alert, NewsItem, Source, Summary, SummaryRun, User, utcnow
 from ..services import generation_registry, summarize
+from ..sources import registry as source_registry
 from ..summaries import registry as summary_registry
 
 bp = Blueprint("web", __name__)
+
+
+def approved_required(view):
+    """Gate self-service source/API-key management to approved users.
+
+    Admins are implicitly approved (see User.is_approved).
+    """
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not current_user.is_approved:
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 @bp.route("/podcast-audio/<filename>")
@@ -284,6 +302,181 @@ def regenerate_podcast_feed_token():
     current_user.reset_feed_token()
     flash("Podcast feed URL regenerated. Update the subscription in your podcast app.", "success")
     return redirect(url_for("web.settings"))
+
+
+# ───────────────────────── API keys ─────────────────────────
+@bp.route("/keys")
+@approved_required
+def api_keys():
+    keys = ApiKey.manageable_by(current_user)
+    return render_template("keys.html", keys=keys)
+
+
+@bp.route("/keys/new", methods=["POST"])
+@approved_required
+def api_key_new():
+    label = (request.form.get("label") or "").strip()
+    secret = (request.form.get("secret") or "").strip()
+    model = (request.form.get("model") or "").strip() or None
+    if not label or not secret:
+        flash("A label and an API key are both required.", "danger")
+        return redirect(url_for("web.api_keys"))
+    key = ApiKey(owner_user_id=current_user.id, label=label, provider="openrouter", model=model)
+    key.set_key(secret)
+    db.session.add(key)
+    db.session.commit()
+    flash(f'API key "{label}" added.', "success")
+    return redirect(url_for("web.api_keys"))
+
+
+@bp.route("/keys/<int:key_id>/revoke", methods=["POST"])
+@approved_required
+def api_key_revoke(key_id: int):
+    key = db.session.get(ApiKey, key_id) or abort(404)
+    if not key.can_manage(current_user):
+        abort(403)
+    key.revoked_at = utcnow()
+    affected = key.sources.filter_by(enabled=True).all()
+    for source in affected:
+        source.enabled = False
+    db.session.commit()
+    msg = f'API key "{key.label}" revoked.'
+    if affected:
+        names = ", ".join(s.name for s in affected)
+        msg += f" Disabled {len(affected)} source(s) that used it: {names}."
+    flash(msg, "warning" if affected else "info")
+    return redirect(url_for("web.api_keys"))
+
+
+@bp.route("/keys/<int:key_id>/reactivate", methods=["POST"])
+@approved_required
+def api_key_reactivate(key_id: int):
+    key = db.session.get(ApiKey, key_id) or abort(404)
+    if not key.can_manage(current_user):
+        abort(403)
+    key.revoked_at = None
+    db.session.commit()
+    flash(f'API key "{key.label}" reactivated. Re-enable any sources that need it.', "success")
+    return redirect(url_for("web.api_keys"))
+
+
+@bp.route("/keys/<int:key_id>/delete", methods=["POST"])
+@approved_required
+def api_key_delete(key_id: int):
+    key = db.session.get(ApiKey, key_id) or abort(404)
+    if not key.can_manage(current_user):
+        abort(403)
+    if key.is_global:
+        flash("The global key can't be deleted.", "danger")
+        return redirect(url_for("web.api_keys"))
+    if key.sources.count():
+        flash("Revoke or reassign this key's sources before deleting it.", "danger")
+        return redirect(url_for("web.api_keys"))
+    db.session.delete(key)
+    db.session.commit()
+    flash("API key deleted.", "info")
+    return redirect(url_for("web.api_keys"))
+
+
+# ───────────────────────── Sources ─────────────────────────
+@bp.route("/sources")
+@login_required
+def sources():
+    all_sources = Source.query.order_by(Source.created_at.desc()).all()
+    return render_template("sources.html", sources=all_sources)
+
+
+@bp.route("/sources/new", methods=["GET", "POST"])
+@approved_required
+def source_new():
+    types = source_registry.all_types()
+    keys = [k for k in ApiKey.manageable_by(current_user) if k.active]
+    if request.method == "POST":
+        type_key = request.form.get("type_key")
+        plugin_cls = types.get(type_key)
+        key_id = request.form.get("api_key_id", type=int)
+        key = db.session.get(ApiKey, key_id) if key_id else None
+        if plugin_cls is None:
+            flash("Unknown source type.", "danger")
+        elif key is None or key not in keys:
+            flash("Choose one of your API keys for this source.", "danger")
+        else:
+            source = Source(
+                type_key=type_key,
+                name=(request.form.get("name") or plugin_cls.label).strip(),
+                owner_user_id=current_user.id,
+                api_key_id=key.id,
+                config=_collect_source_config(plugin_cls),
+                poll_interval_override=_int_or_none(
+                    request.form.get("poll_interval_override")
+                ),
+                enabled=True,
+            )
+            db.session.add(source)
+            db.session.commit()
+            flash("Source added.", "success")
+            return redirect(url_for("web.sources"))
+    return render_template("sources_new.html", types=types, keys=keys)
+
+
+@bp.route("/sources/<int:source_id>/retract", methods=["POST"])
+@login_required
+def source_retract(source_id: int):
+    """Disable a source you own (or any, if admin) — stops polling without
+    deleting its history, to save on API cost."""
+    source = db.session.get(Source, source_id) or abort(404)
+    if not source.can_manage(current_user):
+        abort(403)
+    source.enabled = False
+    db.session.commit()
+    flash(f'Source "{source.name}" retracted (disabled).', "info")
+    return redirect(url_for("web.sources"))
+
+
+@bp.route("/sources/<int:source_id>/reactivate", methods=["POST"])
+@login_required
+def source_reactivate(source_id: int):
+    source = db.session.get(Source, source_id) or abort(404)
+    if not source.can_manage(current_user):
+        abort(403)
+    if source.api_key_id is None or not source.api_key or not source.api_key.active:
+        flash("Assign an active API key to this source before re-enabling it.", "danger")
+        return redirect(url_for("web.sources"))
+    source.enabled = True
+    db.session.commit()
+    flash(f'Source "{source.name}" re-enabled.', "success")
+    return redirect(url_for("web.sources"))
+
+
+@bp.route("/sources/<int:source_id>/delete", methods=["POST"])
+@login_required
+def source_delete(source_id: int):
+    source = db.session.get(Source, source_id) or abort(404)
+    if not source.can_manage(current_user):
+        abort(403)
+    db.session.delete(source)
+    db.session.commit()
+    flash("Source deleted.", "info")
+    return redirect(url_for("web.sources"))
+
+
+def _collect_source_config(plugin_cls) -> dict:
+    config = {}
+    for field, spec in (plugin_cls.config_schema or {}).items():
+        if spec.get("type") == "checkbox":
+            config[field] = bool(request.form.get(f"cfg_{field}"))
+        else:
+            val = request.form.get(f"cfg_{field}")
+            if val:
+                config[field] = val
+    return config
+
+
+def _int_or_none(val):
+    try:
+        return int(val) if val else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ───────────────────────── News ─────────────────────────

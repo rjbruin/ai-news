@@ -41,9 +41,18 @@ def get(type_key: str) -> type[NewsSource] | None:
     return _REGISTRY.get(type_key)
 
 
-def create(type_key: str, config: dict | None = None) -> NewsSource | None:
+def create(
+    type_key: str,
+    config: dict | None = None,
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+    usage_hook=None,
+) -> NewsSource | None:
     cls = get(type_key)
-    return cls(config) if cls else None
+    if cls is None:
+        return None
+    return cls(config, api_key=api_key, model=model, usage_hook=usage_hook)
 
 
 def all_types() -> dict[str, type[NewsSource]]:

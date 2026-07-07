@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from ..extensions import db
-from ..models import IngestRun, NewsItem, Source, Tag, utcnow
+from ..models import ApiKeyUsage, IngestRun, NewsItem, Source, Tag, utcnow
 from ..sources import registry as source_registry
 from ..tagging import engine as tagging_engine
 
@@ -18,7 +18,29 @@ logger = logging.getLogger(__name__)
 def ingest_source(source: Source) -> dict:
     """Fetch + extract + persist + tag for a single source. Returns a stat dict."""
     stats = {"fetched": 0, "new_items": 0, "tagged": 0, "skipped": 0, "errors": 0, "error_log": []}
-    plugin = source_registry.create(source.type_key, source.config or {})
+
+    api_key_row = source.api_key
+    if api_key_row is None or not api_key_row.active:
+        source.last_status = "error: no active API key assigned to this source"
+        db.session.commit()
+        return stats
+    secret = api_key_row.get_key()
+    if not secret:
+        source.last_status = "error: assigned API key has no usable credential"
+        db.session.commit()
+        return stats
+    model = api_key_row.resolved_model()
+
+    usage_totals = {"tokens": 0, "cost": 0.0}
+
+    def _usage_hook(usage: dict) -> None:
+        usage_totals["tokens"] += int(usage.get("total_tokens") or 0)
+        usage_totals["cost"] += float(usage.get("cost") or 0.0)
+
+    plugin = source_registry.create(
+        source.type_key, source.config or {},
+        api_key=secret, model=model, usage_hook=_usage_hook,
+    )
     if plugin is None:
         source.last_status = f"error: unknown source type '{source.type_key}'"
         db.session.commit()
@@ -98,7 +120,9 @@ def ingest_source(source: Source) -> dict:
 
     for item in new_items:
         try:
-            tagging_engine.apply_to_item(item, all_tags)
+            tagging_engine.apply_to_item(
+                item, all_tags, api_key=secret, model=model, usage_hook=_usage_hook,
+            )
             stats["tagged"] += 1
         except Exception as exc:  # noqa: BLE001
             msg = f"tagging error for '{item.title[:60]}': {exc}"
@@ -119,6 +143,14 @@ def ingest_source(source: Source) -> dict:
             f"{stats['skipped']} skipped"
         )
     source.last_status = status
+    if usage_totals["tokens"] or usage_totals["cost"]:
+        db.session.add(ApiKeyUsage(
+            api_key_id=api_key_row.id,
+            source_id=source.id,
+            kind="ingest",
+            tokens=usage_totals["tokens"],
+            cost=usage_totals["cost"],
+        ))
     db.session.commit()
     return stats
 

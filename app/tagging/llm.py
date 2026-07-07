@@ -42,9 +42,20 @@ def _schema(tag_names: list[str]) -> dict:
     }
 
 
-def score_item(item_text: str, tags: list[dict]) -> dict[str, float]:
-    """tags: [{name, keywords, explanation}]. Returns {tag_name: confidence}."""
-    if not tags or not openrouter.is_configured():
+def score_item(
+    item_text: str,
+    tags: list[dict],
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+    usage_hook=None,
+) -> dict[str, float]:
+    """tags: [{name, keywords, explanation}]. Returns {tag_name: confidence}.
+
+    ``api_key``/``model`` let a source's assigned ApiKey drive tagging of its
+    own items instead of the global OPENROUTER_API_KEY.
+    """
+    if not tags or not (api_key or openrouter.is_configured()):
         return {}
 
     taxonomy_lines = []
@@ -68,6 +79,9 @@ def score_item(item_text: str, tags: list[dict]) -> dict[str, float]:
                 {"role": "user", "content": user},
             ],
             schema=_schema(names),
+            api_key=api_key,
+            model=model,
+            usage_hook=usage_hook,
         )
     except openrouter.LLMError as exc:
         logger.error("LLM tagging failed: %s", exc)
