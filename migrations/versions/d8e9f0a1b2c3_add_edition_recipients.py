@@ -5,7 +5,7 @@ emails (previously always just the account's own email). New addresses
 need to click a confirmation link before mail is sent to them.
 
 Revision ID: d8e9f0a1b2c3
-Revises: b6c7d8e9f0a1
+Revises: c7d8e9f0a1b2
 Create Date: 2026-07-08 00:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'd8e9f0a1b2c3'
-down_revision = 'b6c7d8e9f0a1'
+down_revision = 'c7d8e9f0a1b2'
 branch_labels = None
 depends_on = None
 
