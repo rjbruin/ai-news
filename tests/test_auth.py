@@ -7,6 +7,22 @@ def test_register_creates_user(client, db):
         "/auth/register",
         data={
             "username": "newbie",
+            "email": "newbie@dispatch-users.test-domain.com",
+            "password": "password123",
+            "confirm": "password123",
+            "submit": "Create account",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert User.query.filter_by(email="newbie@dispatch-users.test-domain.com").first() is not None
+
+
+def test_register_rejects_reserved_example_domain(client, db):
+    resp = client.post(
+        "/auth/register",
+        data={
+            "username": "newbie",
             "email": "newbie@example.com",
             "password": "password123",
             "confirm": "password123",
@@ -15,17 +31,45 @@ def test_register_creates_user(client, db):
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    assert User.query.filter_by(email="newbie@example.com").first() is not None
+    assert User.query.filter_by(email="newbie@example.com").first() is None
+    assert b"can&#39;t receive mail" in resp.data or b"can't receive mail" in resp.data
 
 
-def test_register_rejects_duplicate_email(client, user):
+def test_register_rejects_duplicate_email(client, db):
+    existing = User(username="dupe", email="dupe@dispatch-users.test-domain.com", email_verified=True)
+    existing.set_password("password123")
+    db.session.add(existing)
+    db.session.commit()
+
     resp = client.post(
         "/auth/register",
-        data={"username": "other", "email": user.email, "password": "password123",
+        data={"username": "other", "email": existing.email, "password": "password123",
               "confirm": "password123"},
         follow_redirects=True,
     )
     assert b"already registered" in resp.data
+
+
+def test_register_rate_limited_after_repeated_attempts(client, db):
+    for _ in range(5):
+        client.post(
+            "/auth/register",
+            data={"username": "x", "email": "not-an-email", "password": "password123",
+                  "confirm": "password123"},
+            follow_redirects=True,
+        )
+    resp = client.post(
+        "/auth/register",
+        data={
+            "username": "final",
+            "email": "final@dispatch-users.test-domain.com",
+            "password": "password123",
+            "confirm": "password123",
+        },
+        follow_redirects=True,
+    )
+    assert b"Too many registration attempts" in resp.data
+    assert User.query.filter_by(email="final@dispatch-users.test-domain.com").first() is None
 
 
 def test_password_login_and_logout(client, user):

@@ -1,16 +1,22 @@
 """Admin blueprint: manage sources, trigger polls, promote tags, retag."""
 from __future__ import annotations
 
+import json
+import queue
+import threading
 from functools import wraps
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
+    stream_with_context,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -30,11 +36,15 @@ from ..models import (
     Tag,
     User,
 )
-from ..services import costs, ingest
+from ..services import costs, ingest, poll_registry
 from ..services.summarize import resend_edition_email
 from ..sources import registry as source_registry
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+# Module-level so tests can shrink it — avoids a real 30s wait when testing
+# the /admin/poll-events SSE stream.
+_POLL_SSE_HEARTBEAT_SECONDS = 30
 
 
 def admin_required(view):
@@ -125,6 +135,96 @@ def source_poll(source_id: int):
         msg += " Errors: " + " | ".join(stats["error_log"][:5])
     flash(msg, "success" if not stats["errors"] else "warning")
     return redirect(url_for("admin.index"))
+
+
+def _poll_status_text(stats: dict) -> str:
+    text = (
+        f"{stats['fetched']} emails fetched, {stats['new_items']} new items, "
+        f"{stats['tagged']} tagged, {stats['skipped']} skipped, {stats['errors']} errors."
+    )
+    if stats["error_log"]:
+        text += " Errors: " + " | ".join(stats["error_log"][:3])
+    return text
+
+
+@bp.route("/sources/<int:source_id>/poll/start", methods=["POST"])
+@admin_required
+def source_poll_start(source_id: int):
+    """Async counterpart to source_poll: runs the poll in a background thread
+    and streams progress via /admin/poll-events instead of blocking the
+    request until IMAP/RSS fetches finish."""
+    source = db.session.get(Source, source_id) or abort(404)
+    if source.is_newsletter_subscription:
+        return jsonify({"error": "poll the parent mailbox instead"}), 400
+    if poll_registry.is_polling(source_id):
+        return jsonify({"status": "already_polling"}), 202
+
+    app = current_app._get_current_object()
+
+    def _run():
+        with app.app_context():
+            src = db.session.get(Source, source_id)
+            poll_registry.source_started(source_id, src.name)
+            try:
+                stats = ingest.ingest_source(src)
+                poll_registry.source_done(source_id, _poll_status_text(stats), bool(stats["errors"]))
+            except Exception as exc:  # noqa: BLE001
+                poll_registry.source_done(source_id, f"error: {exc}", True)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"status": "started"}), 202
+
+
+@bp.route("/poll-all/start", methods=["POST"])
+@admin_required
+def poll_all_start():
+    """Async counterpart to poll_all: runs ingest_all_due in a background
+    thread, emitting per-source progress via poll_registry as it goes."""
+    app = current_app._get_current_object()
+
+    def _run():
+        with app.app_context():
+            def _hook(source, phase, stats=None):
+                if phase == "start":
+                    poll_registry.source_started(source.id, source.name)
+                else:
+                    poll_registry.source_done(
+                        source.id, _poll_status_text(stats), bool(stats["errors"])
+                    )
+
+            totals = ingest.ingest_all_due(force=True, progress_hook=_hook)
+            poll_registry.batch_done(totals)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"status": "started"}), 202
+
+
+@bp.route("/poll-events")
+@admin_required
+def poll_events():
+    """SSE stream of poll_registry progress events for the Admin sources
+    table — shared across "poll all" and individual "poll now" runs, since
+    at most one admin realistically polls at a time on this single-worker
+    deployment."""
+    q = poll_registry.subscribe()
+
+    def _stream():
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=_POLL_SSE_HEARTBEAT_SECONDS)
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+                    continue
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            poll_registry.unsubscribe(q)
+
+    return Response(
+        stream_with_context(_stream()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @bp.route("/sources/<int:source_id>/reindex-newsletters", methods=["POST"])

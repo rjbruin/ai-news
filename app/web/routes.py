@@ -26,7 +26,7 @@ from functools import wraps
 
 from ..agent.runner import AgentCancelled
 from ..extensions import db
-from ..models import ApiKey, Alert, NewsItem, Source, Summary, SummaryRun, User, utcnow
+from ..models import ApiKey, Alert, NewsItem, Source, Summary, SummaryRun, Tag, User, utcnow
 from ..services import generation_registry, ingest, summarize
 from ..sources import registry as source_registry
 from ..summaries import registry as summary_registry
@@ -573,6 +573,19 @@ def _int_or_none(val):
         return int(val) if val else None
     except (TypeError, ValueError):
         return None
+
+
+# ───────────────────────── Tags ─────────────────────────
+@bp.route("/tags")
+@login_required
+def tags():
+    global_tags = Tag.query.filter_by(scope="global").order_by(Tag.name).all()
+    my_tags = (
+        Tag.query.filter_by(scope="user", owner_user_id=current_user.id)
+        .order_by(Tag.name)
+        .all()
+    )
+    return render_template("tags.html", global_tags=global_tags, my_tags=my_tags)
 
 
 # ───────────────────────── News ─────────────────────────
