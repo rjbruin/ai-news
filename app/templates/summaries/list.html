@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/_channels.html" import channel_icons %}
+{% from "partials/_channels.html" import channel_icons with context %}
 {% block title %}Editions · Dispatch{% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">Editions</h1>
@@ -64,7 +64,7 @@
         ${{ '%.4f'|format(run.agent_cost) }}
       </span>
       {% endif %}
-      <span class="small">{{ channel_icons(run) }}</span>
+      <span class="small">{{ channel_icons(run, show_podcast_cost=True) }}</span>
       <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
          class="btn btn-sm btn-outline-primary">Open</a>
       {% if run.agent_log %}
