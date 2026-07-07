@@ -9,7 +9,8 @@ import logging
 from email.utils import parseaddr
 
 from ..extensions import db
-from ..models import ApiKeyUsage, IngestRun, NewsItem, Source, Tag, utcnow
+from ..llm import openrouter
+from ..models import ApiKey, ApiKeyUsage, IngestRun, NewsItem, Source, Tag, utcnow
 from ..sources import registry as source_registry
 from ..tagging import engine as tagging_engine
 
@@ -340,6 +341,143 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
     mailbox.last_status = summary
     db.session.commit()
     return stats
+
+
+_REINDEX_BATCH_SIZE = 40
+_REINDEX_EXAMPLE_SUBJECTS = 5
+
+
+def reindex_newsletter_mailbox(mailbox: Source) -> dict:
+    """Admin utility: scan every message in a mailbox (not just mail since the
+    last poll) to discover newsletter subscriptions up front, instead of
+    waiting for each one to send a new email.
+
+    Only reads headers (sender + subject), never bodies, and never ingests
+    items — it just finds-or-creates the per-newsletter Source rows so they
+    show up for review. Classification runs on the shared/global API key
+    regardless of the mailbox's own assigned key, since this is a one-off
+    admin action rather than per-source ingestion.
+    """
+    if mailbox.type_key not in _SPLITTING_TYPES or mailbox.parent_source_id is not None:
+        raise ValueError("Reindexing is only available for a top-level newsletter mailbox source.")
+
+    plugin = source_registry.create(mailbox.type_key, mailbox.config or {})
+    scan = getattr(plugin, "scan_senders", None)
+    if plugin is None or scan is None:
+        raise ValueError(f"Source type '{mailbox.type_key}' does not support reindexing.")
+
+    pairs = scan()
+
+    senders: dict[str, dict] = {}
+    for sender, subject in pairs:
+        addr, display_name = _sender_key(sender)
+        info = senders.setdefault(addr, {"display_name": display_name, "subjects": []})
+        if display_name and not info["display_name"]:
+            info["display_name"] = display_name
+        if len(info["subjects"]) < _REINDEX_EXAMPLE_SUBJECTS:
+            info["subjects"].append((subject or "").strip()[:140])
+
+    global_key = ApiKey.get_or_create_global()
+    secret = global_key.get_key()
+    if not secret:
+        raise ValueError("The global API key has no usable credential (set OPENROUTER_API_KEY).")
+    model = global_key.resolved_model()
+
+    usage_totals = {"tokens": 0, "cost": 0.0}
+
+    def _usage_hook(usage: dict) -> None:
+        usage_totals["tokens"] += int(usage.get("total_tokens") or 0)
+        usage_totals["cost"] += float(usage.get("cost") or 0.0)
+
+    newsletter_addrs = _classify_newsletter_senders(
+        senders, api_key=secret, model=model, usage_hook=_usage_hook,
+    )
+
+    children_by_sender = {
+        (c.config or {}).get("newsletter_sender"): c for c in mailbox.children
+    }
+    new_subscriptions = 0
+    for addr in newsletter_addrs:
+        info = senders.get(addr)
+        if info is None:
+            continue
+        _, created = _get_or_create_newsletter_child(
+            mailbox, children_by_sender, addr, info["display_name"]
+        )
+        if created:
+            new_subscriptions += 1
+
+    if usage_totals["tokens"] or usage_totals["cost"]:
+        db.session.add(ApiKeyUsage(
+            api_key_id=global_key.id,
+            source_id=mailbox.id,
+            kind="reindex",
+            tokens=usage_totals["tokens"],
+            cost=usage_totals["cost"],
+        ))
+    db.session.commit()
+
+    return {
+        "messages_scanned": len(pairs),
+        "unique_senders": len(senders),
+        "newsletters_detected": len(newsletter_addrs),
+        "new_subscriptions": new_subscriptions,
+    }
+
+
+_REINDEX_SYSTEM = (
+    'Respond ONLY with valid JSON in this exact format: {"newsletters": ["sender@address", ...]}'
+)
+
+
+def _classify_newsletter_senders(
+    senders: dict[str, dict], *, api_key: str, model: str, usage_hook
+) -> set[str]:
+    """Ask the LLM which of ``senders`` (addr -> {display_name, subjects}) are
+    genuine recurring newsletters, in batches, and return the matching
+    addresses. A batch that fails classification is treated as no matches
+    rather than aborting the whole reindex."""
+    addrs = list(senders.keys())
+    detected: set[str] = set()
+
+    for i in range(0, len(addrs), _REINDEX_BATCH_SIZE):
+        batch = addrs[i:i + _REINDEX_BATCH_SIZE]
+        lines = []
+        for addr in batch:
+            info = senders[addr]
+            subs = "; ".join(s for s in info["subjects"] if s) or "(no subject)"
+            lines.append(f"- {addr} ({info['display_name'] or 'no display name'}): {subs}")
+        user_content = (
+            "This mailbox is dedicated to newsletter subscriptions, but may also contain "
+            "one-off personal mail, transactional emails (receipts, security alerts, calendar "
+            "invites, sign-in codes) or spam. For each sender below, with a few example subject "
+            "lines, decide whether it is a genuine recurring newsletter or publication.\n\n"
+            + "\n".join(lines)
+        )
+        schema = {
+            "type": "object",
+            "properties": {
+                "newsletters": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["newsletters"],
+            "additionalProperties": False,
+        }
+        try:
+            result = openrouter.chat_json(
+                [
+                    {"role": "system", "content": _REINDEX_SYSTEM},
+                    {"role": "user", "content": user_content},
+                ],
+                schema=schema, api_key=api_key, model=model, usage_hook=usage_hook,
+            )
+        except openrouter.LLMError:
+            logger.exception("Newsletter classification failed for a batch of %d senders", len(batch))
+            continue
+        for addr in (result or {}).get("newsletters", []):
+            if addr in senders:
+                detected.add(addr)
+
+    return detected
 
 
 def ingest_all_due(force: bool = False) -> dict:

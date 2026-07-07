@@ -55,6 +55,11 @@
       {% if not nested %}
       <form method="post" action="{{ url_for('admin.source_poll', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-primary">Poll now</button></form>
+      {% if s.type_key == 'imap_newsletter' %}
+      <form method="post" action="{{ url_for('admin.source_reindex_newsletters', source_id=s.id) }}" class="d-inline"
+            onsubmit="return confirm('Scan every email in this mailbox to detect newsletter senders? This can take a while for a large mailbox.')">
+        <button class="btn btn-sm btn-outline-primary">Reindex newsletters</button></form>
+      {% endif %}
       {% endif %}
       <form method="post" action="{{ url_for('admin.source_toggle', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-secondary">{{ 'Disable' if s.enabled else 'Enable' }}</button></form>

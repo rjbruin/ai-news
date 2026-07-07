@@ -119,6 +119,30 @@ def source_poll(source_id: int):
     return redirect(url_for("admin.index"))
 
 
+@bp.route("/sources/<int:source_id>/reindex-newsletters", methods=["POST"])
+@admin_required
+def source_reindex_newsletters(source_id: int):
+    """Scan the whole mailbox (sender + subject only) to detect newsletter
+    subscriptions up front, rather than waiting for each one to send new mail
+    after a regular poll. Only valid for a top-level newsletter mailbox."""
+    source = db.session.get(Source, source_id) or abort(404)
+    if source.type_key != "imap_newsletter" or source.is_newsletter_subscription:
+        flash("Reindexing is only available for a top-level newsletter mailbox source.", "danger")
+        return redirect(url_for("admin.index"))
+    try:
+        stats = ingest.reindex_newsletter_mailbox(source)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Reindex failed: {exc}", "danger")
+        return redirect(url_for("admin.index"))
+    flash(
+        f"Reindexed '{source.name}': {stats['messages_scanned']} email(s) scanned, "
+        f"{stats['unique_senders']} unique sender(s), {stats['newsletters_detected']} "
+        f"newsletter(s) detected, {stats['new_subscriptions']} new subscription(s) added.",
+        "success",
+    )
+    return redirect(url_for("admin.index"))
+
+
 @bp.route("/sources/<int:source_id>/reset", methods=["POST"])
 @admin_required
 def source_reset(source_id: int):

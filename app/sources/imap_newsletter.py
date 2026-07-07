@@ -119,3 +119,26 @@ class ImapNewsletterSource(NewsSource):
                     )
                 )
         return docs
+
+    def scan_senders(self) -> list[tuple[str, str]]:
+        """Full-mailbox header scan: returns (from_header, subject) for every
+        message, ignoring the fetch() lookback window.
+
+        Used by the admin "reindex newsletters" action to discover
+        subscriptions whose mail predates per-newsletter splitting, or that
+        simply haven't sent anything since the last regular poll. Headers
+        only (no body fetch), so this stays cheap even for a large mailbox.
+        """
+        from imap_tools import MailBox
+
+        p = self._conn_params()
+        if not (p["host"] and p["username"] and p["password"]):
+            raise RuntimeError("IMAP source is not configured (host/username/password).")
+
+        pairs: list[tuple[str, str]] = []
+        with MailBox(p["host"], port=p["port"]).login(
+            p["username"], p["password"], initial_folder=p["folder"]
+        ) as mailbox:
+            for msg in mailbox.fetch(headers_only=True, mark_seen=False, bulk=True):
+                pairs.append((msg.from_ or "", msg.subject or ""))
+        return pairs

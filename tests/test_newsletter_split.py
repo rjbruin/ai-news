@@ -14,12 +14,16 @@ class FakeNewsletterSource(NewsSource):
     label = "Fake newsletter mailbox"
 
     docs: list[RawDocument] = []
+    scan_pairs: list[tuple[str, str]] = []
 
     def fetch(self, since):
         return list(FakeNewsletterSource.docs)
 
     def extract(self, doc):
         return [ExtractedItem(title=doc.subject, summary=doc.text, url=f"http://x/{doc.external_id}")]
+
+    def scan_senders(self):
+        return list(FakeNewsletterSource.scan_pairs)
 
 
 @pytest.fixture
@@ -30,6 +34,7 @@ def fake_newsletter_source():
     original = source_registry.get("imap_newsletter")
     source_registry.register(FakeNewsletterSource)
     FakeNewsletterSource.docs = []
+    FakeNewsletterSource.scan_pairs = []
     yield FakeNewsletterSource
     if original is not None:
         source_registry.register(original)
@@ -134,3 +139,110 @@ def test_admin_cannot_poll_or_reset_a_newsletter_child(admin_client, db, mailbox
     resp = admin_client.post(f"/admin/sources/{child.id}/reset", follow_redirects=True)
     assert resp.status_code == 200
     assert b"mailbox instead" in resp.data
+
+
+# ───────────────────────── reindex ─────────────────────────
+def _fake_chat_json(newsletter_addrs):
+    """Returns a chat_json stand-in that always classifies the given
+    addresses as newsletters and records that it was called with usage."""
+    def _fn(messages, *, schema=None, model=None, api_key=None, temperature=0.2,
+            timeout=60.0, usage_hook=None):
+        if usage_hook:
+            usage_hook({"total_tokens": 42, "cost": 0.001})
+        return {"newsletters": list(newsletter_addrs)}
+    return _fn
+
+
+def test_reindex_scans_whole_mailbox_and_creates_children(
+    db, app, mailbox, fake_newsletter_source, monkeypatch
+):
+    app.config["OPENROUTER_API_KEY"] = "sk-or-global-test"
+    fake_newsletter_source.scan_pairs = [
+        ("TLDR AI <news@tldrnewsletter.com>", "Issue #1"),
+        ("TLDR AI <news@tldrnewsletter.com>", "Issue #2"),
+        ("Import AI <import-ai@substack.com>", "Weekly digest"),
+        ("Some Person <person@example.com>", "Re: dinner plans"),
+    ]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json",
+        _fake_chat_json(["news@tldrnewsletter.com", "import-ai@substack.com"]),
+    )
+
+    stats = ingest.reindex_newsletter_mailbox(mailbox)
+
+    assert stats["messages_scanned"] == 4
+    assert stats["unique_senders"] == 3
+    assert stats["newsletters_detected"] == 2
+    assert stats["new_subscriptions"] == 2
+
+    children = {c.name for c in mailbox.children}
+    assert children == {"TLDR AI", "Import AI"}
+    # No items were ingested — this is a headers-only discovery pass.
+    assert NewsItem.query.count() == 0
+
+    from app.models import ApiKeyUsage
+    global_key = ApiKey.query.filter_by(is_global=True).first()
+    usage = ApiKeyUsage.query.filter_by(source_id=mailbox.id, kind="reindex").first()
+    assert usage is not None
+    assert usage.api_key_id == global_key.id
+    assert usage.tokens == 42
+
+
+def test_reindex_is_idempotent(db, app, mailbox, fake_newsletter_source, monkeypatch):
+    app.config["OPENROUTER_API_KEY"] = "sk-or-global-test"
+    fake_newsletter_source.scan_pairs = [("TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json", _fake_chat_json(["news@tldrnewsletter.com"]),
+    )
+
+    first = ingest.reindex_newsletter_mailbox(mailbox)
+    assert first["new_subscriptions"] == 1
+
+    second = ingest.reindex_newsletter_mailbox(mailbox)
+    assert second["new_subscriptions"] == 0
+    assert mailbox.children.count() == 1
+
+
+def test_reindex_rejects_non_mailbox_sources(db, mailbox, fake_newsletter_source):
+    fake_newsletter_source.scan_pairs = [("TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    child = Source(
+        type_key="imap_newsletter", name="Child", parent_source_id=mailbox.id,
+        api_key_id=mailbox.api_key_id, config={"newsletter_sender": "x"},
+    )
+    db.session.add(child)
+    db.session.commit()
+
+    with pytest.raises(ValueError):
+        ingest.reindex_newsletter_mailbox(child)
+
+
+def test_admin_reindex_route(admin_client, db, app, mailbox, fake_newsletter_source, monkeypatch):
+    app.config["OPENROUTER_API_KEY"] = "sk-or-global-test"
+    fake_newsletter_source.scan_pairs = [
+        ("TLDR AI <news@tldrnewsletter.com>", "Issue #1"),
+    ]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json", _fake_chat_json(["news@tldrnewsletter.com"]),
+    )
+
+    resp = admin_client.post(
+        f"/admin/sources/{mailbox.id}/reindex-newsletters", follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Reindexed" in resp.data
+    assert mailbox.children.count() == 1
+
+
+def test_admin_reindex_rejects_child_source(admin_client, db, mailbox, fake_newsletter_source):
+    child = Source(
+        type_key="imap_newsletter", name="Child", parent_source_id=mailbox.id,
+        api_key_id=mailbox.api_key_id, config={"newsletter_sender": "x"}, enabled=True,
+    )
+    db.session.add(child)
+    db.session.commit()
+
+    resp = admin_client.post(
+        f"/admin/sources/{child.id}/reindex-newsletters", follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"top-level" in resp.data
