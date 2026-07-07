@@ -9,6 +9,7 @@ Flask-Migrate==4.0.7
 APScheduler==3.11.0
 httpx==0.28.1
 imap-tools==1.7.4
+feedparser==6.0.12
 beautifulsoup4==4.12.3
 bleach==6.2.0
 scikit-learn==1.6.0

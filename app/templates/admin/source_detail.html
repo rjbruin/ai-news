@@ -34,7 +34,7 @@
 </div>
 
 {% if runs %}
-<h2 class="h5 mb-3">{{ runs|length }} email(s) fetched</h2>
+<h2 class="h5 mb-3">{{ runs|length }} document(s) fetched</h2>
 <div class="accordion shadow-sm mb-4" id="runs-accordion">
   {% for run in runs %}
   {% set run_items = run.items.all() %}
@@ -57,11 +57,11 @@
     <div id="run-{{ run.id }}" class="accordion-collapse collapse">
       <div class="accordion-body p-0">
 
-        {# Raw email body #}
+        {# Raw fetched content (email body, feed entry summary, etc.) #}
         {% if run.raw_body %}
         <details class="border-bottom">
           <summary class="px-3 py-2 small text-body-secondary" style="cursor:pointer">
-            Raw email body
+            Raw content
           </summary>
           <pre class="bg-body-tertiary px-3 py-2 m-0 small" style="white-space:pre-wrap;max-height:400px;overflow-y:auto">{{ run.raw_body }}</pre>
         </details>
