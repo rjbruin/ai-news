@@ -54,7 +54,8 @@
       {% if not run.read_at %}
       <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
       {% endif %}
-      <span class="flex-grow-1 {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
+         class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</a>
       <span class="pill pill-blue">
         {{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}
       </span>

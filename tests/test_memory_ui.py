@@ -31,6 +31,13 @@ def test_settings_page_seeds_memory_defaults(auth_client, db, user):
     assert memory.read(user, s, "content_config")
 
 
+def test_settings_page_does_not_say_agentic_editions(auth_client, db, user):
+    _agentic_summary(db, user)
+    resp = auth_client.get("/settings")
+    assert b"agentic editions" not in resp.data
+    assert b"Shared across all editions" in resp.data
+
+
 def test_settings_page_saves_memory_edits(auth_client, db, user):
     s = _agentic_summary(db, user)
     resp = auth_client.post(
