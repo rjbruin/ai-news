@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/_channels.html" import channel_icons, channel_hero %}
+{% from "partials/_channels.html" import channel_icons, channel_hero with context %}
 {% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · Dispatch{% endblock %}
 {% block content %}
 
@@ -28,11 +28,6 @@
     {% if not is_shared_view %}
     <div class="d-flex align-items-center gap-2 mt-1">
       <span title="Channels">{{ channel_icons(run) }}</span>
-      {% if run.agent_cost is not none %}
-      <span class="pill pill-amber" title="Generation cost">
-        <i class="fa-solid fa-coins" aria-hidden="true"></i>${{ '%.4f'|format(run.agent_cost) }}
-      </span>
-      {% endif %}
     </div>
     {% endif %}
   </div>
@@ -123,6 +118,35 @@
   {{ run.content | safe }}
 {% else %}
   <p class="text-body-secondary">This edition has no stored content.</p>
+{% endif %}
+
+{% if not is_shared_view and (run.agent_cost is not none or run.podcast_cost is not none) %}
+<div class="card shadow-sm mt-4 d-print-none">
+  <div class="card-body">
+    <div class="fw-semibold text-body mb-2">Cost</div>
+    <div class="d-flex flex-column gap-1 small">
+      {% if run.agent_cost is not none %}
+      <div class="d-flex justify-content-between">
+        <span class="text-body-secondary"><i class="fa-solid fa-robot me-1" aria-hidden="true"></i>Edition generation</span>
+        <span>${{ '%.4f'|format(run.agent_cost) }}</span>
+      </div>
+      {% endif %}
+      {% if run.podcast_cost is not none %}
+      <div class="d-flex justify-content-between">
+        <span class="text-body-secondary"><i class="fa-solid fa-microphone-lines me-1" aria-hidden="true"></i>Podcast audio</span>
+        <span>${{ '%.4f'|format(run.podcast_cost) }}</span>
+      </div>
+      {% endif %}
+      {% if run.agent_cost is not none and run.podcast_cost is not none %}
+      <hr class="my-1">
+      <div class="d-flex justify-content-between fw-semibold">
+        <span>Total</span>
+        <span>${{ '%.4f'|format(run.agent_cost + run.podcast_cost) }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
 {% endif %}
 
 {% if coverage and coverage.scope_count %}
