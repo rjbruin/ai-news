@@ -868,12 +868,17 @@ def _classify_newsletter_senders(
     return detected
 
 
-def ingest_all_due(force: bool = False) -> dict:
+def ingest_all_due(force: bool = False, progress_hook=None) -> dict:
     """Ingest every enabled source whose poll interval has elapsed.
 
     Newsletter subscriptions (children of a mailbox source) are never polled
     directly — they have no fetch credentials of their own, and are updated as
     a side effect of polling their parent mailbox.
+
+    ``progress_hook``, if given, is called as ``progress_hook(source, "start")``
+    before each due source is polled and ``progress_hook(source, "done", stats)``
+    after — lets the caller stream live per-source progress (see
+    app/services/poll_registry.py) instead of the whole batch running silently.
     """
     from flask import current_app
 
@@ -886,7 +891,11 @@ def ingest_all_due(force: bool = False) -> dict:
             elapsed = (utcnow() - _aware(source.last_polled_at)).total_seconds()
             if elapsed < interval:
                 continue
+        if progress_hook:
+            progress_hook(source, "start")
         stats = ingest_source(source)
+        if progress_hook:
+            progress_hook(source, "done", stats)
         totals["sources"] += 1
         totals["new_items"] += stats["new_items"]
         totals["tagged"] += stats["tagged"]

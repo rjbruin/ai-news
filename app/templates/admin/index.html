@@ -4,9 +4,8 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Admin</h1>
   <div class="d-flex flex-wrap gap-2">
-    <form method="post" action="{{ url_for('admin.poll_all') }}" class="d-inline">
-      <button class="btn btn-outline-primary">Poll all sources now</button>
-    </form>
+    <button type="button" id="poll-all-btn" class="btn btn-outline-primary"
+            data-start-url="{{ url_for('admin.poll_all_start') }}">Poll all sources now</button>
     <form method="post" action="{{ url_for('admin.retag') }}" class="d-inline">
       <button class="btn btn-outline-secondary">Re-tag all items</button>
     </form>
@@ -33,7 +32,7 @@
   {% endif %}
 {% endmacro %}
 {% macro admin_source_row(s, nested=False) %}
-  <tr>
+  <tr data-source-row="{{ s.id }}">
     <td>
       {% if nested %}<span class="text-body-secondary me-1">↳</span>{% endif %}
       {{ s.name }}
@@ -51,12 +50,13 @@
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">{{ s.poll_interval_override ~ 's' if s.poll_interval_override else 'default' }}</td>
     <td class="small">{{ s.last_polled_at.strftime('%Y-%m-%d %H:%M') if s.last_polled_at else '—' }}</td>
-    <td class="small">{{ admin_status_badge(s) }}</td>
+    <td class="small" data-status-cell>{{ admin_status_badge(s) }}</td>
     <td class="text-nowrap">
       <a href="{{ url_for('admin.source_detail', source_id=s.id) }}" class="btn btn-sm btn-outline-secondary">View</a>
       {% if not nested %}
-      <form method="post" action="{{ url_for('admin.source_poll', source_id=s.id) }}" class="d-inline">
-        <button class="btn btn-sm btn-outline-primary">Poll now</button></form>
+      <button type="button" class="btn btn-sm btn-outline-primary poll-now-btn"
+              data-source-id="{{ s.id }}"
+              data-start-url="{{ url_for('admin.source_poll_start', source_id=s.id) }}">Poll now</button>
       {% if s.type_key == 'imap_newsletter' %}
       <form method="post" action="{{ url_for('admin.source_reindex_newsletters', source_id=s.id) }}" class="d-inline"
             onsubmit="return confirm('Scan every email in this mailbox to detect newsletter senders? This can take a while for a large mailbox.')">
@@ -226,4 +226,67 @@
     </form>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  const SPINNER = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>polling…';
+  const pollAllBtn = document.getElementById('poll-all-btn');
+  const pollNowBtns = {};
+  document.querySelectorAll('.poll-now-btn').forEach(function(btn) {
+    pollNowBtns[btn.dataset.sourceId] = btn;
+  });
+
+  function statusCellFor(sourceId) {
+    const row = document.querySelector('tr[data-source-row="' + sourceId + '"]');
+    return row ? row.querySelector('[data-status-cell]') : null;
+  }
+
+  function onSourceStart(sourceId) {
+    const cell = statusCellFor(sourceId);
+    if (cell) cell.innerHTML = SPINNER;
+    const btn = pollNowBtns[sourceId];
+    if (btn) { btn.disabled = true; }
+  }
+
+  function onSourceDone(sourceId, statusText, error) {
+    const cell = statusCellFor(sourceId);
+    if (cell) {
+      const badgeClass = error ? 'text-bg-danger' : 'text-bg-success';
+      cell.innerHTML = '<span class="badge ' + badgeClass + '">' + statusText + '</span>';
+    }
+    const btn = pollNowBtns[sourceId];
+    if (btn) { btn.disabled = false; }
+  }
+
+  if (pollAllBtn) {
+    pollAllBtn.addEventListener('click', function() {
+      pollAllBtn.disabled = true;
+      pollAllBtn.innerHTML = SPINNER;
+      fetch(pollAllBtn.dataset.startUrl, {method: 'POST'});
+    });
+  }
+  Object.values(pollNowBtns).forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      onSourceStart(btn.dataset.sourceId);
+      fetch(btn.dataset.startUrl, {method: 'POST'});
+    });
+  });
+
+  if (pollAllBtn || Object.keys(pollNowBtns).length) {
+    const es = new EventSource('{{ url_for("admin.poll_events") }}');
+    es.onmessage = function(e) {
+      const event = JSON.parse(e.data);
+      if (event.type === 'source_start') {
+        onSourceStart(event.source_id);
+      } else if (event.type === 'source_done') {
+        onSourceDone(event.source_id, event.status_text, event.error);
+      } else if (event.type === 'batch_done' && pollAllBtn) {
+        pollAllBtn.disabled = false;
+        pollAllBtn.textContent = 'Poll all sources now';
+      }
+    };
+  }
+})();
+</script>
 {% endblock %}
