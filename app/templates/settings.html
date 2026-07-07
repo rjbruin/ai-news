@@ -13,7 +13,7 @@
     <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
     <a class="nav-link px-2 py-1" href="#sec-headlines">Recent headlines</a>
     {% endif %}
-    <a class="nav-link px-2 py-1" href="#sec-account">Account</a>
+    <a class="nav-link px-2 py-1" href="{{ url_for('web.api_keys') }}">API keys</a>
     <a class="nav-link px-2 py-1" href="#sec-pdf">PDF export</a>
     <a class="nav-link px-2 py-1" href="#sec-elevenlabs">Podcast voices</a>
     <a class="nav-link px-2 py-1" href="#sec-podcast-format">Podcast format</a>
@@ -130,39 +130,6 @@
   </div>
 
 {% endif %}
-
-  <div class="card shadow-sm mb-4" id="sec-account" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">Account</div>
-    <div class="card-body">
-      <h2 class="h6 text-body-secondary">OpenRouter</h2>
-      <div class="mb-3">
-        <label class="form-label">API key</label>
-        <input type="password" name="openrouter_api_key" class="form-control"
-               autocomplete="off"
-               placeholder="{{ 'A key is set — type a new one to replace it' if current_user.has_openrouter_key else 'sk-or-...' }}">
-        <div class="form-text">
-          {% if current_user.has_openrouter_key %}
-            <span class="text-success">✓ A key is stored (encrypted).</span> Leave blank to keep it.
-          {% else %}
-            No key stored yet. Required for agentic editions.
-          {% endif %}
-        </div>
-        {% if current_user.has_openrouter_key %}
-        <div class="form-check mt-2">
-          <input type="checkbox" name="clear_key" value="1" class="form-check-input" id="clear_key">
-          <label class="form-check-label" for="clear_key">Remove the stored key</label>
-        </div>
-        {% endif %}
-      </div>
-      <div class="mb-0">
-        <label class="form-label">Model</label>
-        <input name="openrouter_model" class="form-control"
-               value="{{ current_user.openrouter_model or '' }}"
-               placeholder="anthropic/claude-sonnet-4.6">
-        <div class="form-text">An OpenRouter model id. Leave blank to use the system default.</div>
-      </div>
-    </div>
-  </div>
 
   <div class="card shadow-sm mb-4" id="sec-pdf" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">PDF export</div>

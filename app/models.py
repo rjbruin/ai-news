@@ -46,11 +46,10 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
 
-    # Per-user OpenRouter credentials for the agentic summary pipeline.
-    # The global OPENROUTER_API_KEY still powers extraction/tagging/deterministic
-    # summaries; only the agent uses these.
-    openrouter_api_key_enc = db.Column(db.Text, nullable=True)
-    openrouter_model = db.Column(db.String(120), nullable=True)
+    # Which of this user's ApiKey rows (see ApiKey, api_keys.py) pays for the
+    # agentic summary pipeline. Editions and sources now share one API key
+    # system instead of separate per-feature credentials.
+    edition_api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=True)
 
     # ElevenLabs TTS credentials for podcast export.
     elevenlabs_api_key_enc = db.Column(db.Text, nullable=True)
@@ -78,6 +77,7 @@ class User(UserMixin, db.Model):
         foreign_keys="Summary.user_id",
     )
     featured_summary = db.relationship("Summary", foreign_keys=[featured_summary_id])
+    edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
@@ -95,22 +95,6 @@ class User(UserMixin, db.Model):
     @property
     def has_elevenlabs_key(self) -> bool:
         return bool(self.elevenlabs_api_key_enc)
-
-    def set_openrouter_key(self, plaintext: str | None) -> None:
-        """Store (encrypted) or clear the user's OpenRouter API key."""
-        from .crypto import encrypt
-
-        self.openrouter_api_key_enc = encrypt(plaintext) if plaintext else None
-
-    def get_openrouter_key(self) -> str | None:
-        """Return the decrypted OpenRouter API key, or None if unset."""
-        from .crypto import decrypt
-
-        return decrypt(self.openrouter_api_key_enc) if self.openrouter_api_key_enc else None
-
-    @property
-    def has_openrouter_key(self) -> bool:
-        return bool(self.openrouter_api_key_enc)
 
     def get_or_create_feed_token(self) -> str:
         """Return the podcast-feed token, generating and persisting one if absent."""
@@ -347,11 +331,29 @@ class Source(db.Model):
     def is_newsletter_subscription(self) -> bool:
         return self.parent_source_id is not None
 
+    @property
+    def type_label(self) -> str:
+        """Friendly plugin label (e.g. "RSS / Atom feed") for display instead
+        of the raw type_key."""
+        from .sources import registry as source_registry
+
+        cls = source_registry.get(self.type_key)
+        return cls.label if cls else self.type_key
+
     def can_manage(self, user: "User") -> bool:
         """Whether ``user`` may retract/delete/reconfigure this source."""
         if user.is_admin:
             return True
         return self.owner_user_id is not None and self.owner_user_id == user.id
+
+    def owner_display(self, viewer: "User") -> str:
+        """Privacy-preserving owner label for the shared /sources page: never
+        reveal another user's identity, just that it's someone else's."""
+        if self.owner_user_id is None:
+            return "global"
+        if self.owner_user_id == viewer.id:
+            return "you"
+        return "other user"
 
     @property
     def usage_tokens(self) -> int:
@@ -360,6 +362,28 @@ class Source(db.Model):
     @property
     def usage_cost(self) -> float:
         return float(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0)
+
+
+class IgnoredSender(db.Model):
+    """A sender address an admin has confirmed is NOT a newsletter (e.g. a
+    misclassified personal thread), so it's skipped during that mailbox's
+    polling and reindexing instead of continually being re-detected."""
+
+    __tablename__ = "ignored_senders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    mailbox_source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False)
+    display_name = db.Column(db.String(255), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    mailbox = db.relationship("Source", foreign_keys=[mailbox_source_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        db.UniqueConstraint("mailbox_source_id", "email", name="uq_ignored_sender"),
+    )
 
 
 class NewsItem(db.Model):
@@ -609,6 +633,7 @@ __all__ = [
     "ApiKeyUsage",
     "IngestRun",
     "Source",
+    "IgnoredSender",
     "NewsItem",
     "Tag",
     "NewsItemTag",

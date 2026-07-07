@@ -10,7 +10,18 @@ from email.utils import parseaddr
 
 from ..extensions import db
 from ..llm import openrouter
-from ..models import Alert, ApiKey, ApiKeyUsage, IngestRun, NewsItem, Source, Tag, User, utcnow
+from ..models import (
+    Alert,
+    ApiKey,
+    ApiKeyUsage,
+    IgnoredSender,
+    IngestRun,
+    NewsItem,
+    Source,
+    Tag,
+    User,
+    utcnow,
+)
 from ..sources import registry as source_registry
 from ..tagging import engine as tagging_engine
 
@@ -29,6 +40,19 @@ def _merge_stats(into: dict, other: dict) -> None:
     for key in ("fetched", "new_items", "tagged", "skipped", "errors"):
         into[key] += other[key]
     into["error_log"].extend(other["error_log"])
+
+
+def _format_poll_status(new_items: int, fetched: int, skipped: int, errors: int) -> str:
+    """Human-readable poll summary, e.g. "3 new items (5 checked, 2 already
+    seen)". Kept free of jargon like "docs" — "checked" covers whatever the
+    source fetched (emails, feed entries, ...). Callers render this as a
+    success/error-colored badge based on whether "error" appears in it."""
+    detail = [f"{fetched} checked"]
+    if skipped:
+        detail.append(f"{skipped} already seen")
+    if errors:
+        detail.append(f"{errors} error{'s' if errors != 1 else ''}")
+    return f"{new_items} new item{'s' if new_items != 1 else ''} ({', '.join(detail)})"
 
 
 def ingest_source(source: Source) -> dict:
@@ -101,17 +125,9 @@ def _ingest_plain_source(source: Source) -> dict:
     stats["fetched"] = len(docs)
 
     source.last_polled_at = utcnow()
-    if stats["errors"]:
-        status = (
-            f"partial: {stats['new_items']} new / {stats['fetched']} docs / "
-            f"{stats['errors']} errors / {stats['skipped']} skipped"
-        )
-    else:
-        status = (
-            f"ok: {stats['new_items']} new / {stats['fetched']} docs / "
-            f"{stats['skipped']} skipped"
-        )
-    source.last_status = status
+    source.last_status = _format_poll_status(
+        stats["new_items"], stats["fetched"], stats["skipped"], stats["errors"],
+    )
     if usage_totals["tokens"] or usage_totals["cost"]:
         db.session.add(ApiKeyUsage(
             api_key_id=api_key_row.id,
@@ -210,6 +226,15 @@ def _sender_key(sender: str | None) -> tuple[str, str]:
     return addr or "unknown-sender", display_name.strip()
 
 
+def _ignored_addresses(mailbox: Source) -> set[str]:
+    """Sender addresses an admin has confirmed aren't newsletters for this
+    mailbox — skipped during polling and reindexing."""
+    return {
+        row.email for row in
+        IgnoredSender.query.filter_by(mailbox_source_id=mailbox.id).all()
+    }
+
+
 def _get_or_create_newsletter_child(
     mailbox: Source, children_by_sender: dict, addr: str, display_name: str
 ) -> tuple[Source, bool]:
@@ -288,11 +313,15 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         for c in mailbox.children
         if c.subscription_status == "waiting_confirmation" and (c.config or {}).get("newsletter_domain")
     }
+    ignored = _ignored_addresses(mailbox)
 
     docs_by_child: dict[int, list] = {}
     child_by_id: dict[int, Source] = {}
     for doc in docs:
         addr, display_name = _sender_key((doc.meta or {}).get("from"))
+        if addr in ignored:
+            stats["skipped"] += 1
+            continue
         child = children_by_sender.get(addr)
 
         if child is None:
@@ -366,16 +395,9 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         _merge_stats(stats, child_stats)
 
         child.last_polled_at = utcnow()
-        if child_stats["errors"]:
-            child.last_status = (
-                f"partial: {child_stats['new_items']} new / {len(child_docs)} docs / "
-                f"{child_stats['errors']} errors / {child_stats['skipped']} skipped"
-            )
-        else:
-            child.last_status = (
-                f"ok: {child_stats['new_items']} new / {len(child_docs)} docs / "
-                f"{child_stats['skipped']} skipped"
-            )
+        child.last_status = _format_poll_status(
+            child_stats["new_items"], len(child_docs), child_stats["skipped"], child_stats["errors"],
+        )
         if child_usage["tokens"] or child_usage["cost"]:
             db.session.add(ApiKeyUsage(
                 api_key_id=child_api_key_row.id,
@@ -386,12 +408,12 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
             ))
 
     mailbox.last_polled_at = utcnow()
-    summary = f"ok: {len(docs_by_child)} newsletter(s) seen"
+    summary = f"{stats['new_items']} new item{'s' if stats['new_items'] != 1 else ''} ({len(docs_by_child)} newsletter{'s' if len(docs_by_child) != 1 else ''} checked"
     if new_subscriptions:
-        summary += f", {new_subscriptions} new"
-    summary += f", {stats['new_items']} new item(s)"
+        summary += f", {new_subscriptions} new subscription{'s' if new_subscriptions != 1 else ''}"
     if stats["errors"]:
-        summary += f", {stats['errors']} errors"
+        summary += f", {stats['errors']} error{'s' if stats['errors'] != 1 else ''}"
+    summary += ")"
     mailbox.last_status = summary
     db.session.commit()
     return stats
@@ -590,10 +612,13 @@ def reindex_newsletter_mailbox(mailbox: Source) -> dict:
         raise ValueError(f"Source type '{mailbox.type_key}' does not support reindexing.")
 
     pairs = scan()
+    ignored = _ignored_addresses(mailbox)
 
     senders: dict[str, dict] = {}
     for sender, subject in pairs:
         addr, display_name = _sender_key(sender)
+        if addr in ignored:
+            continue
         info = senders.setdefault(addr, {"display_name": display_name, "subjects": []})
         if display_name and not info["display_name"]:
             info["display_name"] = display_name

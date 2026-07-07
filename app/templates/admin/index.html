@@ -19,15 +19,27 @@
 <p class="text-body-secondary small mb-2">
   Newsletter mailboxes are split automatically into one source per detected newsletter (↳ rows).
 </p>
+{% macro admin_status_badge(s) %}
+  {% if s.subscription_status and s.subscription_status != 'subscribed' %}
+    {% if s.subscription_status == 'waiting_confirmation' %}
+      <span class="badge text-bg-warning">waiting for confirmation</span>
+    {% elif s.subscription_status == 'failed' %}
+      <span class="badge text-bg-danger">confirmation failed</span>
+    {% endif %}
+  {% elif s.last_status %}
+    <span class="badge {{ 'text-bg-danger' if 'error' in s.last_status else 'text-bg-success' }}">{{ s.last_status }}</span>
+  {% else %}
+    <span class="badge text-bg-light border text-body-secondary">never polled</span>
+  {% endif %}
+{% endmacro %}
 {% macro admin_source_row(s, nested=False) %}
   <tr>
     <td>
       {% if nested %}<span class="text-body-secondary me-1">↳</span>{% endif %}
       {{ s.name }}
-      {% if nested %}<span class="badge text-bg-light border text-body-secondary">newsletter</span>{% endif %}
+      <span class="badge text-bg-light border text-body-secondary">{{ s.type_label }}</span>
       {% if not s.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}
     </td>
-    <td><code>{{ s.type_key }}</code></td>
     <td class="small">{{ s.owner.username if s.owner else 'admin (global)' }}</td>
     <td class="small">
       {% if s.api_key %}
@@ -39,23 +51,7 @@
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">{{ s.poll_interval_override ~ 's' if s.poll_interval_override else 'default' }}</td>
     <td class="small">{{ s.last_polled_at.strftime('%Y-%m-%d %H:%M') if s.last_polled_at else '—' }}</td>
-    <td class="small">
-      {% if s.subscription_status and s.subscription_status != 'subscribed' %}
-        {% if s.subscription_status == 'waiting_confirmation' %}
-          <span class="badge text-bg-warning">waiting for confirmation</span>
-        {% elif s.subscription_status == 'failed' %}
-          <span class="badge text-bg-danger">confirmation failed</span>
-        {% endif %}
-      {% elif s.last_status %}
-        {% if 'error' in s.last_status or 'partial' in s.last_status %}
-          <span class="text-danger">{{ s.last_status }}</span>
-        {% else %}
-          <span class="text-success">{{ s.last_status }}</span>
-        {% endif %}
-      {% else %}
-        <span class="text-body-secondary">never polled</span>
-      {% endif %}
-    </td>
+    <td class="small">{{ admin_status_badge(s) }}</td>
     <td class="text-nowrap">
       <a href="{{ url_for('admin.source_detail', source_id=s.id) }}" class="btn btn-sm btn-outline-secondary">View</a>
       {% if not nested %}
@@ -71,6 +67,11 @@
       <form method="post" action="{{ url_for('admin.source_mark_subscribed', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-success">Mark subscribed</button></form>
       {% endif %}
+      {% if nested %}
+      <form method="post" action="{{ url_for('admin.source_ignore', source_id=s.id) }}" class="d-inline"
+            onsubmit="return confirm('Mark as not a newsletter? This deletes the subscription and ignores this sender going forward.')">
+        <button class="btn btn-sm btn-outline-warning">Not a newsletter</button></form>
+      {% endif %}
       <form method="post" action="{{ url_for('admin.source_toggle', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-secondary">{{ 'Disable' if s.enabled else 'Enable' }}</button></form>
       <form method="post" action="{{ url_for('admin.source_delete', source_id=s.id) }}" class="d-inline">
@@ -80,7 +81,7 @@
 {% endmacro %}
 <div class="table-responsive shadow-sm mb-4">
   <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>API key</th><th>Usage</th><th>Interval</th><th>Last polled</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Owner</th><th>API key</th><th>Usage</th><th>Interval</th><th>Last polled</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
       {{ admin_source_row(s) }}
@@ -88,7 +89,34 @@
         {{ admin_source_row(child, nested=True) }}
       {% endfor %}
     {% else %}
-      <tr><td colspan="9" class="text-body-secondary">No sources configured.</td></tr>
+      <tr><td colspan="8" class="text-body-secondary">No sources configured.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5">Ignored senders</h2>
+<p class="text-body-secondary small mb-2">
+  Senders marked "Not a newsletter" — skipped during that mailbox's polling and reindexing.
+</p>
+<div class="table-responsive shadow-sm mb-4">
+  <table class="table bg-white align-middle mb-0">
+    <thead><tr><th>Email</th><th>Name</th><th>Mailbox</th><th>Added by</th><th>Added</th><th></th></tr></thead>
+    <tbody>
+    {% for row in ignored_senders %}
+      <tr>
+        <td class="small">{{ row.email }}</td>
+        <td class="small">{{ row.display_name or '—' }}</td>
+        <td class="small">{{ row.mailbox.name if row.mailbox else '—' }}</td>
+        <td class="small">{{ row.created_by.username if row.created_by else '—' }}</td>
+        <td class="small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin.ignored_sender_delete', ignored_id=row.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">Un-ignore</button></form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="text-body-secondary">No ignored senders.</td></tr>
     {% endfor %}
     </tbody>
   </table>

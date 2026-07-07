@@ -204,6 +204,15 @@ def register_template_helpers(app: Flask) -> None:
             return ""
         return dt.strftime("%-d %B") if hasattr(dt, "strftime") else str(dt)
 
+    @app.template_filter("natural_dt")
+    def natural_dt_filter(dt):
+        """e.g. 'July 6th, 05:02' — for a friendlier timestamp than raw ISO."""
+        if dt is None or not hasattr(dt, "strftime"):
+            return str(dt) if dt else ""
+        day = dt.day
+        suffix = "th" if 11 <= day % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+        return f"{dt.strftime('%B')} {day}{suffix}, {dt.strftime('%H:%M')}"
+
     @app.template_filter("md")
     def markdown_filter(text):
         """Render Markdown to sanitized HTML (for agent-authored block content)."""

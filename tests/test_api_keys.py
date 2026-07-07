@@ -53,6 +53,37 @@ def test_manageable_by_includes_global_only_for_admins(db, user, admin):
     assert admin_keys[0].is_global
 
 
+def test_owner_display_preserves_privacy(db, user, admin):
+    other = User(username="other3", email="other3@example.com", email_verified=True)
+    db.session.add(other)
+    db.session.commit()
+
+    global_source = Source(type_key="rss_feed", name="Global", config={})
+    mine = Source(type_key="rss_feed", name="Mine", owner_user_id=user.id, config={})
+    theirs = Source(type_key="rss_feed", name="Theirs", owner_user_id=other.id, config={})
+    db.session.add_all([global_source, mine, theirs])
+    db.session.commit()
+
+    assert global_source.owner_display(user) == "global"
+    assert mine.owner_display(user) == "you"
+    assert theirs.owner_display(user) == "other user"
+    # Admins get the same privacy-preserving labels on this view too.
+    assert theirs.owner_display(admin) == "other user"
+
+
+def test_type_label_uses_plugin_label(app, db):
+    with app.app_context():
+        rss = Source(type_key="rss_feed", name="Feed", config={})
+        db.session.add(rss)
+        db.session.commit()
+        assert "RSS" in rss.type_label or "Atom" in rss.type_label
+
+        unknown = Source(type_key="totally_unknown", name="?", config={})
+        db.session.add(unknown)
+        db.session.commit()
+        assert unknown.type_label == "totally_unknown"
+
+
 def test_source_can_manage(db, user, admin):
     key = ApiKey(owner_user_id=user.id, label="Mine")
     key.set_key("sk-or-x")
@@ -150,6 +181,86 @@ def test_owner_can_retract_own_source_but_not_others(auth_client, db, user):
 
     resp = auth_client.post(f"/sources/{others.id}/retract")
     assert resp.status_code == 403
+
+
+def test_use_for_editions(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+    key = ApiKey(owner_user_id=user.id, label="Mine")
+    key.set_key("sk-or-x")
+    db.session.add(key)
+    db.session.commit()
+
+    resp = auth_client.post(f"/keys/{key.id}/use-for-editions", follow_redirects=True)
+    assert resp.status_code == 200
+    db.session.refresh(user)
+    assert user.edition_api_key_id == key.id
+
+
+def test_use_for_editions_rejects_global_key(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+    global_key = ApiKey.get_or_create_global()
+
+    resp = auth_client.post(f"/keys/{global_key.id}/use-for-editions", follow_redirects=True)
+    assert resp.status_code == 200
+    db.session.refresh(user)
+    assert user.edition_api_key_id is None
+
+
+def test_use_for_editions_rejects_other_users_key(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+    other = User(username="other2", email="other2@example.com", email_verified=True)
+    db.session.add(other)
+    db.session.commit()
+    other_key = ApiKey(owner_user_id=other.id, label="Not yours")
+    other_key.set_key("sk-or-x")
+    db.session.add(other_key)
+    db.session.commit()
+
+    resp = auth_client.post(f"/keys/{other_key.id}/use-for-editions", follow_redirects=True)
+    assert resp.status_code == 200
+    db.session.refresh(user)
+    assert user.edition_api_key_id is None
+
+
+def test_deleting_edition_key_clears_selection(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+    key = ApiKey(owner_user_id=user.id, label="Mine")
+    key.set_key("sk-or-x")
+    db.session.add(key)
+    db.session.commit()
+    user.edition_api_key_id = key.id
+    db.session.commit()
+
+    auth_client.post(f"/keys/{key.id}/delete", follow_redirects=True)
+    db.session.refresh(user)
+    assert user.edition_api_key_id is None
+
+
+def test_sources_page_no_type_column_and_privacy(auth_client, db, user):
+    other = User(username="other4", email="other4@example.com", email_verified=True)
+    db.session.add(other)
+    db.session.commit()
+    key = ApiKey(owner_user_id=other.id, label="Theirs")
+    key.set_key("sk-or-x")
+    db.session.add(key)
+    db.session.commit()
+    theirs = Source(
+        type_key="rss_feed", name="Their feed", owner_user_id=other.id, api_key_id=key.id,
+        config={}, enabled=True, last_status="2 new items (2 checked)",
+    )
+    db.session.add(theirs)
+    db.session.commit()
+
+    resp = auth_client.get("/sources")
+    assert resp.status_code == 200
+    assert b"<th>Type</th>" not in resp.data
+    assert b"other user" in resp.data
+    assert other.username.encode() not in resp.data  # never leak the identity
+    assert b"RSS" in resp.data or b"Atom" in resp.data  # type now shown as a badge
 
 
 def test_admin_approve_toggle(admin_client, db, user):

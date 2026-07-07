@@ -7,15 +7,16 @@ from app.models import Summary, SummaryRun, User
 from app.services import summarize
 from app.summaries import registry as summary_registry
 
+from conftest import give_edition_key
+
 
 @pytest.fixture
 def keyed_user(db):
     u = User(username="ed", email="ed@example.com", email_verified=True)
     u.set_password("pw")
-    u.set_openrouter_key("sk-or-test")
-    u.openrouter_model = "test/model"
     db.session.add(u)
     db.session.commit()
+    give_edition_key(db, u, "sk-or-test", "test/model")
     return u
 
 
@@ -92,8 +93,8 @@ def test_build_agentic_summary_end_to_end(monkeypatch, db, keyed_user, agentic_s
 
 def test_build_agentic_without_key_raises(monkeypatch, db, agentic_summary):
     from app.agent.creds import MissingCredentials
-    # Remove the user's key.
-    agentic_summary.user.set_openrouter_key(None)
+    # Remove the user's edition key selection.
+    agentic_summary.user.edition_api_key_id = None
     db.session.commit()
     with pytest.raises(MissingCredentials):
         summarize.build_summary(agentic_summary, record_run=True)
