@@ -4,9 +4,8 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Admin</h1>
   <div class="d-flex flex-wrap gap-2">
-    <form method="post" action="{{ url_for('admin.poll_all') }}" class="d-inline">
-      <button class="btn btn-outline-primary">Poll all sources now</button>
-    </form>
+    <button type="button" id="poll-all-btn" class="btn btn-outline-primary"
+            data-start-url="{{ url_for('admin.poll_all_start') }}">Poll all sources now</button>
     <form method="post" action="{{ url_for('admin.retag') }}" class="d-inline">
       <button class="btn btn-outline-secondary">Re-tag all items</button>
     </form>
@@ -33,7 +32,7 @@
   {% endif %}
 {% endmacro %}
 {% macro admin_source_row(s, nested=False) %}
-  <tr>
+  <tr data-source-row="{{ s.id }}">
     <td>
       {% if nested %}<span class="text-body-secondary me-1">↳</span>{% endif %}
       {{ s.name }}
@@ -51,12 +50,13 @@
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">{{ s.poll_interval_override ~ 's' if s.poll_interval_override else 'default' }}</td>
     <td class="small">{{ s.last_polled_at.strftime('%Y-%m-%d %H:%M') if s.last_polled_at else '—' }}</td>
-    <td class="small">{{ admin_status_badge(s) }}</td>
+    <td class="small" data-status-cell>{{ admin_status_badge(s) }}</td>
     <td class="text-nowrap">
       <a href="{{ url_for('admin.source_detail', source_id=s.id) }}" class="btn btn-sm btn-outline-secondary">View</a>
       {% if not nested %}
-      <form method="post" action="{{ url_for('admin.source_poll', source_id=s.id) }}" class="d-inline">
-        <button class="btn btn-sm btn-outline-primary">Poll now</button></form>
+      <button type="button" class="btn btn-sm btn-outline-primary poll-now-btn"
+              data-source-id="{{ s.id }}"
+              data-start-url="{{ url_for('admin.source_poll_start', source_id=s.id) }}">Poll now</button>
       {% if s.type_key == 'imap_newsletter' %}
       <form method="post" action="{{ url_for('admin.source_reindex_newsletters', source_id=s.id) }}" class="d-inline"
             onsubmit="return confirm('Scan every email in this mailbox to detect newsletter senders? This can take a while for a large mailbox.')">
@@ -151,6 +151,60 @@
   </table>
 </div>
 
+<h2 class="h5">Costs</h2>
+<p class="text-body-secondary small mb-2">
+  Spend on the shared global credentials over the last {{ cost_summary.days }} days — per-user OpenRouter
+  keys aren't included here, since that's the user's own spend.
+</p>
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small">OpenRouter ({{ cost_summary.days }}d)</div>
+        <div class="h4 mb-0">${{ '%.2f'|format(cost_summary.openrouter_total) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small">ElevenLabs ({{ cost_summary.days }}d)</div>
+        <div class="h4 mb-0">${{ '%.2f'|format(cost_summary.elevenlabs_total) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small mb-2">OpenRouter by kind ({{ cost_summary.days }}d)</div>
+        {% if cost_summary.openrouter_by_kind %}
+        <canvas id="cost-chart-kind" height="60"></canvas>
+        {% else %}
+        <div class="text-body-secondary small">No usage yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small mb-2">OpenRouter daily spend</div>
+        <canvas id="cost-chart-openrouter" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small mb-2">ElevenLabs daily spend</div>
+        <canvas id="cost-chart-elevenlabs" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
 <h2 class="h5">Recent editions</h2>
 <div class="table-responsive shadow-sm">
   <table class="table table-hover bg-white align-middle mb-0">
@@ -226,4 +280,115 @@
     </form>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+        crossorigin="anonymous"></script>
+<script>
+(function() {
+  const costSummary = {{ cost_summary | tojson }};
+  const dailyChart = function(canvasId, series, color) {
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    new Chart(el, {
+      type: 'line',
+      data: {
+        labels: series.map(d => d.date.slice(5)),
+        datasets: [{
+          data: series.map(d => d.cost),
+          borderColor: color, backgroundColor: color + '33',
+          fill: true, tension: 0.2, pointRadius: 0,
+        }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { callback: v => '$' + v } } },
+      },
+    });
+  };
+
+  dailyChart('cost-chart-openrouter', costSummary.openrouter_daily, '#0d6efd');
+  dailyChart('cost-chart-elevenlabs', costSummary.elevenlabs_daily, '#fd7e14');
+
+  const kindEl = document.getElementById('cost-chart-kind');
+  if (kindEl && costSummary.openrouter_by_kind.length) {
+    new Chart(kindEl, {
+      type: 'bar',
+      data: {
+        labels: costSummary.openrouter_by_kind.map(d => d.kind),
+        datasets: [{
+          data: costSummary.openrouter_by_kind.map(d => d.cost),
+          backgroundColor: '#0d6efd',
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + v } } },
+      },
+    });
+  }
+})();
+</script>
+<script>
+(function() {
+  const SPINNER = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>polling…';
+  const pollAllBtn = document.getElementById('poll-all-btn');
+  const pollNowBtns = {};
+  document.querySelectorAll('.poll-now-btn').forEach(function(btn) {
+    pollNowBtns[btn.dataset.sourceId] = btn;
+  });
+
+  function statusCellFor(sourceId) {
+    const row = document.querySelector('tr[data-source-row="' + sourceId + '"]');
+    return row ? row.querySelector('[data-status-cell]') : null;
+  }
+
+  function onSourceStart(sourceId) {
+    const cell = statusCellFor(sourceId);
+    if (cell) cell.innerHTML = SPINNER;
+    const btn = pollNowBtns[sourceId];
+    if (btn) { btn.disabled = true; }
+  }
+
+  function onSourceDone(sourceId, statusText, error) {
+    const cell = statusCellFor(sourceId);
+    if (cell) {
+      const badgeClass = error ? 'text-bg-danger' : 'text-bg-success';
+      cell.innerHTML = '<span class="badge ' + badgeClass + '">' + statusText + '</span>';
+    }
+    const btn = pollNowBtns[sourceId];
+    if (btn) { btn.disabled = false; }
+  }
+
+  if (pollAllBtn) {
+    pollAllBtn.addEventListener('click', function() {
+      pollAllBtn.disabled = true;
+      pollAllBtn.innerHTML = SPINNER;
+      fetch(pollAllBtn.dataset.startUrl, {method: 'POST'});
+    });
+  }
+  Object.values(pollNowBtns).forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      onSourceStart(btn.dataset.sourceId);
+      fetch(btn.dataset.startUrl, {method: 'POST'});
+    });
+  });
+
+  if (pollAllBtn || Object.keys(pollNowBtns).length) {
+    const es = new EventSource('{{ url_for("admin.poll_events") }}');
+    es.onmessage = function(e) {
+      const event = JSON.parse(e.data);
+      if (event.type === 'source_start') {
+        onSourceStart(event.source_id);
+      } else if (event.type === 'source_done') {
+        onSourceDone(event.source_id, event.status_text, event.error);
+      } else if (event.type === 'batch_done' && pollAllBtn) {
+        pollAllBtn.disabled = false;
+        pollAllBtn.textContent = 'Poll all sources now';
+      }
+    };
+  }
+})();
+</script>
 {% endblock %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/_channels.html" import channel_icons %}
+{% from "partials/_channels.html" import channel_icons with context %}
 {% block title %}Dashboard · Dispatch{% endblock %}
 {% block content %}
 <form method="get" action="{{ url_for('web.search') }}" class="mb-4">

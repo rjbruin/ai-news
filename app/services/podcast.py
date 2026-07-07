@@ -13,6 +13,10 @@ from flask import current_app
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
 
+# ElevenLabs bills standard TTS models at roughly 1 credit per character sent;
+# 10,000 credits cost $2 (https://elevenlabs.io/pricing), so $0.0002/credit.
+ELEVENLABS_COST_PER_CHARACTER = 0.0002
+
 # ElevenLabs output is CBR MP3 at 128 kbps, so audio seconds ≈ bytes * 8 / bitrate.
 _BITRATE_BPS = 128_000
 
@@ -391,6 +395,7 @@ def generate_audio_stream(script: str):
     mp3_chunks = []
     chapters = []            # [{"title": str, "start": int-seconds}]
     elapsed = 0.0            # audio seconds emitted so far
+    total_chars = 0
     done = 0
     for part in parts:
         if part["type"] == "chapter":
@@ -401,6 +406,7 @@ def generate_audio_stream(script: str):
         chunk = _strip_xing_frame(_strip_id3v2(_tts_segment(part["text"], voice_id, api_key, el_model)))
         mp3_chunks.append(chunk)
         elapsed += len(chunk) * 8 / _BITRATE_BPS
+        total_chars += len(part["text"])
         done += 1
         yield ("progress", done, total)
 
@@ -414,7 +420,8 @@ def generate_audio_stream(script: str):
     with open(path, "wb") as f:
         f.write(audio_bytes)
 
-    yield ("done", filename, chapters)
+    cost = total_chars * ELEVENLABS_COST_PER_CHARACTER
+    yield ("done", filename, chapters, cost)
 
 
 def generate_audio(script: str) -> tuple[str, str]:
@@ -492,15 +499,16 @@ def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
                 return
 
             job.emit({"type": "phase", "phase": "audio"})
-            filename, chapters = None, []
+            filename, chapters, cost = None, [], 0.0
             for event in generate_audio_stream(script):
                 if event[0] == "progress":
                     job.emit({"type": "audio_progress", "done": event[1], "total": event[2]})
                 elif event[0] == "done":
-                    filename, chapters = event[1], event[2]
+                    filename, chapters, cost = event[1], event[2], event[3]
 
             run.news_podcast_audio = filename
             run.news_podcast_chapters = chapters
+            run.podcast_cost = cost
             db.session.commit()
             job.emit({
                 "type": "done", "phase": "audio",

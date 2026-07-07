@@ -558,6 +558,7 @@ class SummaryRun(db.Model):
     news_podcast_audio = db.Column(db.Text, nullable=True)
     podcast_chapters = db.Column(JSONEncodedDict, nullable=True)
     news_podcast_chapters = db.Column(JSONEncodedDict, nullable=True)
+    podcast_cost = db.Column(db.Float, nullable=True)  # USD, ElevenLabs TTS characters billed
 
     # Persisted PDF export (filename under instance/pdfs), so PDF counts as a
     # "created" channel for this edition once it has been generated.

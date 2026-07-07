@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Tags · Dispatch{% endblock %}
+{% macro tag_card(tag) %}
+<div class="list-group-item">
+  <div class="d-flex justify-content-between align-items-start">
+    <div>
+      <span class="fw-semibold">{{ tag.name }}</span>
+      {% if tag.scope == 'global' %}<span class="badge text-bg-info">global</span>{% endif %}
+      {% if tag.explanation %}<div class="small text-body-secondary">{{ tag.explanation }}</div>{% endif %}
+      <div class="mt-1">
+        {% for kw in tag.keyword_list %}<span class="badge text-bg-light border">{{ kw }}</span>{% endfor %}
+      </div>
+    </div>
+    {% if current_user.is_admin and tag.scope != 'global' %}
+    <form method="post" action="{{ url_for('admin.tag_promote', tag_id=tag.id) }}" class="d-inline">
+      <button class="btn btn-sm btn-outline-info">Make global</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+{% block content %}
+<h1 class="h3 mb-3">Tags</h1>
+<p class="text-body-secondary">The taxonomy used to classify news items. Tags are applied automatically during
+  ingestion; global tags apply to everyone, user tags are scoped to the account that owns them.</p>
+
+<h2 class="h5">Global taxonomy</h2>
+<div class="list-group shadow-sm mb-4">
+  {% for tag in global_tags %}{{ tag_card(tag) }}
+  {% else %}<div class="list-group-item text-body-secondary">No global tags yet.</div>{% endfor %}
+</div>
+
+<h2 class="h5">Your tags</h2>
+<div class="list-group shadow-sm">
+  {% for tag in my_tags %}{{ tag_card(tag) }}
+  {% else %}<div class="list-group-item text-body-secondary">You don't have any personal tags.</div>{% endfor %}
+</div>
+{% endblock %}
