@@ -382,8 +382,12 @@ def api_key_delete(key_id: int):
 @bp.route("/sources")
 @login_required
 def sources():
-    all_sources = Source.query.order_by(Source.created_at.desc()).all()
-    return render_template("sources.html", sources=all_sources)
+    top_level = (
+        Source.query.filter_by(parent_source_id=None)
+        .order_by(Source.created_at.desc())
+        .all()
+    )
+    return render_template("sources.html", sources=top_level)
 
 
 @bp.route("/sources/new", methods=["GET", "POST"])

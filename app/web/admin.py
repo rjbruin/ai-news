@@ -56,7 +56,9 @@ def index():
     )
     return render_template(
         "admin/index.html",
-        sources=Source.query.order_by(Source.created_at.desc()).all(),
+        sources=Source.query.filter_by(parent_source_id=None)
+        .order_by(Source.created_at.desc())
+        .all(),
         users=User.query.order_by(User.created_at).all(),
         source_types=source_registry.all_types(),
         recent_runs=recent_runs,
@@ -99,6 +101,12 @@ def source_new():
 @admin_required
 def source_poll(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
+    if source.is_newsletter_subscription:
+        flash(
+            "This is a newsletter detected inside a mailbox source — poll the mailbox instead.",
+            "danger",
+        )
+        return redirect(url_for("admin.index"))
     stats = ingest.ingest_source(source)
     msg = (
         f"Polled '{source.name}': {stats['fetched']} emails fetched, "
@@ -115,6 +123,12 @@ def source_poll(source_id: int):
 @admin_required
 def source_reset(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
+    if source.is_newsletter_subscription:
+        flash(
+            "This is a newsletter detected inside a mailbox source — reset the mailbox instead.",
+            "danger",
+        )
+        return redirect(url_for("admin.source_detail", source_id=source_id))
     # Delete items first (cascades to NewsItemTag), then runs
     NewsItem.query.filter_by(source_id=source_id).delete(synchronize_session=False)
     IngestRun.query.filter_by(source_id=source_id).delete(synchronize_session=False)

@@ -10,54 +10,64 @@
 <p class="text-body-secondary small">
   News items collected here are shared across all users. Each source is paid for by its
   owner's own API key — approved users can add their own sources and retract them at any time.
+  Newsletter mailboxes are split automatically into one source per newsletter as they're detected.
 </p>
+
+{% macro source_row(s, nested=False) %}
+  <tr>
+    <td>
+      {% if nested %}<span class="text-body-secondary me-1">↳</span>{% endif %}
+      {{ s.name }}
+      {% if nested %}<span class="badge text-bg-light border text-body-secondary">newsletter</span>{% endif %}
+      {% if not s.enabled %}<span class="badge text-bg-secondary">retracted</span>{% endif %}
+    </td>
+    <td><code>{{ s.type_key }}</code></td>
+    <td class="small">
+      {% if s.owner %}{{ s.owner.username }}{% else %}<span class="text-body-secondary">admin (global)</span>{% endif %}
+    </td>
+    <td class="small">
+      {% if s.api_key %}
+        {{ s.api_key.label }}
+        {% if not s.api_key.active %}<span class="badge text-bg-danger">revoked</span>{% endif %}
+      {% else %}
+        <span class="text-danger">none assigned</span>
+      {% endif %}
+    </td>
+    <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
+    <td class="small">
+      {% if s.last_status %}
+        <span class="{{ 'text-danger' if 'error' in s.last_status or 'partial' in s.last_status else 'text-success' }}">{{ s.last_status }}</span>
+      {% else %}
+        <span class="text-body-secondary">never polled</span>
+      {% endif %}
+    </td>
+    <td class="text-nowrap">
+      {% if s.can_manage(current_user) %}
+        {% if s.enabled %}
+        <form method="post" action="{{ url_for('web.source_retract', source_id=s.id) }}" class="d-inline"
+              onsubmit="return confirm('Retract this source? It will stop being polled.')">
+          <button class="btn btn-sm btn-outline-secondary">Retract</button></form>
+        {% else %}
+        <form method="post" action="{{ url_for('web.source_reactivate', source_id=s.id) }}" class="d-inline">
+          <button class="btn btn-sm btn-outline-secondary">Reactivate</button></form>
+        {% endif %}
+        <form method="post" action="{{ url_for('web.source_delete', source_id=s.id) }}" class="d-inline"
+              onsubmit="return confirm('Delete this source? Its items stay, but history is removed.')">
+          <button class="btn btn-sm btn-outline-danger">Delete</button></form>
+      {% endif %}
+    </td>
+  </tr>
+{% endmacro %}
 
 <div class="table-responsive shadow-sm">
   <table class="table table-hover bg-white align-middle mb-0">
     <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>API key</th><th>Usage</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
-      <tr>
-        <td>
-          {{ s.name }}
-          {% if not s.enabled %}<span class="badge text-bg-secondary">retracted</span>{% endif %}
-        </td>
-        <td><code>{{ s.type_key }}</code></td>
-        <td class="small">
-          {% if s.owner %}{{ s.owner.username }}{% else %}<span class="text-body-secondary">admin (global)</span>{% endif %}
-        </td>
-        <td class="small">
-          {% if s.api_key %}
-            {{ s.api_key.label }}
-            {% if not s.api_key.active %}<span class="badge text-bg-danger">revoked</span>{% endif %}
-          {% else %}
-            <span class="text-danger">none assigned</span>
-          {% endif %}
-        </td>
-        <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
-        <td class="small">
-          {% if s.last_status %}
-            <span class="{{ 'text-danger' if 'error' in s.last_status or 'partial' in s.last_status else 'text-success' }}">{{ s.last_status }}</span>
-          {% else %}
-            <span class="text-body-secondary">never polled</span>
-          {% endif %}
-        </td>
-        <td class="text-nowrap">
-          {% if s.can_manage(current_user) %}
-            {% if s.enabled %}
-            <form method="post" action="{{ url_for('web.source_retract', source_id=s.id) }}" class="d-inline"
-                  onsubmit="return confirm('Retract this source? It will stop being polled.')">
-              <button class="btn btn-sm btn-outline-secondary">Retract</button></form>
-            {% else %}
-            <form method="post" action="{{ url_for('web.source_reactivate', source_id=s.id) }}" class="d-inline">
-              <button class="btn btn-sm btn-outline-secondary">Reactivate</button></form>
-            {% endif %}
-            <form method="post" action="{{ url_for('web.source_delete', source_id=s.id) }}" class="d-inline"
-                  onsubmit="return confirm('Delete this source? Its items stay, but history is removed.')">
-              <button class="btn btn-sm btn-outline-danger">Delete</button></form>
-          {% endif %}
-        </td>
-      </tr>
+      {{ source_row(s) }}
+      {% for child in s.children %}
+        {{ source_row(child, nested=True) }}
+      {% endfor %}
     {% else %}
       <tr><td colspan="7" class="text-body-secondary">No sources yet.</td></tr>
     {% endfor %}

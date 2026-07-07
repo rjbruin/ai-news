@@ -13,10 +13,13 @@ open questions; this README describes the app as it exists today.
 ## Features
 
 - **Pluggable sources** — drop a `NewsSource` subclass into `app/sources/`.
-  Ships with `imap_newsletter` (subscribe a mailbox to AI newsletters; an LLM
-  splits each email into discrete items) and `rss_feed` (poll an RSS/Atom
-  feed). Sources feed a single shared news pool: any **approved** user can add
-  their own source, paid for by one of their own API keys, and retract it
+  Ships with `imap_newsletter` (subscribe a mailbox to AI newsletters; each
+  distinct newsletter sender is auto-detected and split into its own
+  reviewable/retractable source, see below) and `rss_feed` (poll an RSS/Atom
+  feed). All sources — and, for `imap_newsletter`, every newsletter detected
+  inside a mailbox — are listed on `/sources` so anyone can see what's
+  feeding the shared news pool. Any **approved** user can add their own
+  source, paid for by one of their own API keys, and retract it
   (disable/delete) at any time — see **API keys & sources** below.
 - **Pluggable summaries** — drop a `NewsSummary` subclass into
   `app/summaries/`. Ships with `app_page` (deterministic in-app overview),
@@ -116,7 +119,17 @@ class, no core changes." Shipped sources:
 
 `app/services/ingest.py` orchestrates a poll: fetch new `RawDocument`s,
 extract items, hash-dedup on normalized title+URL (`dedup_hash`), persist as
-`NewsItem`s, and hand off to the tagging engine.
+`NewsItem`s, and hand off to the tagging engine. An `imap_newsletter` mailbox
+is a single `Source`, but a mailbox typically carries many distinct
+newsletters — so `ingest_source()` special-cases that type: it groups the
+fetched emails by sender and, for each sender not seen before, auto-creates a
+child `Source` (`Source.parent_source_id` pointing at the mailbox), inheriting
+the mailbox's owner and `ApiKey`. From then on each newsletter is reviewable
+and retractable independently on `/sources` — disabling one stops its emails
+from being extracted/tagged (saving LLM cost) while still recording that mail
+arrived, so re-enabling it later doesn't miss anything. Child sources are
+never polled directly (`ingest_all_due` only considers `parent_source_id IS
+NULL` sources); polling the mailbox re-syncs all of its newsletters at once.
 
 ### API keys & self-service sources
 

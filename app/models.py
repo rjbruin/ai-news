@@ -314,6 +314,10 @@ class Source(db.Model):
     name = db.Column(db.String(120), nullable=False)
     owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=True)
+    # Set only for auto-detected newsletter subscriptions (see services.ingest):
+    # the mailbox Source they were split out of. NULL for everything else,
+    # including the mailbox itself.
+    parent_source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=True, index=True)
     config = db.Column(JSONEncodedDict, default=dict)
     poll_interval_override = db.Column(db.Integer, nullable=True)  # seconds
     enabled = db.Column(db.Boolean, default=True, nullable=False)
@@ -323,6 +327,10 @@ class Source(db.Model):
 
     owner = db.relationship("User", foreign_keys=[owner_user_id])
     api_key = db.relationship("ApiKey", back_populates="sources")
+    parent_source = db.relationship("Source", remote_side=[id], backref=db.backref(
+        "children", lazy="dynamic", order_by="Source.name",
+        cascade="all, delete-orphan",
+    ))
     items = db.relationship("NewsItem", back_populates="source", lazy="dynamic")
     ingest_runs = db.relationship(
         "IngestRun", back_populates="source", lazy="dynamic",
@@ -331,6 +339,10 @@ class Source(db.Model):
     usage_entries = db.relationship(
         "ApiKeyUsage", back_populates="source", lazy="dynamic",
     )
+
+    @property
+    def is_newsletter_subscription(self) -> bool:
+        return self.parent_source_id is not None
 
     def can_manage(self, user: "User") -> bool:
         """Whether ``user`` may retract/delete/reconfigure this source."""
