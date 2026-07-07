@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 
 from ..llm import openrouter
+from ..llm.prompt_safety import ANTI_INJECTION_NOTE, wrap_untrusted
 from .base import ExtractedItem, RawDocument
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,8 @@ _SYSTEM = (
     "Ignore ads, sponsorships, job listings, and unsubscribe/footer boilerplate.\n\n"
     'Respond ONLY with valid JSON in this exact format: '
     '{"items": [{"title": "...", "one_liner": "...", "summary": "...", '
-    '"item_type": "news", "url": "...", "text": ""}, ...]}'
+    '"item_type": "news", "url": "...", "text": ""}, ...]}\n\n'
+    + ANTI_INJECTION_NOTE
 )
 
 
@@ -50,7 +52,7 @@ def extract_items(
         logger.warning("LLM not configured; skipping extraction for %s", doc.external_id)
         return []
 
-    user_content = (
+    user_content = wrap_untrusted(
         f"Newsletter subject: {doc.subject or '(none)'}\n\n"
         f"Newsletter body:\n{doc.text[:20000]}"
     )

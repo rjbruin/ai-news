@@ -6,6 +6,7 @@ from functools import wraps
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -16,6 +17,7 @@ from flask_login import current_user, login_required
 
 from ..extensions import db
 from ..models import (
+    AdminSettings,
     Alert,
     ApiKey,
     IgnoredSender,
@@ -65,6 +67,8 @@ def index():
         source_types=source_registry.all_types(),
         recent_runs=recent_runs,
         ignored_senders=IgnoredSender.query.order_by(IgnoredSender.created_at.desc()).all(),
+        admin_settings=AdminSettings.get(),
+        elevenlabs_key_configured=bool(current_app.config.get("ELEVENLABS_API_KEY")),
     )
 
 
@@ -333,6 +337,35 @@ def user_approve(user_id: int):
         "success",
     )
     return redirect(url_for("admin.index"))
+
+
+@bp.route("/users/<int:user_id>/podcast-access", methods=["POST"])
+@admin_required
+def user_podcast_access(user_id: int):
+    """Toggle whether a user may generate/export podcasts. Admins always
+    have access regardless of this flag (see User.has_podcast_access)."""
+    user = db.session.get(User, user_id) or abort(404)
+    user.podcast_enabled = not user.podcast_enabled
+    db.session.commit()
+    flash(
+        f'Podcast export is now {"on" if user.podcast_enabled else "off"} for {user.username}.',
+        "success",
+    )
+    return redirect(url_for("admin.index"))
+
+
+@bp.route("/settings", methods=["POST"])
+@admin_required
+def save_admin_settings():
+    """Global podcast voice/model config — the ElevenLabs API key itself
+    stays a plain env var (ELEVENLABS_API_KEY), not editable here."""
+    settings = AdminSettings.get()
+    settings.elevenlabs_voice_host_a = (request.form.get("elevenlabs_voice_host_a") or "").strip() or None
+    settings.elevenlabs_voice_host_b = (request.form.get("elevenlabs_voice_host_b") or "").strip() or None
+    settings.elevenlabs_model = (request.form.get("elevenlabs_model") or "").strip() or None
+    db.session.commit()
+    flash("Admin settings saved.", "success")
+    return redirect(url_for("admin.index") + "#admin-settings")
 
 
 @bp.route("/tags/<int:tag_id>/promote", methods=["POST"])

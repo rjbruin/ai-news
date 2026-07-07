@@ -173,8 +173,11 @@ to subscribe with and a rate-limited (10s) "Check now" button
 Regular mailbox polling (`_ingest_newsletter_mailbox` in
 `app/services/ingest.py`) matches incoming mail against pending subscriptions
 by sender **domain** (exact-address matching, used for already-`subscribed`
-newsletters, can't apply yet). A match is handed to
-`_handle_pending_confirmation`, which classifies the email — using the
+newsletters, can't apply yet) — normalized and subdomain-tolerant via
+`normalize_domain()`/`_find_pending_by_domain()`, which are also used by
+mailbox **reindexing** (below) so a self-service request isn't orphaned if an
+admin reindexes before the first matching email is polled normally. A match
+is handed to `_handle_pending_confirmation`, which classifies the email — using the
 *requesting user's own* API key, not the mailbox's — into either "needs a
 confirmation-link click" or "no action needed" (structured-output LLM call).
 A required link is "clicked" with a plain `httpx.get` (a second LLM call
@@ -254,11 +257,19 @@ Types with `is_agentic = True` (`agentic_page`) instead go through
 audio via ElevenLabs TTS and expose it as a per-user podcast RSS feed
 (`app/templates/podcast_feed.xml`); `app/services/coverage.py` and
 `search.py` back the dashboard's coverage stats and the search page.
+Podcasts use one global ElevenLabs API key (`ELEVENLABS_API_KEY`) — there's no
+per-user key — plus a global voice/model config (`AdminSettings`, editable
+from the Admin page's "Admin Settings" section). Access to the podcast
+feature itself is gated per user via `User.has_podcast_access`
+(`podcast_enabled` flag, always true for admins), toggled per-user from the
+Admin page's users table; the Settings page hides all podcast controls for
+users without access.
 
 ### Data model
 
 Key tables (`app/models.py`): `User` (auth, admin derived from
-`ADMIN_EMAILS`, `approved` flag, `edition_api_key_id` selecting which owned
+`ADMIN_EMAILS`, `approved` flag, `podcast_enabled` flag backing
+`has_podcast_access`, `edition_api_key_id` selecting which owned
 `ApiKey` bills agentic editions), `ApiKey` (owner or `is_global`, encrypted
 secret / env-backed for the global key, optional model override) /
 `ApiKeyUsage` (per-poll tokens + cost ledger, keyed by key and source),
@@ -270,8 +281,29 @@ not newsletters), `IngestRun` (per-poll audit trail),
 `NewsItemTag` (taxonomy + per-item matches with confidence/method), `Summary`
 (a configured summary — type, scope mode, schedule, params) / `SummaryRun`
 (one generated edition — content, artifacts, agent cost/log), `Alert`
-(in-app notifications), and `AgentMemory` (the HEADLINES dedup store).
+(in-app notifications), `AgentMemory` (the HEADLINES dedup store), and
+`AdminSettings` (singleton row via `AdminSettings.get()` — currently holds
+the global ElevenLabs voice/model config).
 Migrations are managed with Alembic under [migrations/](migrations).
+
+### Untrusted content and prompt injection
+
+Newsletter emails and RSS/Atom feed entries are attacker-reachable text —
+anyone who can get mail delivered to the ingest mailbox, or control a feed a
+source polls, can put arbitrary content in front of the LLM. `app/llm/prompt_safety.py`
+provides `wrap_untrusted()` (delimits external content with
+`<untrusted_content>` tags) and `ANTI_INJECTION_NOTE` (a system-prompt
+instruction to treat that content as data, never as instructions), applied
+everywhere untrusted content reaches a `chat_json` call: item extraction
+(`app/sources/extract.py`), tagging (`app/tagging/llm.py`), and the
+newsletter subscription-confirmation flow (`app/services/ingest.py`).
+The confirmation flow also fetches a URL the LLM extracts from an email, so
+it's additionally guarded against SSRF: `_is_safe_external_url()` resolves
+the hostname and rejects private/loopback/link-local/reserved addresses, and
+`_fetch_confirmation_page()` re-validates every redirect hop rather than
+trusting `httpx`'s built-in redirect following. See
+`tests/test_prompt_injection.py` for example (harmless) injection payloads
+exercised through these paths.
 
 ### Auth
 
@@ -327,7 +359,7 @@ Key ones:
 | `NB_CONFIDENCE_THRESHOLD` | NB confidence floor before falling back to LLM |
 | `IMAP_*` | newsletter mailbox (Gmail needs a 16-char **App Password**) |
 | `SMTP_*` / `MAIL_FROM` | outgoing mail for magic links |
-| `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` | TTS for podcast summaries |
+| `ELEVENLABS_API_KEY` | global TTS key for podcast summaries (voice/model config lives in the Admin page, not env vars) |
 | `POLL_INTERVAL` | default source poll interval (seconds, default 3600) |
 | `WORKER_ENABLED` | run the in-process scheduler on this node |
 | `AGENT_ENABLED` | enable agentic summary generation |

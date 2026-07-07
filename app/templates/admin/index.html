@@ -125,7 +125,7 @@
 <h2 class="h5">Users</h2>
 <div class="table-responsive shadow-sm mb-4">
   <table class="table bg-white mb-0">
-    <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th><th>Approved</th><th></th></tr></thead>
+    <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th><th>Approved</th><th>Podcast</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       <tr>
@@ -134,10 +134,14 @@
         <td>{{ '✓' if u.email_verified else '—' }}</td>
         <td>{{ 'admin' if u.is_admin else 'user' }}</td>
         <td>{{ '✓' if u.is_approved else '—' }}</td>
-        <td>
+        <td>{{ '✓' if u.has_podcast_access else '—' }}</td>
+        <td class="text-nowrap">
           {% if not u.is_admin %}
           <form method="post" action="{{ url_for('admin.user_approve', user_id=u.id) }}" class="d-inline">
             <button class="btn btn-sm btn-outline-secondary">{{ 'Revoke approval' if u.approved else 'Approve' }}</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.user_podcast_access', user_id=u.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">{{ 'Revoke podcast' if u.podcast_enabled else 'Allow podcast' }}</button>
           </form>
           {% endif %}
         </td>
@@ -180,5 +184,46 @@
     {% endfor %}
     </tbody>
   </table>
+</div>
+
+<h2 class="h5 mt-4" id="admin-settings" style="scroll-margin-top:5rem">Admin Settings</h2>
+<div class="card shadow-sm" style="max-width: 560px">
+  <div class="card-header fw-semibold">Podcast (shared ElevenLabs voice)</div>
+  <div class="card-body">
+    <p class="form-text mt-0">
+      All podcasts are generated with one shared ElevenLabs API key
+      (<code>ELEVENLABS_API_KEY</code>), configured via the server environment — not editable
+      here. It is currently
+      {% if elevenlabs_key_configured %}
+        <span class="text-success">configured</span>.
+      {% else %}
+        <span class="text-danger">not configured</span> — podcast export won't work until it is.
+      {% endif %}
+    </p>
+    <form method="post" action="{{ url_for('admin.save_admin_settings') }}">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Host A voice ID</label>
+          <input name="elevenlabs_voice_host_a" class="form-control font-monospace"
+                 value="{{ admin_settings.elevenlabs_voice_host_a or '' }}"
+                 placeholder="e.g. 21m00Tcm4TlvDq8ikWAM">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Host B voice ID</label>
+          <input name="elevenlabs_voice_host_b" class="form-control font-monospace"
+                 value="{{ admin_settings.elevenlabs_voice_host_b or '' }}"
+                 placeholder="e.g. TxGEqnHWrfWFTfGW9XjX">
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">TTS model</label>
+        <input name="elevenlabs_model" class="form-control"
+               value="{{ admin_settings.elevenlabs_model or '' }}"
+               placeholder="eleven_multilingual_v2">
+        <div class="form-text">Leave blank to use <code>eleven_multilingual_v2</code>.</div>
+      </div>
+      <button class="btn btn-primary">Save</button>
+    </form>
+  </div>
 </div>
 {% endblock %}

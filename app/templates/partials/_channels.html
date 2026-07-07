@@ -12,7 +12,7 @@
   <span class="channel-icon channel-icon--edition" title="Written edition">
     <i class="fa-solid fa-newspaper" aria-hidden="true"></i>
   </span>
-  {% if run.news_podcast_audio %}
+  {% if run.news_podcast_audio and current_user.has_podcast_access %}
   <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
      class="channel-icon channel-icon--podcast" title="Podcast">
     <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>
@@ -32,7 +32,7 @@
 <div class="card shadow-sm mb-4 d-print-none">
   <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
     <span class="small text-body-secondary me-1">Also available as:</span>
-    {% if run.news_podcast_audio %}
+    {% if run.news_podcast_audio and current_user.has_podcast_access %}
     <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
        class="channel-pill channel-pill--podcast">
       <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>Podcast

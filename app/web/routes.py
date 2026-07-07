@@ -234,23 +234,8 @@ def settings():
     types = summary_registry.all_types()
 
     if request.method == "POST":
-        # ElevenLabs settings
-        if request.form.get("clear_elevenlabs_key"):
-            current_user.set_elevenlabs_key(None)
-        else:
-            el_key = (request.form.get("elevenlabs_api_key") or "").strip()
-            if el_key:
-                current_user.set_elevenlabs_key(el_key)
-        current_user.elevenlabs_voice_host_a = (
-            (request.form.get("elevenlabs_voice_host_a") or "").strip() or None
-        )
-        current_user.elevenlabs_voice_host_b = (
-            (request.form.get("elevenlabs_voice_host_b") or "").strip() or None
-        )
-        current_user.elevenlabs_model = (
-            (request.form.get("elevenlabs_model") or "").strip() or None
-        )
-        current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
+        if current_user.has_podcast_access:
+            current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
         try:
             current_user.pdf_font_scale = max(50, min(150, int(request.form.get("pdf_font_scale") or 80)))
         except (ValueError, TypeError):
@@ -258,7 +243,7 @@ def settings():
         db.session.commit()
 
         # Podcast format memory (user-level, no summary)
-        if "mem_news_podcast_format" in request.form:
+        if current_user.has_podcast_access and "mem_news_podcast_format" in request.form:
             from ..services.podcast import _set_news_podcast_format
             _set_news_podcast_format(current_user, request.form.get("mem_news_podcast_format", ""))
 
@@ -290,10 +275,12 @@ def settings():
         }
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
-    news_podcast_format = _get_news_podcast_format(current_user)
-
-    feed_token = current_user.get_or_create_feed_token()
-    podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
+    news_podcast_format = None
+    podcast_feed_url = None
+    if current_user.has_podcast_access:
+        news_podcast_format = _get_news_podcast_format(current_user)
+        feed_token = current_user.get_or_create_feed_token()
+        podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
 
     return render_template(
         "settings.html",
@@ -455,7 +442,7 @@ def source_new():
                 flash("No newsletter mailbox is configured yet — ask an admin to add one first.", "danger")
             else:
                 name = (request.form.get("newsletter_name") or "").strip()
-                domain = (request.form.get("newsletter_domain") or "").strip().lower().lstrip("@")
+                domain = ingest.normalize_domain(request.form.get("newsletter_domain"))
                 if not name or not domain:
                     flash("Enter both the newsletter's name and its sending domain.", "danger")
                 else:
@@ -1082,15 +1069,17 @@ def edition_mark_unread(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast")
 @login_required
 def edition_podcast(summary_id: int, run_id: int):
+    if not current_user.has_podcast_access:
+        abort(403)
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    if not current_user.has_elevenlabs_key:
-        flash("Add your ElevenLabs API key in Settings before generating a podcast.", "warning")
-        return redirect(url_for("web.settings"))
+    if not current_app.config.get("ELEVENLABS_API_KEY"):
+        flash("Podcast export isn't configured yet — ask an admin to set it up.", "warning")
+        return redirect(url_for("web.dashboard"))
     from ..services import podcast_registry
     saved_script = run.news_podcast_script or ""
     saved_audio = run.news_podcast_audio or ""
@@ -1125,6 +1114,8 @@ def edition_podcast_start(summary_id: int, run_id: int):
     from ..services import podcast as podcast_svc
     from ..services import podcast_registry
 
+    if not current_user.has_podcast_access:
+        abort(403)
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
@@ -1160,6 +1151,8 @@ def edition_podcast_events(summary_id: int, run_id: int):
     """SSE stream of the active podcast job's events (re-attachable)."""
     from ..services import podcast_registry
 
+    if not current_user.has_podcast_access:
+        abort(403)
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
@@ -1203,6 +1196,8 @@ def edition_podcast_events(summary_id: int, run_id: int):
 )
 @login_required
 def edition_podcast_save_script(summary_id: int, run_id: int):
+    if not current_user.has_podcast_access:
+        abort(403)
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
@@ -1225,6 +1220,8 @@ def edition_podcast_save_script(summary_id: int, run_id: int):
 @login_required
 def edition_podcast_set_auto(summary_id: int, run_id: int):
     """Persist the user's 'auto-generate podcast on edition release' preference."""
+    if not current_user.has_podcast_access:
+        abort(403)
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)

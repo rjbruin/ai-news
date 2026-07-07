@@ -13,11 +13,14 @@
     <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
     <a class="nav-link px-2 py-1" href="#sec-headlines">Recent headlines</a>
     {% endif %}
-    <a class="nav-link px-2 py-1" href="{{ url_for('web.api_keys') }}">API keys</a>
+    <a class="nav-link px-2 py-1" href="{{ url_for('web.api_keys') }}">
+      API keys <i class="fa-solid fa-arrow-up-right-from-square fa-2xs ms-1" title="Managed on a separate page"></i>
+    </a>
     <a class="nav-link px-2 py-1" href="#sec-pdf">PDF export</a>
-    <a class="nav-link px-2 py-1" href="#sec-elevenlabs">Podcast voices</a>
+    {% if current_user.has_podcast_access %}
     <a class="nav-link px-2 py-1" href="#sec-podcast-format">Podcast format</a>
     <a class="nav-link px-2 py-1" href="#sec-feed">Podcast feed</a>
+    {% endif %}
   </nav>
 </div>
 
@@ -145,58 +148,27 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-4" id="sec-elevenlabs" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">ElevenLabs <span class="fw-normal text-body-secondary">(podcast export)</span></div>
+  {% if current_user.has_podcast_access %}
+  <div class="card shadow-sm mb-4" id="sec-podcast-format" style="scroll-margin-top:5rem">
+    <div class="card-header fw-semibold">Podcast</div>
     <div class="card-body">
-      <div class="mb-3">
-        <label class="form-label">API key</label>
-        <input type="password" name="elevenlabs_api_key" class="form-control"
-               autocomplete="off"
-               placeholder="{{ 'A key is set — type a new one to replace it' if current_user.has_elevenlabs_key else 'sk_...' }}">
-        <div class="form-text">
-          {% if current_user.has_elevenlabs_key %}
-            <span class="text-success">✓ A key is stored (encrypted).</span> Leave blank to keep it.
-          {% else %}
-            No key stored yet. Required for podcast audio generation.
-          {% endif %}
-        </div>
-        {% if current_user.has_elevenlabs_key %}
-        <div class="form-check mt-2">
-          <input type="checkbox" name="clear_elevenlabs_key" value="1" class="form-check-input" id="clear_elevenlabs_key">
-          <label class="form-check-label" for="clear_elevenlabs_key">Remove the stored key</label>
-        </div>
-        {% endif %}
-      </div>
-      <div class="row g-3 mb-3">
-        <div class="col-md-6">
-          <label class="form-label">Host A voice ID</label>
-          <input name="elevenlabs_voice_host_a" class="form-control font-monospace"
-                 value="{{ current_user.elevenlabs_voice_host_a or '' }}"
-                 placeholder="e.g. 21m00Tcm4TlvDq8ikWAM">
-          <div class="form-text">ElevenLabs voice ID for the first host (Alex).</div>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Host B voice ID</label>
-          <input name="elevenlabs_voice_host_b" class="form-control font-monospace"
-                 value="{{ current_user.elevenlabs_voice_host_b or '' }}"
-                 placeholder="e.g. TxGEqnHWrfWFTfGW9XjX">
-          <div class="form-text">ElevenLabs voice ID for the second host (Sam).</div>
-        </div>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">TTS model</label>
-        <input name="elevenlabs_model" class="form-control"
-               value="{{ current_user.elevenlabs_model or '' }}"
-               placeholder="eleven_multilingual_v2">
-        <div class="form-text">Leave blank to use <code>eleven_multilingual_v2</code>.</div>
-      </div>
-      <div class="form-check mb-0">
+      <div class="form-check mb-3">
         <input type="checkbox" name="podcast_auto_generate" value="1" class="form-check-input"
                id="podcast_auto_generate" {{ 'checked' if current_user.podcast_auto_generate else '' }}>
         <label class="form-check-label" for="podcast_auto_generate">
           Auto-generate podcast on edition release
         </label>
         <div class="form-text">When enabled, each newly released edition automatically generates its podcast (script and audio) in the background. Off by default.</div>
+      </div>
+      <label class="form-label">Format instructions</label>
+      <p class="form-text mb-2">
+        Markdown instructions sent to the LLM when generating the podcast script.
+        The script must use <code>HOST A:</code> / <code>HOST B:</code> line prefixes.
+      </p>
+      <textarea name="mem_news_podcast_format" class="form-control font-monospace" rows="14"
+                spellcheck="false">{{ news_podcast_format }}</textarea>
+      <div class="form-text mt-2">
+        <a href="#" id="reset-news-podcast-format">Reset to default</a>
       </div>
     </div>
   </div>
@@ -222,21 +194,7 @@
       </div>
     </div>
   </div>
-
-  <div class="card shadow-sm mb-4" id="sec-podcast-format" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">Podcast — format instructions</div>
-    <div class="card-body">
-      <p class="form-text mb-2">
-        Markdown instructions sent to the LLM when generating the podcast script.
-        The script must use <code>HOST A:</code> / <code>HOST B:</code> line prefixes.
-      </p>
-      <textarea name="mem_news_podcast_format" class="form-control font-monospace" rows="14"
-                spellcheck="false">{{ news_podcast_format }}</textarea>
-      <div class="form-text mt-2">
-        <a href="#" id="reset-news-podcast-format">Reset to default</a>
-      </div>
-    </div>
-  </div>
+  {% endif %}
 
   <div class="text-end mb-4">
     <button class="btn btn-primary">Save</button>

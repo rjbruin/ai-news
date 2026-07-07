@@ -500,16 +500,19 @@ ul,ol{margin-bottom:1rem;padding-left:2rem}
 def _maybe_autogenerate_podcast(summary: Summary, run: SummaryRun) -> None:
     """Kick off a background podcast job for a freshly-cut edition, if opted in.
 
-    Gated on the user's ``podcast_auto_generate`` preference (off by default)
-    and a configured ElevenLabs key. Runs the full script→audio pipeline in a
-    daemon thread; failures surface as job events, not exceptions here.
+    Gated on the user's ``podcast_auto_generate`` preference (off by default),
+    the user having podcast access at all, and a configured global ElevenLabs
+    key. Runs the full script→audio pipeline in a daemon thread; failures
+    surface as job events, not exceptions here.
     """
     import threading
 
     user = summary.user
     if user is None or not getattr(user, "podcast_auto_generate", False):
         return
-    if not user.has_elevenlabs_key:
+    if not user.has_podcast_access:
+        return
+    if not current_app.config.get("ELEVENLABS_API_KEY"):
         return
 
     from . import podcast as podcast_svc

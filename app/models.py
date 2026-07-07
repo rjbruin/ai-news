@@ -51,11 +51,10 @@ class User(UserMixin, db.Model):
     # system instead of separate per-feature credentials.
     edition_api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=True)
 
-    # ElevenLabs TTS credentials for podcast export.
-    elevenlabs_api_key_enc = db.Column(db.Text, nullable=True)
-    elevenlabs_voice_host_a = db.Column(db.String(120), nullable=True)
-    elevenlabs_voice_host_b = db.Column(db.String(120), nullable=True)
-    elevenlabs_model = db.Column(db.String(120), nullable=True)
+    # Podcast export is opt-in per user (admins always have it — see
+    # has_podcast_access); the ElevenLabs credential/voice/model themselves
+    # are global admin settings now, not per-user (see AdminSettings).
+    podcast_enabled = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
     podcast_auto_generate = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
     pdf_font_scale = db.Column(db.Integer, default=80, nullable=False, server_default="80")
 
@@ -81,20 +80,6 @@ class User(UserMixin, db.Model):
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
-
-    def set_elevenlabs_key(self, plaintext: str | None) -> None:
-        from .crypto import encrypt
-
-        self.elevenlabs_api_key_enc = encrypt(plaintext) if plaintext else None
-
-    def get_elevenlabs_key(self) -> str | None:
-        from .crypto import decrypt
-
-        return decrypt(self.elevenlabs_api_key_enc) if self.elevenlabs_api_key_enc else None
-
-    @property
-    def has_elevenlabs_key(self) -> bool:
-        return bool(self.elevenlabs_api_key_enc)
 
     def get_or_create_feed_token(self) -> str:
         """Return the podcast-feed token, generating and persisting one if absent."""
@@ -135,6 +120,12 @@ class User(UserMixin, db.Model):
         set by an admin.
         """
         return bool(self.approved) or self.is_admin
+
+    @property
+    def has_podcast_access(self) -> bool:
+        """Whether this user may generate/export podcasts. Admins always do;
+        everyone else needs the ``podcast_enabled`` flag set by an admin."""
+        return bool(self.podcast_enabled) or self.is_admin
 
 
 class AuthToken(db.Model):
@@ -624,6 +615,30 @@ class AgentMemory(db.Model):
     )
 
 
+class AdminSettings(db.Model):
+    """Single-row table for admin-managed global settings that aren't tied to
+    any one user — currently just the shared podcast voice profile. The
+    ElevenLabs credential itself stays a plain env var (``ELEVENLABS_API_KEY``),
+    like the pre-ApiKey-system global OpenRouter key: one shared secret, not a
+    per-row DB record."""
+
+    __tablename__ = "admin_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    elevenlabs_voice_host_a = db.Column(db.String(120), nullable=True)
+    elevenlabs_voice_host_b = db.Column(db.String(120), nullable=True)
+    elevenlabs_model = db.Column(db.String(120), nullable=True)
+
+    @classmethod
+    def get(cls) -> "AdminSettings":
+        row = cls.query.first()
+        if row is None:
+            row = cls()
+            db.session.add(row)
+            db.session.commit()
+        return row
+
+
 # Convenience export used by the factory.
 __all__ = [
     "User",
@@ -640,4 +655,5 @@ __all__ = [
     "Summary",
     "SummaryRun",
     "AgentMemory",
+    "AdminSettings",
 ]
