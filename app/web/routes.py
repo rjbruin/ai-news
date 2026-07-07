@@ -147,6 +147,15 @@ def dashboard():
         s for s in my_summaries if not featured_summary or s.id != featured_summary.id
     ]
 
+    enabled_sources = [
+        s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
+        # A top-level imap_newsletter source is the mailbox connection itself,
+        # not a source a user thinks about — its newsletter children are.
+        if not (s.parent_source_id is None and s.type_key == "imap_newsletter")
+    ]
+    source_badges = sorted({_source_badge_label(s) for s in enabled_sources})
+    has_api_key = ApiKey.query.filter_by(owner_user_id=current_user.id).first() is not None
+
     return render_template(
         "dashboard.html",
         my_summaries=my_summaries,
@@ -154,7 +163,19 @@ def dashboard():
         featured_summary=featured_summary,
         featured_run=featured_run,
         other_summaries=other_summaries,
+        source_badges=source_badges,
+        has_api_key=has_api_key,
     )
+
+
+def _source_badge_label(source: Source) -> str:
+    """Domain for a newsletter subscription, name for everything else."""
+    if source.is_newsletter_subscription:
+        addr = (source.config or {}).get("newsletter_sender") or ""
+        if "@" in addr:
+            return addr.rsplit("@", 1)[-1]
+        return (source.config or {}).get("newsletter_domain") or source.name
+    return source.name
 
 
 @bp.route("/dashboard/feature", methods=["POST"])
