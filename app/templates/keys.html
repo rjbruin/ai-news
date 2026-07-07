@@ -4,8 +4,9 @@
 <h1 class="h3 mb-3">API keys</h1>
 <p class="text-body-secondary small">
   These OpenRouter keys pay for fetching and tagging the news sources you assign them to
-  (see <a href="{{ url_for('web.sources') }}">Sources</a>). Revoke a key to stop it being used
-  immediately — any source using it is disabled automatically.
+  (see <a href="{{ url_for('web.sources') }}">Sources</a>), and one of your own keys can also pay
+  for generating your editions. Revoke a key to stop it being used immediately — any source using
+  it is disabled automatically.
 </p>
 
 <div class="table-responsive shadow-sm mb-4">
@@ -15,8 +16,11 @@
     {% for k in keys %}
       <tr>
         <td>
-          {{ k.label }}
-          {% if k.is_global %}<span class="badge text-bg-secondary">shared / global</span>{% endif %}
+          {{ 'Shared key' if k.is_global else k.label }}
+          {% if k.is_global %}<span class="badge text-bg-secondary">global</span>{% endif %}
+          {% if not k.is_global and current_user.edition_api_key_id == k.id %}
+            <span class="badge text-bg-info">used for editions</span>
+          {% endif %}
         </td>
         <td class="small">{{ k.model or 'system default' }}</td>
         <td class="small">{{ k.sources.count() }}</td>
@@ -30,6 +34,10 @@
           {% endif %}
         </td>
         <td class="text-nowrap">
+          {% if not k.is_global and current_user.edition_api_key_id != k.id %}
+          <form method="post" action="{{ url_for('web.api_key_use_for_editions', key_id=k.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-info">Use for editions</button></form>
+          {% endif %}
           {% if k.active %}
           <form method="post" action="{{ url_for('web.api_key_revoke', key_id=k.id) }}" class="d-inline"
                 onsubmit="return confirm('Revoke this key? Sources using it will be disabled.')">

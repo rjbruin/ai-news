@@ -42,6 +42,19 @@ def _merge_stats(into: dict, other: dict) -> None:
     into["error_log"].extend(other["error_log"])
 
 
+def _format_poll_status(new_items: int, fetched: int, skipped: int, errors: int) -> str:
+    """Human-readable poll summary, e.g. "3 new items (5 checked, 2 already
+    seen)". Kept free of jargon like "docs" — "checked" covers whatever the
+    source fetched (emails, feed entries, ...). Callers render this as a
+    success/error-colored badge based on whether "error" appears in it."""
+    detail = [f"{fetched} checked"]
+    if skipped:
+        detail.append(f"{skipped} already seen")
+    if errors:
+        detail.append(f"{errors} error{'s' if errors != 1 else ''}")
+    return f"{new_items} new item{'s' if new_items != 1 else ''} ({', '.join(detail)})"
+
+
 def ingest_source(source: Source) -> dict:
     """Fetch + extract + persist + tag for a single source. Returns a stat dict."""
     if source.type_key in _SPLITTING_TYPES and source.parent_source_id is None:
@@ -112,17 +125,9 @@ def _ingest_plain_source(source: Source) -> dict:
     stats["fetched"] = len(docs)
 
     source.last_polled_at = utcnow()
-    if stats["errors"]:
-        status = (
-            f"partial: {stats['new_items']} new / {stats['fetched']} docs / "
-            f"{stats['errors']} errors / {stats['skipped']} skipped"
-        )
-    else:
-        status = (
-            f"ok: {stats['new_items']} new / {stats['fetched']} docs / "
-            f"{stats['skipped']} skipped"
-        )
-    source.last_status = status
+    source.last_status = _format_poll_status(
+        stats["new_items"], stats["fetched"], stats["skipped"], stats["errors"],
+    )
     if usage_totals["tokens"] or usage_totals["cost"]:
         db.session.add(ApiKeyUsage(
             api_key_id=api_key_row.id,
@@ -390,16 +395,9 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         _merge_stats(stats, child_stats)
 
         child.last_polled_at = utcnow()
-        if child_stats["errors"]:
-            child.last_status = (
-                f"partial: {child_stats['new_items']} new / {len(child_docs)} docs / "
-                f"{child_stats['errors']} errors / {child_stats['skipped']} skipped"
-            )
-        else:
-            child.last_status = (
-                f"ok: {child_stats['new_items']} new / {len(child_docs)} docs / "
-                f"{child_stats['skipped']} skipped"
-            )
+        child.last_status = _format_poll_status(
+            child_stats["new_items"], len(child_docs), child_stats["skipped"], child_stats["errors"],
+        )
         if child_usage["tokens"] or child_usage["cost"]:
             db.session.add(ApiKeyUsage(
                 api_key_id=child_api_key_row.id,
@@ -410,12 +408,12 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
             ))
 
     mailbox.last_polled_at = utcnow()
-    summary = f"ok: {len(docs_by_child)} newsletter(s) seen"
+    summary = f"{stats['new_items']} new item{'s' if stats['new_items'] != 1 else ''} ({len(docs_by_child)} newsletter{'s' if len(docs_by_child) != 1 else ''} checked"
     if new_subscriptions:
-        summary += f", {new_subscriptions} new"
-    summary += f", {stats['new_items']} new item(s)"
+        summary += f", {new_subscriptions} new subscription{'s' if new_subscriptions != 1 else ''}"
     if stats["errors"]:
-        summary += f", {stats['errors']} errors"
+        summary += f", {stats['errors']} error{'s' if stats['errors'] != 1 else ''}"
+    summary += ")"
     mailbox.last_status = summary
     db.session.commit()
     return stats

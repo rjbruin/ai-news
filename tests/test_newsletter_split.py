@@ -83,7 +83,7 @@ def test_mailbox_splits_into_newsletter_children(db, mailbox, fake_newsletter_so
     item = NewsItem.query.filter_by(source_id=tldr.id).first()
     assert item is not None
     assert item.title == "Story A"
-    assert "2 newsletter(s) seen" in mailbox.last_status
+    assert "2 newsletters checked" in mailbox.last_status
 
 
 def test_second_poll_dedups_and_reuses_children(db, mailbox, fake_newsletter_source):

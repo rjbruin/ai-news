@@ -23,18 +23,25 @@
   {% endif %}
 {% endmacro %}
 
+{% macro status_badge(s) %}
+  {% if s.subscription_status and s.subscription_status != 'subscribed' %}
+    {{ subscription_badge(s.subscription_status) }}
+  {% elif s.last_status %}
+    <span class="badge {{ 'text-bg-danger' if 'error' in s.last_status else 'text-bg-success' }}">{{ s.last_status }}</span>
+  {% else %}
+    <span class="badge text-bg-light border text-body-secondary">never polled</span>
+  {% endif %}
+{% endmacro %}
+
 {% macro source_row(s, nested=False) %}
   <tr>
     <td>
       {% if nested %}<span class="text-body-secondary me-1">↳</span>{% endif %}
       {{ s.name }}
-      {% if nested %}<span class="badge text-bg-light border text-body-secondary">newsletter</span>{% endif %}
+      <span class="badge text-bg-light border text-body-secondary">{{ s.type_label }}</span>
       {% if not s.enabled %}<span class="badge text-bg-secondary">retracted</span>{% endif %}
     </td>
-    <td><code>{{ s.type_key }}</code></td>
-    <td class="small">
-      {% if s.owner %}{{ s.owner.username }}{% else %}<span class="text-body-secondary">admin (global)</span>{% endif %}
-    </td>
+    <td class="small">{{ s.owner_display(current_user) }}</td>
     <td class="small">
       {% if s.api_key %}
         {{ s.api_key.label }}
@@ -44,18 +51,7 @@
       {% endif %}
     </td>
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
-    <td class="small">
-      {% if s.subscription_status %}
-        {{ subscription_badge(s.subscription_status) }}
-        {% if s.subscription_status == 'subscribed' and s.last_status %}
-          <div class="mt-1"><span class="{{ 'text-danger' if 'error' in s.last_status or 'partial' in s.last_status else 'text-success' }}">{{ s.last_status }}</span></div>
-        {% endif %}
-      {% elif s.last_status %}
-        <span class="{{ 'text-danger' if 'error' in s.last_status or 'partial' in s.last_status else 'text-success' }}">{{ s.last_status }}</span>
-      {% else %}
-        <span class="text-body-secondary">never polled</span>
-      {% endif %}
-    </td>
+    <td class="small">{{ status_badge(s) }}</td>
     <td class="text-nowrap">
       {% if s.subscription_status and s.can_manage(current_user) %}
         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
@@ -80,7 +76,7 @@
 
 <div class="table-responsive shadow-sm">
   <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>API key</th><th>Usage</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Owner</th><th>API key</th><th>Usage</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
       {{ source_row(s) }}
@@ -88,7 +84,7 @@
         {{ source_row(child, nested=True) }}
       {% endfor %}
     {% else %}
-      <tr><td colspan="7" class="text-body-secondary">No sources yet.</td></tr>
+      <tr><td colspan="6" class="text-body-secondary">No sources yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

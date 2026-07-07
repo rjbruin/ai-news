@@ -234,17 +234,6 @@ def settings():
     types = summary_registry.all_types()
 
     if request.method == "POST":
-        # OpenRouter settings
-        current_user.openrouter_model = (
-            request.form.get("openrouter_model") or ""
-        ).strip() or None
-        if request.form.get("clear_key"):
-            current_user.set_openrouter_key(None)
-        else:
-            new_key = (request.form.get("openrouter_api_key") or "").strip()
-            if new_key:
-                current_user.set_openrouter_key(new_key)
-
         # ElevenLabs settings
         if request.form.get("clear_elevenlabs_key"):
             current_user.set_elevenlabs_key(None)
@@ -393,9 +382,27 @@ def api_key_delete(key_id: int):
     if key.sources.count():
         flash("Revoke or reassign this key's sources before deleting it.", "danger")
         return redirect(url_for("web.api_keys"))
+    if current_user.edition_api_key_id == key.id:
+        current_user.edition_api_key_id = None
     db.session.delete(key)
     db.session.commit()
     flash("API key deleted.", "info")
+    return redirect(url_for("web.api_keys"))
+
+
+@bp.route("/keys/<int:key_id>/use-for-editions", methods=["POST"])
+@approved_required
+def api_key_use_for_editions(key_id: int):
+    """Select which of the user's own keys pays for agentic edition
+    generation. The shared/global key is deliberately not selectable here —
+    editions are billed to the user, never silently to the shared account."""
+    key = db.session.get(ApiKey, key_id) or abort(404)
+    if key.is_global or key.owner_user_id != current_user.id:
+        flash("Only your own keys can be used for editions.", "danger")
+        return redirect(url_for("web.api_keys"))
+    current_user.edition_api_key_id = key.id
+    db.session.commit()
+    flash(f'"{key.label}" will now be used for creating editions.', "success")
     return redirect(url_for("web.api_keys"))
 
 

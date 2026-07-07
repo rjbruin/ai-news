@@ -11,19 +11,6 @@
   </div>
 </form>
 
-{% if not has_api_key and current_user.is_approved %}
-<div class="card shadow-sm mb-4 border-warning">
-  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <div>
-      <span class="fw-semibold">No API key yet</span>
-      <p class="text-body-secondary small mb-0">
-        Add your own OpenRouter API key to pay for the sources and editions you create.
-      </p>
-    </div>
-    <a href="{{ url_for('web.api_keys') }}" class="btn btn-warning flex-shrink-0">Add an API key</a>
-  </div>
-</div>
-{% endif %}
 {% if not my_summaries %}
 <div class="card shadow-sm">
   <div class="card-body text-center py-5">
@@ -78,7 +65,7 @@
         {% endif %}
       </h1>
       <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
-        <span class="text-body-secondary small">{{ featured_run.generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <span class="pill pill-teal">{{ featured_run.generated_at | natural_dt }}</span>
         <span class="pill pill-blue">{{ featured_run.item_count }} item{{ 's' if featured_run.item_count != 1 else '' }}</span>
         <span title="Channels">{{ channel_icons(featured_run) }}</span>
       </div>
@@ -166,6 +153,20 @@
     {% endif %}
   </div>
 </div>
+
+{% if not has_api_key and current_user.is_approved %}
+<div class="card shadow-sm mt-4 border-warning">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <span class="fw-semibold">No API key yet</span>
+      <p class="text-body-secondary small mb-0">
+        Add your own OpenRouter API key to pay for the sources and editions you create.
+      </p>
+    </div>
+    <a href="{{ url_for('web.api_keys') }}" class="btn btn-warning flex-shrink-0">Add an API key</a>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>

@@ -47,14 +47,16 @@ open questions; this README describes the app as it exists today.
   admins are always implicitly approved.
 - **PWA** — installable on Android/iOS, app icon, offline shell via a service
   worker.
-- **LLM / API keys** — ingestion (extraction) and tagging run on whichever
-  `ApiKey` a source is assigned, so cost is attributed per source/per key
-  instead of always hitting one shared budget. The legacy `OPENROUTER_API_KEY`
-  env var is exposed as a singleton **global key**, manageable by any admin;
-  approved users can also add their own OpenRouter keys (Settings → API Keys)
-  and assign them to sources they create. Agentic summary generation is
-  separately billed to each user's own OpenRouter key (configured in
-  Settings) regardless of source ownership.
+- **LLM / API keys** — one unified system (`/keys`) covers both sources and
+  editions. Ingestion (extraction) and tagging run on whichever `ApiKey` a
+  source is assigned, so cost is attributed per source/per key instead of
+  always hitting one shared budget. The legacy `OPENROUTER_API_KEY` env var is
+  exposed as a singleton **global/"Shared" key**, manageable by any admin.
+  Approved users can add their own OpenRouter keys and assign them to sources
+  they create, and select one of their own keys to bill agentic edition
+  generation to (`User.edition_api_key_id`) — the shared key is deliberately
+  not selectable for editions, so a missing selection is a clear error rather
+  than a silent charge to the shared account.
 
 ## Architecture
 
@@ -230,10 +232,11 @@ Types with `is_agentic = True` (`agentic_page`) instead go through
 
 1. Builds an `AgentSession` (`app/agent/context.py`) scoping the in-window
    `NewsItem`s and any prior block document (for feedback-driven revisions).
-2. Resolves the *user's own* OpenRouter key/model (`app/agent/creds.py`) —
+2. Resolves credentials via `app/agent/creds.py`, which reads the user's
+   selected `edition_api_key` (`User.edition_api_key_id`, picked on `/keys`) —
    agentic runs deliberately do **not** fall back to the global key, so a
-   missing key surfaces as an actionable error, not a silent charge to the
-   shared account.
+   missing selection surfaces as an actionable error, not a silent charge to
+   the shared account.
 3. Drives the tool-calling loop in `app/agent/runner.py`: composes a system
    prompt (`app/agent/prompt.py`) from the user's content configuration and
    interests, then repeatedly calls the model with the tool specs from
@@ -255,12 +258,14 @@ audio via ElevenLabs TTS and expose it as a per-user podcast RSS feed
 ### Data model
 
 Key tables (`app/models.py`): `User` (auth, admin derived from
-`ADMIN_EMAILS`, `approved` flag, encrypted OpenRouter key), `ApiKey`
-(owner or `is_global`, encrypted secret / env-backed for the global key,
-optional model override) / `ApiKeyUsage` (per-poll tokens + cost ledger,
-keyed by key and source), `Source` (plugin type + config JSON + poll
-interval + owner + assigned `ApiKey` + `parent_source_id`/`subscription_status`
-for newsletter subscriptions), `IngestRun` (per-poll audit trail),
+`ADMIN_EMAILS`, `approved` flag, `edition_api_key_id` selecting which owned
+`ApiKey` bills agentic editions), `ApiKey` (owner or `is_global`, encrypted
+secret / env-backed for the global key, optional model override) /
+`ApiKeyUsage` (per-poll tokens + cost ledger, keyed by key and source),
+`Source` (plugin type + config JSON + poll interval + owner + assigned
+`ApiKey` + `parent_source_id`/`subscription_status` for newsletter
+subscriptions), `IgnoredSender` (per-mailbox senders an admin has marked as
+not newsletters), `IngestRun` (per-poll audit trail),
 `NewsItem` (cleaned text, dedup hash, one-liner, status), `Tag` /
 `NewsItemTag` (taxonomy + per-item matches with confidence/method), `Summary`
 (a configured summary — type, scope mode, schedule, params) / `SummaryRun`

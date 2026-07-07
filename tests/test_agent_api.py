@@ -5,11 +5,12 @@ import pytest
 from app.models import Summary, SummaryRun
 from app.services import summarize
 
+from conftest import give_edition_key
+
 
 @pytest.fixture
 def keyed_summary(db, user):
-    user.set_openrouter_key("sk-or-test")
-    user.openrouter_model = "test/model"
+    give_edition_key(db, user, "sk-or-test", "test/model")
     s = Summary(
         user_id=user.id, name="API Daily", type_key="agentic_page",
         scope_mode="fixed_period", period="day",

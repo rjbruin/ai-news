@@ -3,7 +3,20 @@ import pytest
 from app import create_app
 from app.config import TestConfig
 from app.extensions import db as _db
-from app.models import NewsItem, Tag, User
+from app.models import ApiKey, NewsItem, Tag, User
+
+
+def give_edition_key(db, user, secret: str = "sk-or-test", model: str | None = None) -> ApiKey:
+    """Create a personal ApiKey for ``user`` and select it for editions —
+    the test equivalent of adding a key on /keys and clicking "Use for
+    editions"."""
+    key = ApiKey(owner_user_id=user.id, label="Test edition key", model=model)
+    key.set_key(secret)
+    db.session.add(key)
+    db.session.commit()
+    user.edition_api_key_id = key.id
+    db.session.commit()
+    return key
 
 
 @pytest.fixture
