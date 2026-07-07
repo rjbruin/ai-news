@@ -30,7 +30,7 @@ from ..models import (
     Tag,
     User,
 )
-from ..services import ingest
+from ..services import costs, ingest
 from ..services.summarize import resend_edition_email
 from ..sources import registry as source_registry
 
@@ -69,6 +69,7 @@ def index():
         ignored_senders=IgnoredSender.query.order_by(IgnoredSender.created_at.desc()).all(),
         admin_settings=AdminSettings.get(),
         elevenlabs_key_configured=bool(current_app.config.get("ELEVENLABS_API_KEY")),
+        cost_summary=costs.cost_summary(),
     )
 
 
