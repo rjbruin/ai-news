@@ -26,8 +26,10 @@ from functools import wraps
 
 from ..agent.runner import AgentCancelled
 from ..extensions import db
-from ..models import ApiKey, Alert, NewsItem, Source, Summary, SummaryRun, User, utcnow
-from ..services import generation_registry, ingest, summarize
+from ..models import (
+    ApiKey, Alert, EditionRecipient, NewsItem, Source, Summary, SummaryRun, User, utcnow,
+)
+from ..services import edition_mail, generation_registry, ingest, summarize
 from ..sources import registry as source_registry
 from ..summaries import registry as summary_registry
 
@@ -219,6 +221,94 @@ def search():
     )
 
 
+# ───────────────────────── Edition recipients ─────────────────────────
+# The list starts seeded with just the account's own email — done once, at
+# registration time (app/auth/routes.py) and via a one-off migration backfill
+# for pre-existing accounts — never re-seeded lazily here, since a user who
+# deliberately empties the list (e.g. to stop all edition mail) shouldn't
+# have it silently repopulated the next time they open Settings.
+def _sync_send_email_toggle(user: User) -> None:
+    """Auto-check/uncheck "Send as email newsletter" based on whether the
+    user has any confirmed recipients left."""
+    summary = (
+        Summary.query.filter_by(user_id=user.id, type_key="agentic_page").first()
+    )
+    if summary is None:
+        return
+    has_confirmed = user.edition_recipients.filter(
+        EditionRecipient.confirmed_at.isnot(None)
+    ).count() > 0
+    params = dict(summary.params or {})
+    if params.get("send_email") != has_confirmed:
+        params["send_email"] = has_confirmed
+        summary.params = params
+        db.session.commit()
+
+
+@bp.route("/settings/recipients", methods=["POST"])
+@login_required
+def recipient_add():
+    email = (request.form.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        flash("Enter a valid email address.", "danger")
+        return redirect(url_for("web.settings") + "#sec-recipients")
+    if current_user.edition_recipients.filter_by(email=email).first():
+        flash("That address is already on the list.", "danger")
+        return redirect(url_for("web.settings") + "#sec-recipients")
+
+    token = secrets.token_urlsafe(32)
+    recipient = EditionRecipient(user_id=current_user.id, email=email, confirm_token=token)
+    db.session.add(recipient)
+    db.session.commit()
+
+    confirm_url = url_for("web.recipient_confirm", token=token, _external=True)
+    edition_mail.send_via_newsletter_mailbox(
+        email,
+        "Confirm this email for your Dispatch editions",
+        f"You've been added as a recipient of {current_user.username}'s Dispatch edition "
+        f"emails. Click to confirm:\n\n{confirm_url}\n\n"
+        "If you didn't expect this, you can ignore this message.",
+    )
+    flash(f"Confirmation email sent to {email}.", "success")
+    return redirect(url_for("web.settings") + "#sec-recipients")
+
+
+@bp.route("/recipients/confirm/<token>")
+def recipient_confirm(token: str):
+    recipient = EditionRecipient.query.filter_by(confirm_token=token).first()
+    if recipient is None:
+        flash("That confirmation link is invalid or has already been used.", "danger")
+        return redirect(url_for("auth.login"))
+    recipient.confirmed_at = utcnow()
+    recipient.confirm_token = None
+    db.session.commit()
+    _sync_send_email_toggle(recipient.user)
+    flash(f"{recipient.email} will now receive Dispatch edition emails.", "success")
+    return redirect(url_for("auth.login"))
+
+
+@bp.route("/settings/recipients/<int:recipient_id>/remove", methods=["POST"])
+@login_required
+def recipient_remove(recipient_id: int):
+    recipient = db.session.get(EditionRecipient, recipient_id) or abort(404)
+    if recipient.user_id != current_user.id:
+        abort(403)
+    email = recipient.email
+    was_confirmed = recipient.is_confirmed
+    db.session.delete(recipient)
+    db.session.commit()
+    _sync_send_email_toggle(current_user)
+    if was_confirmed:
+        edition_mail.send_via_newsletter_mailbox(
+            email,
+            "Removed from Dispatch edition emails",
+            f"{email} has been removed as a recipient of {current_user.username}'s "
+            "Dispatch edition emails. You will no longer receive them.",
+        )
+    flash(f"Removed {email}.", "info")
+    return redirect(url_for("web.settings") + "#sec-recipients")
+
+
 # ───────────────────────── Settings ─────────────────────────
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
@@ -282,6 +372,8 @@ def settings():
         feed_token = current_user.get_or_create_feed_token()
         podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
 
+    recipients = current_user.edition_recipients.order_by(EditionRecipient.created_at).all()
+
     return render_template(
         "settings.html",
         summary=summary, types=types,
@@ -289,6 +381,7 @@ def settings():
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
         podcast_feed_url=podcast_feed_url,
+        recipients=recipients,
     )
 
 

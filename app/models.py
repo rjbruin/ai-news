@@ -75,6 +75,10 @@ class User(UserMixin, db.Model):
         "Summary", back_populates="user", lazy="dynamic",
         foreign_keys="Summary.user_id",
     )
+    edition_recipients = db.relationship(
+        "EditionRecipient", back_populates="user", lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
     featured_summary = db.relationship("Summary", foreign_keys=[featured_summary_id])
     edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
 
@@ -126,6 +130,32 @@ class User(UserMixin, db.Model):
         """Whether this user may generate/export podcasts. Admins always do;
         everyone else needs the ``podcast_enabled`` flag set by an admin."""
         return bool(self.podcast_enabled) or self.is_admin
+
+
+class EditionRecipient(db.Model):
+    """One email address that should receive edition emails for a user.
+
+    Starts seeded with just the account's own email (auto-confirmed — no
+    need to re-verify an address the account itself already owns). Any
+    additional address needs to click a confirmation link before it starts
+    receiving mail, and gets a notification when removed.
+    """
+
+    __tablename__ = "edition_recipients"
+    __table_args__ = (db.UniqueConstraint("user_id", "email", name="uq_edition_recipient"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False)
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    confirm_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    user = db.relationship("User", back_populates="edition_recipients")
+
+    @property
+    def is_confirmed(self) -> bool:
+        return self.confirmed_at is not None
 
 
 class AuthToken(db.Model):
@@ -656,4 +686,5 @@ __all__ = [
     "SummaryRun",
     "AgentMemory",
     "AdminSettings",
+    "EditionRecipient",
 ]
