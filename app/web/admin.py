@@ -18,6 +18,7 @@ from ..extensions import db
 from ..models import (
     Alert,
     ApiKey,
+    IgnoredSender,
     IngestRun,
     NewsItem,
     NewsItemTag,
@@ -63,6 +64,7 @@ def index():
         users=User.query.order_by(User.created_at).all(),
         source_types=source_registry.all_types(),
         recent_runs=recent_runs,
+        ignored_senders=IgnoredSender.query.order_by(IgnoredSender.created_at.desc()).all(),
     )
 
 
@@ -200,6 +202,47 @@ def source_mark_subscribed(source_id: int):
             level="success",
         )
     flash(f'Marked "{source.name}" as subscribed.', "success")
+    return redirect(url_for("admin.index"))
+
+
+@bp.route("/sources/<int:source_id>/ignore", methods=["POST"])
+@admin_required
+def source_ignore(source_id: int):
+    """Mark a newsletter subscription as not actually a newsletter: delete it
+    and remember its sender address so this mailbox's polling and reindexing
+    skip it going forward instead of re-detecting it."""
+    source = db.session.get(Source, source_id) or abort(404)
+    if not source.is_newsletter_subscription:
+        flash("Only newsletter subscriptions can be marked as not-a-newsletter.", "danger")
+        return redirect(url_for("admin.index"))
+    addr = (source.config or {}).get("newsletter_sender")
+    if not addr:
+        flash("This subscription hasn't received any mail yet — nothing to ignore.", "danger")
+        return redirect(url_for("admin.index"))
+
+    mailbox_id = source.parent_source_id
+    existing = IgnoredSender.query.filter_by(mailbox_source_id=mailbox_id, email=addr).first()
+    if existing is None:
+        db.session.add(IgnoredSender(
+            mailbox_source_id=mailbox_id,
+            email=addr,
+            display_name=(source.config or {}).get("newsletter_sender_name") or source.name,
+            created_by_user_id=current_user.id,
+        ))
+    db.session.delete(source)
+    db.session.commit()
+    flash(f'"{addr}" will be ignored — it will no longer be treated as a newsletter.', "info")
+    return redirect(url_for("admin.index"))
+
+
+@bp.route("/ignored-senders/<int:ignored_id>/delete", methods=["POST"])
+@admin_required
+def ignored_sender_delete(ignored_id: int):
+    row = db.session.get(IgnoredSender, ignored_id) or abort(404)
+    email = row.email
+    db.session.delete(row)
+    db.session.commit()
+    flash(f'"{email}" removed from the ignore list.', "info")
     return redirect(url_for("admin.index"))
 
 

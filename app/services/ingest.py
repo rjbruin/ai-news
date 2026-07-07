@@ -10,7 +10,18 @@ from email.utils import parseaddr
 
 from ..extensions import db
 from ..llm import openrouter
-from ..models import Alert, ApiKey, ApiKeyUsage, IngestRun, NewsItem, Source, Tag, User, utcnow
+from ..models import (
+    Alert,
+    ApiKey,
+    ApiKeyUsage,
+    IgnoredSender,
+    IngestRun,
+    NewsItem,
+    Source,
+    Tag,
+    User,
+    utcnow,
+)
 from ..sources import registry as source_registry
 from ..tagging import engine as tagging_engine
 
@@ -210,6 +221,15 @@ def _sender_key(sender: str | None) -> tuple[str, str]:
     return addr or "unknown-sender", display_name.strip()
 
 
+def _ignored_addresses(mailbox: Source) -> set[str]:
+    """Sender addresses an admin has confirmed aren't newsletters for this
+    mailbox — skipped during polling and reindexing."""
+    return {
+        row.email for row in
+        IgnoredSender.query.filter_by(mailbox_source_id=mailbox.id).all()
+    }
+
+
 def _get_or_create_newsletter_child(
     mailbox: Source, children_by_sender: dict, addr: str, display_name: str
 ) -> tuple[Source, bool]:
@@ -288,11 +308,15 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         for c in mailbox.children
         if c.subscription_status == "waiting_confirmation" and (c.config or {}).get("newsletter_domain")
     }
+    ignored = _ignored_addresses(mailbox)
 
     docs_by_child: dict[int, list] = {}
     child_by_id: dict[int, Source] = {}
     for doc in docs:
         addr, display_name = _sender_key((doc.meta or {}).get("from"))
+        if addr in ignored:
+            stats["skipped"] += 1
+            continue
         child = children_by_sender.get(addr)
 
         if child is None:
@@ -590,10 +614,13 @@ def reindex_newsletter_mailbox(mailbox: Source) -> dict:
         raise ValueError(f"Source type '{mailbox.type_key}' does not support reindexing.")
 
     pairs = scan()
+    ignored = _ignored_addresses(mailbox)
 
     senders: dict[str, dict] = {}
     for sender, subject in pairs:
         addr, display_name = _sender_key(sender)
+        if addr in ignored:
+            continue
         info = senders.setdefault(addr, {"display_name": display_name, "subjects": []})
         if display_name and not info["display_name"]:
             info["display_name"] = display_name

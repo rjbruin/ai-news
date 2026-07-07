@@ -55,7 +55,7 @@ def html_to_text(html: str) -> str:
 
 class ImapNewsletterSource(NewsSource):
     type_key = "imap_newsletter"
-    label = "Newsletter mailbox (IMAP)"
+    label = "Newsletter"
     description = "Fetches newsletter emails from an IMAP mailbox and extracts news."
     config_schema = {
         "host": {"type": "text", "label": "IMAP host", "required": False},

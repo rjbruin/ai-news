@@ -504,3 +504,86 @@ def test_admin_mark_subscribed(admin_client, db, pending_subscription):
     assert pending_subscription.subscription_status == "subscribed"
     alert = Alert.query.filter_by(user_id=pending_subscription.owner_user_id).first()
     assert alert is not None
+
+
+# ───────────────────────── ignored senders ─────────────────────────
+def test_ignored_sender_skipped_during_polling(db, mailbox, fake_newsletter_source):
+    from app.models import IgnoredSender
+
+    db.session.add(IgnoredSender(mailbox_source_id=mailbox.id, email="spam@example.com"))
+    db.session.commit()
+
+    fake_newsletter_source.docs = [_doc("1", "Spam Co <spam@example.com>", "Buy now")]
+    stats = ingest.ingest_source(mailbox)
+
+    assert stats["new_items"] == 0
+    assert stats["skipped"] == 1
+    assert mailbox.children.count() == 0
+
+
+def test_ignored_sender_excluded_from_reindex(db, app, mailbox, fake_newsletter_source, monkeypatch):
+    from app.models import IgnoredSender
+
+    app.config["OPENROUTER_API_KEY"] = "sk-or-global-test"
+    db.session.add(IgnoredSender(mailbox_source_id=mailbox.id, email="spam@example.com"))
+    db.session.commit()
+    fake_newsletter_source.scan_pairs = [
+        ("Spam Co <spam@example.com>", "Buy now"),
+        ("TLDR AI <news@tldrnewsletter.com>", "Issue #1"),
+    ]
+
+    def _classify_all(messages, *, schema=None, model=None, api_key=None, temperature=0.2,
+                       timeout=60.0, usage_hook=None):
+        # Would wrongly classify both as newsletters if the ignored sender
+        # weren't filtered out before this call.
+        return {"newsletters": ["spam@example.com", "news@tldrnewsletter.com"]}
+
+    monkeypatch.setattr(ingest.openrouter, "chat_json", _classify_all)
+
+    stats = ingest.reindex_newsletter_mailbox(mailbox)
+    assert stats["unique_senders"] == 1  # spam@example.com filtered before classification
+    assert mailbox.children.count() == 1
+    assert mailbox.children.first().name == "TLDR AI"
+
+
+def test_admin_ignore_deletes_source_and_records_sender(admin_client, db, mailbox, fake_newsletter_source):
+    from app.models import IgnoredSender
+
+    fake_newsletter_source.docs = [_doc("1", "Spam Co <spam@example.com>", "Buy now")]
+    ingest.ingest_source(mailbox)
+    child = mailbox.children.first()
+    assert child is not None
+
+    resp = admin_client.post(f"/admin/sources/{child.id}/ignore", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"will be ignored" in resp.data
+
+    assert db.session.get(Source, child.id) is None
+    row = IgnoredSender.query.filter_by(mailbox_source_id=mailbox.id, email="spam@example.com").first()
+    assert row is not None
+    assert row.display_name == "Spam Co"
+
+
+def test_admin_ignore_rejects_non_subscription(admin_client, db, mailbox):
+    resp = admin_client.post(f"/admin/sources/{mailbox.id}/ignore", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Only newsletter subscriptions" in resp.data
+
+
+def test_admin_ignore_rejects_pending_without_sender(admin_client, db, pending_subscription):
+    resp = admin_client.post(f"/admin/sources/{pending_subscription.id}/ignore", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"hasn&#39;t received any mail yet" in resp.data or b"hasn't received any mail yet" in resp.data
+
+
+def test_admin_un_ignore(admin_client, db, mailbox):
+    from app.models import IgnoredSender
+
+    row = IgnoredSender(mailbox_source_id=mailbox.id, email="spam@example.com")
+    db.session.add(row)
+    db.session.commit()
+    row_id = row.id
+
+    resp = admin_client.post(f"/admin/ignored-senders/{row_id}/delete", follow_redirects=True)
+    assert resp.status_code == 200
+    assert db.session.get(IgnoredSender, row_id) is None
