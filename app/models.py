@@ -318,6 +318,9 @@ class Source(db.Model):
     # the mailbox Source they were split out of. NULL for everything else,
     # including the mailbox itself.
     parent_source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=True, index=True)
+    # Set only for newsletter subscriptions (children of a mailbox source).
+    # waiting_confirmation | failed | subscribed. NULL for everything else.
+    subscription_status = db.Column(db.String(20), nullable=True)
     config = db.Column(JSONEncodedDict, default=dict)
     poll_interval_override = db.Column(db.Integer, nullable=True)  # seconds
     enabled = db.Column(db.Boolean, default=True, nullable=False)

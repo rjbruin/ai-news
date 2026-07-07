@@ -27,7 +27,7 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import ApiKey, Alert, NewsItem, Source, Summary, SummaryRun, User, utcnow
-from ..services import generation_registry, summarize
+from ..services import generation_registry, ingest, summarize
 from ..sources import registry as source_registry
 from ..summaries import registry as summary_registry
 
@@ -379,6 +379,11 @@ def api_key_delete(key_id: int):
 
 
 # ───────────────────────── Sources ─────────────────────────
+def _mailbox_address(mailbox: Source) -> str:
+    cfg = mailbox.config or {}
+    return cfg.get("username") or current_app.config.get("IMAP_USERNAME") or "the configured mailbox"
+
+
 @bp.route("/sources")
 @login_required
 def sources():
@@ -387,23 +392,58 @@ def sources():
         .order_by(Source.created_at.desc())
         .all()
     )
-    return render_template("sources.html", sources=top_level)
+    mailbox_addresses = {
+        s.id: _mailbox_address(s) for s in top_level if s.type_key == "imap_newsletter"
+    }
+    subscribe_id = request.args.get("subscribe", type=int)
+    return render_template(
+        "sources.html", sources=top_level, mailbox_addresses=mailbox_addresses,
+        subscribe_id=subscribe_id,
+    )
 
 
 @bp.route("/sources/new", methods=["GET", "POST"])
 @approved_required
 def source_new():
-    types = source_registry.all_types()
+    types = {
+        key: cls for key, cls in source_registry.all_types().items()
+        if key != "seed" or current_user.is_admin
+    }
     keys = [k for k in ApiKey.manageable_by(current_user) if k.active]
+    mailbox = ingest.default_newsletter_mailbox()
+
     if request.method == "POST":
         type_key = request.form.get("type_key")
         plugin_cls = types.get(type_key)
         key_id = request.form.get("api_key_id", type=int)
         key = db.session.get(ApiKey, key_id) if key_id else None
+
         if plugin_cls is None:
             flash("Unknown source type.", "danger")
         elif key is None or key not in keys:
             flash("Choose one of your API keys for this source.", "danger")
+        elif type_key == "imap_newsletter":
+            if mailbox is None:
+                flash("No newsletter mailbox is configured yet — ask an admin to add one first.", "danger")
+            else:
+                name = (request.form.get("newsletter_name") or "").strip()
+                domain = (request.form.get("newsletter_domain") or "").strip().lower().lstrip("@")
+                if not name or not domain:
+                    flash("Enter both the newsletter's name and its sending domain.", "danger")
+                else:
+                    child = Source(
+                        type_key="imap_newsletter",
+                        name=name[:120],
+                        owner_user_id=current_user.id,
+                        api_key_id=key.id,
+                        parent_source_id=mailbox.id,
+                        config={"newsletter_domain": domain, "newsletter_name": name},
+                        subscription_status="waiting_confirmation",
+                        enabled=True,
+                    )
+                    db.session.add(child)
+                    db.session.commit()
+                    return redirect(url_for("web.sources", subscribe=child.id))
         else:
             source = Source(
                 type_key=type_key,
@@ -420,7 +460,44 @@ def source_new():
             db.session.commit()
             flash("Source added.", "success")
             return redirect(url_for("web.sources"))
-    return render_template("sources_new.html", types=types, keys=keys)
+    return render_template("sources_new.html", types=types, keys=keys, mailbox=mailbox)
+
+
+@bp.route("/sources/<int:source_id>/poll-confirmation", methods=["POST"])
+@login_required
+def source_poll_confirmation(source_id: int):
+    """Poll the parent mailbox now, so a just-sent confirmation email can be
+    picked up without waiting for the next scheduled poll. Rate-limited
+    server-side to once every 10 seconds regardless of how many newsletters
+    share the mailbox (the client also disables the button for 10s)."""
+    child = db.session.get(Source, source_id) or abort(404)
+    if not child.is_newsletter_subscription or not child.can_manage(current_user):
+        abort(403)
+    mailbox = child.parent_source
+    if mailbox is None:
+        abort(404)
+
+    from datetime import timedelta
+    recently_polled = (
+        mailbox.last_polled_at is not None
+        and (utcnow() - _aware_dt(mailbox.last_polled_at)) < timedelta(seconds=10)
+    )
+    if not recently_polled:
+        try:
+            ingest.ingest_source(mailbox)
+        except Exception:  # noqa: BLE001
+            pass  # status endpoint reports current state either way
+        db.session.refresh(child)
+
+    return jsonify({
+        "status": child.subscription_status,
+        "last_polled_at": mailbox.last_polled_at.isoformat() if mailbox.last_polled_at else None,
+    })
+
+
+def _aware_dt(dt):
+    from datetime import timezone
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 @bp.route("/sources/<int:source_id>/retract", methods=["POST"])

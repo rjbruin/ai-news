@@ -40,7 +40,13 @@
     <td class="small">{{ s.poll_interval_override ~ 's' if s.poll_interval_override else 'default' }}</td>
     <td class="small">{{ s.last_polled_at.strftime('%Y-%m-%d %H:%M') if s.last_polled_at else '—' }}</td>
     <td class="small">
-      {% if s.last_status %}
+      {% if s.subscription_status and s.subscription_status != 'subscribed' %}
+        {% if s.subscription_status == 'waiting_confirmation' %}
+          <span class="badge text-bg-warning">waiting for confirmation</span>
+        {% elif s.subscription_status == 'failed' %}
+          <span class="badge text-bg-danger">confirmation failed</span>
+        {% endif %}
+      {% elif s.last_status %}
         {% if 'error' in s.last_status or 'partial' in s.last_status %}
           <span class="text-danger">{{ s.last_status }}</span>
         {% else %}
@@ -55,6 +61,15 @@
       {% if not nested %}
       <form method="post" action="{{ url_for('admin.source_poll', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-primary">Poll now</button></form>
+      {% if s.type_key == 'imap_newsletter' %}
+      <form method="post" action="{{ url_for('admin.source_reindex_newsletters', source_id=s.id) }}" class="d-inline"
+            onsubmit="return confirm('Scan every email in this mailbox to detect newsletter senders? This can take a while for a large mailbox.')">
+        <button class="btn btn-sm btn-outline-primary">Reindex newsletters</button></form>
+      {% endif %}
+      {% endif %}
+      {% if s.subscription_status and s.subscription_status != 'subscribed' %}
+      <form method="post" action="{{ url_for('admin.source_mark_subscribed', source_id=s.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-success">Mark subscribed</button></form>
       {% endif %}
       <form method="post" action="{{ url_for('admin.source_toggle', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-secondary">{{ 'Disable' if s.enabled else 'Enable' }}</button></form>
