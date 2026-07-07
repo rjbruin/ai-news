@@ -71,6 +71,11 @@
       <form method="post" action="{{ url_for('admin.source_mark_subscribed', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-success">Mark subscribed</button></form>
       {% endif %}
+      {% if nested %}
+      <form method="post" action="{{ url_for('admin.source_ignore', source_id=s.id) }}" class="d-inline"
+            onsubmit="return confirm('Mark as not a newsletter? This deletes the subscription and ignores this sender going forward.')">
+        <button class="btn btn-sm btn-outline-warning">Not a newsletter</button></form>
+      {% endif %}
       <form method="post" action="{{ url_for('admin.source_toggle', source_id=s.id) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-secondary">{{ 'Disable' if s.enabled else 'Enable' }}</button></form>
       <form method="post" action="{{ url_for('admin.source_delete', source_id=s.id) }}" class="d-inline">
@@ -89,6 +94,33 @@
       {% endfor %}
     {% else %}
       <tr><td colspan="9" class="text-body-secondary">No sources configured.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5">Ignored senders</h2>
+<p class="text-body-secondary small mb-2">
+  Senders marked "Not a newsletter" — skipped during that mailbox's polling and reindexing.
+</p>
+<div class="table-responsive shadow-sm mb-4">
+  <table class="table bg-white align-middle mb-0">
+    <thead><tr><th>Email</th><th>Name</th><th>Mailbox</th><th>Added by</th><th>Added</th><th></th></tr></thead>
+    <tbody>
+    {% for row in ignored_senders %}
+      <tr>
+        <td class="small">{{ row.email }}</td>
+        <td class="small">{{ row.display_name or '—' }}</td>
+        <td class="small">{{ row.mailbox.name if row.mailbox else '—' }}</td>
+        <td class="small">{{ row.created_by.username if row.created_by else '—' }}</td>
+        <td class="small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin.ignored_sender_delete', ignored_id=row.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">Un-ignore</button></form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="text-body-secondary">No ignored senders.</td></tr>
     {% endfor %}
     </tbody>
   </table>

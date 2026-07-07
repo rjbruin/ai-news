@@ -362,6 +362,28 @@ class Source(db.Model):
         return float(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0)
 
 
+class IgnoredSender(db.Model):
+    """A sender address an admin has confirmed is NOT a newsletter (e.g. a
+    misclassified personal thread), so it's skipped during that mailbox's
+    polling and reindexing instead of continually being re-detected."""
+
+    __tablename__ = "ignored_senders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    mailbox_source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False)
+    display_name = db.Column(db.String(255), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    mailbox = db.relationship("Source", foreign_keys=[mailbox_source_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        db.UniqueConstraint("mailbox_source_id", "email", name="uq_ignored_sender"),
+    )
+
+
 class NewsItem(db.Model):
     __tablename__ = "news_items"
 
@@ -609,6 +631,7 @@ __all__ = [
     "ApiKeyUsage",
     "IngestRun",
     "Source",
+    "IgnoredSender",
     "NewsItem",
     "Tag",
     "NewsItemTag",
