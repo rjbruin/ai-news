@@ -10,6 +10,7 @@ from email.utils import parseaddr
 
 from ..extensions import db
 from ..llm import openrouter
+from ..llm import prompt_safety
 from ..models import (
     Alert,
     ApiKey,
@@ -53,6 +54,16 @@ def _format_poll_status(new_items: int, fetched: int, skipped: int, errors: int)
     if errors:
         detail.append(f"{errors} error{'s' if errors != 1 else ''}")
     return f"{new_items} new item{'s' if new_items != 1 else ''} ({', '.join(detail)})"
+
+
+def _format_newsletter_status(new_items: int, fetched: int, errors: int) -> str:
+    """Deliberately terser than _format_poll_status — a per-newsletter status
+    is read much more often (one row per subscription) so it stays to just
+    the two numbers that matter, plus an error count when something broke."""
+    text = f"{new_items} new item{'s' if new_items != 1 else ''}, {fetched} checked"
+    if errors:
+        text += f", {errors} error{'s' if errors != 1 else ''}"
+    return text
 
 
 def ingest_source(source: Source) -> dict:
@@ -226,6 +237,54 @@ def _sender_key(sender: str | None) -> tuple[str, str]:
     return addr or "unknown-sender", display_name.strip()
 
 
+def _domain_of(addr: str) -> str:
+    return addr.rsplit("@", 1)[-1] if "@" in addr else ""
+
+
+def normalize_domain(raw: str | None) -> str:
+    """Normalize a user-typed or sender-derived domain for matching: strips
+    scheme/path/whitespace/leading '@' and a leading 'www.', lowercases."""
+    d = (raw or "").strip().lower()
+    if "://" in d:
+        d = d.split("://", 1)[1]
+    d = d.split("/", 1)[0]
+    d = d.lstrip("@")
+    if d.startswith("www."):
+        d = d[4:]
+    return d
+
+
+def _pending_children_by_domain(mailbox: Source) -> dict[str, Source]:
+    """Newsletter subscriptions still waiting on confirmation, keyed by the
+    domain the requesting user typed in (normalized) — their exact sender
+    address isn't known yet, so they can't be matched by children_by_sender."""
+    result: dict[str, Source] = {}
+    for c in mailbox.children:
+        if c.subscription_status != "waiting_confirmation":
+            continue
+        domain = normalize_domain((c.config or {}).get("newsletter_domain"))
+        if domain:
+            result[domain] = c
+    return result
+
+
+def _find_pending_by_domain(pending_by_domain: dict[str, Source], addr: str) -> Source | None:
+    """Match a sender address against pending subscriptions by domain,
+    tolerating either side being a subdomain of the other (e.g. a user types
+    "example.com" but the newsletter actually sends from "news.example.com",
+    or vice versa)."""
+    domain = normalize_domain(_domain_of(addr))
+    if not domain:
+        return None
+    exact = pending_by_domain.get(domain)
+    if exact is not None:
+        return exact
+    for pending_domain, child in pending_by_domain.items():
+        if domain.endswith("." + pending_domain) or pending_domain.endswith("." + domain):
+            return child
+    return None
+
+
 def _ignored_addresses(mailbox: Source) -> set[str]:
     """Sender addresses an admin has confirmed aren't newsletters for this
     mailbox — skipped during polling and reindexing."""
@@ -308,11 +367,7 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
     children_by_sender = {
         (c.config or {}).get("newsletter_sender"): c for c in mailbox.children
     }
-    pending_by_domain = {
-        (c.config or {}).get("newsletter_domain"): c
-        for c in mailbox.children
-        if c.subscription_status == "waiting_confirmation" and (c.config or {}).get("newsletter_domain")
-    }
+    pending_by_domain = _pending_children_by_domain(mailbox)
     ignored = _ignored_addresses(mailbox)
 
     docs_by_child: dict[int, list] = {}
@@ -325,12 +380,13 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         child = children_by_sender.get(addr)
 
         if child is None:
-            domain = addr.rsplit("@", 1)[-1] if "@" in addr else ""
-            pending_match = pending_by_domain.get(domain)
+            pending_match = _find_pending_by_domain(pending_by_domain, addr)
             if pending_match is not None:
                 outcome = _handle_pending_confirmation(pending_match, doc)
                 if pending_match.subscription_status != "waiting_confirmation":
-                    pending_by_domain.pop(domain, None)
+                    pending_by_domain = {
+                        d: c for d, c in pending_by_domain.items() if c.id != pending_match.id
+                    }
                 if outcome == "consumed":
                     stats["skipped"] += 1
                     continue
@@ -395,8 +451,8 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         _merge_stats(stats, child_stats)
 
         child.last_polled_at = utcnow()
-        child.last_status = _format_poll_status(
-            child_stats["new_items"], len(child_docs), child_stats["skipped"], child_stats["errors"],
+        child.last_status = _format_newsletter_status(
+            child_stats["new_items"], len(child_docs), child_stats["errors"],
         )
         if child_usage["tokens"] or child_usage["cost"]:
             db.session.add(ApiKeyUsage(
@@ -427,6 +483,7 @@ _CONFIRMATION_EMAIL_SYSTEM = (
     "that the subscription is already active.\n\n"
     'Respond ONLY with valid JSON in this exact format: '
     '{"requires_click": true or false, "confirmation_url": "https://... or empty string"}'
+    "\n\n" + prompt_safety.ANTI_INJECTION_NOTE
 )
 
 _CONFIRMATION_RESULT_SYSTEM = (
@@ -434,6 +491,7 @@ _CONFIRMATION_RESULT_SYSTEM = (
     "newsletter subscription confirmation link. Decide whether the page indicates "
     "the subscription was confirmed/activated successfully.\n\n"
     'Respond ONLY with valid JSON in this exact format: {"confirmed": true or false}'
+    "\n\n" + prompt_safety.ANTI_INJECTION_NOTE
 )
 
 
@@ -464,7 +522,9 @@ def _handle_pending_confirmation(pending_child: Source, doc) -> str:
         classification = openrouter.chat_json(
             [
                 {"role": "system", "content": _CONFIRMATION_EMAIL_SYSTEM},
-                {"role": "user", "content": f"Subject: {doc.subject or '(none)'}\n\nBody:\n{doc.text[:6000]}"},
+                {"role": "user", "content": prompt_safety.wrap_untrusted(
+                    f"Subject: {doc.subject or '(none)'}\n\nBody:\n{doc.text[:6000]}"
+                )},
             ],
             schema={
                 "type": "object",
@@ -498,7 +558,7 @@ def _handle_pending_confirmation(pending_child: Source, doc) -> str:
         confirmed = bool((openrouter.chat_json(
             [
                 {"role": "system", "content": _CONFIRMATION_RESULT_SYSTEM},
-                {"role": "user", "content": page_text or "(empty page)"},
+                {"role": "user", "content": prompt_safety.wrap_untrusted(page_text or "(empty page)")},
             ],
             schema={
                 "type": "object",
@@ -528,21 +588,83 @@ def _record_confirm_usage(api_key_row, source: Source, usage_totals: dict) -> No
         ))
 
 
+_MAX_CONFIRMATION_REDIRECTS = 5
+
+
+def _is_safe_external_url(url: str) -> bool:
+    """SSRF guard: only allow http(s) URLs whose host resolves exclusively to
+    public IP addresses.
+
+    ``confirmation_url`` is extracted by an LLM from an untrusted email — a
+    malicious sender could try to get the model to "extract" an internal URL
+    (e.g. a cloud metadata endpoint, or another service on the local network)
+    so our server fetches it on their behalf. This is checked independently
+    of the anti-injection prompt wording, since that's a mitigation for the
+    model's behavior, not a guarantee.
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False  # userinfo in the URL is never needed here and often abused
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, None)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
 def _fetch_confirmation_page(url: str) -> str:
     """"Clicks" a confirmation link: a plain GET, which is how virtually all
-    double opt-in confirmation links work (no JS/form submission needed)."""
+    double opt-in confirmation links work (no JS/form submission needed).
+
+    Redirects are followed manually (rather than httpx's follow_redirects)
+    so every hop is re-validated by the SSRF guard — checking only the first
+    URL wouldn't stop a malicious server from redirecting to an internal one.
+    """
     import httpx
     from bs4 import BeautifulSoup
 
-    resp = httpx.get(
-        url, timeout=20.0, follow_redirects=True,
-        headers={"User-Agent": "Dispatch/1.0 (+https://github.com/rjbruin/ai-news)"},
-    )
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-    return soup.get_text(separator=" ", strip=True)[:4000]
+    current = url
+    headers = {"User-Agent": "Dispatch/1.0 (+https://github.com/rjbruin/ai-news)"}
+    for _ in range(_MAX_CONFIRMATION_REDIRECTS + 1):
+        if not _is_safe_external_url(current):
+            raise ValueError(f"Refusing to fetch an unsafe or internal URL: {current}")
+        resp = httpx.get(current, timeout=20.0, follow_redirects=False, headers=headers)
+        if resp.is_redirect:
+            location = resp.headers.get("location")
+            if not location:
+                resp.raise_for_status()
+                break
+            current = str(httpx.URL(current).join(location))
+            continue
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+        return soup.get_text(separator=" ", strip=True)[:4000]
+    raise ValueError("Too many redirects while fetching the confirmation link")
 
 
 def _mark_subscribed(child: Source) -> None:
@@ -644,11 +766,27 @@ def reindex_newsletter_mailbox(mailbox: Source) -> dict:
     children_by_sender = {
         (c.config or {}).get("newsletter_sender"): c for c in mailbox.children
     }
+    pending_by_domain = _pending_children_by_domain(mailbox)
     new_subscriptions = 0
     for addr in newsletter_addrs:
         info = senders.get(addr)
         if info is None:
             continue
+
+        # A user may already have requested this exact newsletter (by domain)
+        # before it was ever detected — link into that pending subscription
+        # instead of creating a duplicate Source. Its confirmation status is
+        # left alone; the next regular poll (which has the actual email body,
+        # unlike this headers-only scan) resolves it properly.
+        pending_match = _find_pending_by_domain(pending_by_domain, addr)
+        if pending_match is not None and children_by_sender.get(addr) is None:
+            pending_match.config = {
+                **(pending_match.config or {}), "newsletter_sender": addr,
+                "newsletter_sender_name": info["display_name"],
+            }
+            children_by_sender[addr] = pending_match
+            continue
+
         _, created = _get_or_create_newsletter_child(
             mailbox, children_by_sender, addr, info["display_name"]
         )
@@ -675,6 +813,8 @@ def reindex_newsletter_mailbox(mailbox: Source) -> dict:
 
 _REINDEX_SYSTEM = (
     'Respond ONLY with valid JSON in this exact format: {"newsletters": ["sender@address", ...]}'
+    " Only ever return addresses that were listed in the input — never invent one."
+    "\n\n" + prompt_safety.ANTI_INJECTION_NOTE
 )
 
 
@@ -700,7 +840,7 @@ def _classify_newsletter_senders(
             "one-off personal mail, transactional emails (receipts, security alerts, calendar "
             "invites, sign-in codes) or spam. For each sender below, with a few example subject "
             "lines, decide whether it is a genuine recurring newsletter or publication.\n\n"
-            + "\n".join(lines)
+            + prompt_safety.wrap_untrusted("\n".join(lines))
         )
         schema = {
             "type": "object",

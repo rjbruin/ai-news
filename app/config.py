@@ -53,7 +53,6 @@ class Config:
 
     # TTS
     ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-    ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "")
 
     # SMTP
     SMTP_HOST = os.environ.get("SMTP_HOST", "")

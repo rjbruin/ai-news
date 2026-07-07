@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from ..llm import openrouter
+from ..llm.prompt_safety import ANTI_INJECTION_NOTE, wrap_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ _SYSTEM = (
     "to the item. Only assign a tag when the item genuinely matches its meaning. "
     "Return a confidence in [0,1] for each assigned tag.\n\n"
     'Respond ONLY with valid JSON in this exact format: {"tags": [{"name": "TagName", "confidence": 0.9}, ...]}'
+    "\n\n" + ANTI_INJECTION_NOTE
 )
 
 
@@ -68,7 +70,7 @@ def score_item(
 
     user = (
         f"Taxonomy:\n{taxonomy}\n\n"
-        f"News item:\n{item_text[:8000]}\n\n"
+        f"News item:\n{wrap_untrusted(item_text[:8000])}\n\n"
         "Return the tags that apply with confidences."
     )
     names = [t["name"] for t in tags]

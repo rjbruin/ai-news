@@ -587,3 +587,91 @@ def test_admin_un_ignore(admin_client, db, mailbox):
     resp = admin_client.post(f"/admin/ignored-senders/{row_id}/delete", follow_redirects=True)
     assert resp.status_code == 200
     assert db.session.get(IgnoredSender, row_id) is None
+
+
+# ───────────────────────── domain matching (reindex + regular poll) ─────────────────────────
+def test_regular_poll_matches_pending_by_subdomain(
+    db, app, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    """The user typed 'tldrnewsletter.com' but the newsletter actually sends
+    from a subdomain — should still match the pending request, not create a
+    second source."""
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@mail.tldrnewsletter.com>", "Issue #1")]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json",
+        _queued_chat_json({"requires_click": False, "confirmation_url": ""}),
+    )
+
+    ingest.ingest_source(mailbox)
+
+    assert mailbox.children.count() == 1
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.subscription_status == "subscribed"
+    assert pending_subscription.config.get("newsletter_sender") == "news@mail.tldrnewsletter.com"
+
+
+def test_reindex_matches_pending_subscription_instead_of_duplicating(
+    db, app, mailbox, pending_subscription, fake_newsletter_source, monkeypatch,
+):
+    """Regression test: reindexing a mailbox used to ignore pending
+    subscriptions entirely and always create a brand-new Source, producing a
+    duplicate ("name@example.com") alongside the user's original request."""
+    app.config["OPENROUTER_API_KEY"] = "sk-or-global-test"
+    fake_newsletter_source.scan_pairs = [
+        ("TLDR AI <news@tldrnewsletter.com>", "Issue #1"),
+    ]
+    monkeypatch.setattr(
+        ingest.openrouter, "chat_json", _fake_chat_json(["news@tldrnewsletter.com"]),
+    )
+
+    stats = ingest.reindex_newsletter_mailbox(mailbox)
+
+    assert mailbox.children.count() == 1  # no duplicate created
+    assert stats["new_subscriptions"] == 0  # matched into the existing pending one
+    db.session.refresh(pending_subscription)
+    assert pending_subscription.config.get("newsletter_sender") == "news@tldrnewsletter.com"
+    # Reindex only has headers, not the email body — it can't run confirmation
+    # detection, so status is deliberately left alone for the next real poll.
+    assert pending_subscription.subscription_status == "waiting_confirmation"
+
+
+def test_domain_normalization_tolerates_protocol_and_www(db, mailbox, requester):
+    from app.models import ApiKey, Source as SourceModel
+
+    api_key = ApiKey(owner_user_id=requester.id, label="k")
+    api_key.set_key("sk-or-x")
+    db.session.add(api_key)
+    db.session.commit()
+    pending = SourceModel(
+        type_key="imap_newsletter", name="Weird Domain", owner_user_id=requester.id,
+        api_key_id=api_key.id, parent_source_id=mailbox.id,
+        config={"newsletter_domain": ingest.normalize_domain("https://www.example.com/")},
+        subscription_status="waiting_confirmation", enabled=True,
+    )
+    db.session.add(pending)
+    db.session.commit()
+
+    pending_by_domain = ingest._pending_children_by_domain(mailbox)
+    match = ingest._find_pending_by_domain(pending_by_domain, "news@example.com")
+    assert match is not None and match.id == pending.id
+
+
+# ───────────────────────── UI: instructions button + status wording ─────────────────────────
+def test_instructions_button_hidden_once_subscribed(admin_client, db, pending_subscription):
+    resp = admin_client.get("/sources")
+    assert b"Instructions" in resp.data
+
+    pending_subscription.subscription_status = "subscribed"
+    db.session.commit()
+
+    resp = admin_client.get("/sources")
+    assert b"Instructions" not in resp.data
+
+
+def test_newsletter_status_wording_is_terse(db, mailbox, fake_newsletter_source):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    ingest.ingest_source(mailbox)
+    child = mailbox.children.first()
+    assert child.last_status == "1 new item, 1 checked"
+    assert "already seen" not in child.last_status
+    assert "docs" not in child.last_status

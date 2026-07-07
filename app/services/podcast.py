@@ -353,7 +353,7 @@ def _tts_segment(text: str, voice_id: str, api_key: str, el_model: str) -> bytes
     return resp.content
 
 
-def generate_audio_stream(script: str, user):
+def generate_audio_stream(script: str):
     """Generate a podcast MP3, yielding progress as each segment is synthesized.
 
     Yields ``("progress", done, total)`` after every TTS segment, then finally
@@ -363,19 +363,26 @@ def generate_audio_stream(script: str, user):
     A long news read-through can take several minutes; emitting per-segment
     events keeps the SSE connection active so proxy/worker read-timeouts
     (nginx/gunicorn, 120s) never fire on a silent long request.
-    """
-    api_key = user.get_elevenlabs_key()
-    if not api_key:
-        raise ValueError("No ElevenLabs API key configured. Add it in Settings.")
 
-    voice_a = (user.elevenlabs_voice_host_a or "").strip()
-    voice_b = (user.elevenlabs_voice_host_b or "").strip()
+    Credentials/voices are global admin settings, not per-user — podcast
+    export just needs the requesting user to have podcast access (checked by
+    the caller), not their own ElevenLabs account.
+    """
+    from ..models import AdminSettings
+
+    api_key = current_app.config.get("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise ValueError("No ElevenLabs API key configured (set ELEVENLABS_API_KEY).")
+
+    settings = AdminSettings.get()
+    voice_a = (settings.elevenlabs_voice_host_a or "").strip()
+    voice_b = (settings.elevenlabs_voice_host_b or "").strip()
     if not voice_a or not voice_b:
         raise ValueError(
-            "Both Host A and Host B voice IDs must be configured in Settings."
+            "Both Host A and Host B voice IDs must be configured in Admin Settings."
         )
 
-    el_model = (user.elevenlabs_model or "").strip() or DEFAULT_ELEVENLABS_MODEL
+    el_model = (settings.elevenlabs_model or "").strip() or DEFAULT_ELEVENLABS_MODEL
     parts = parse_script_parts(script)
     total = sum(1 for p in parts if p["type"] == "segment")
     if total == 0:
@@ -410,13 +417,13 @@ def generate_audio_stream(script: str, user):
     yield ("done", filename, chapters)
 
 
-def generate_audio(script: str, user) -> tuple[str, str]:
+def generate_audio(script: str) -> tuple[str, str]:
     """Generate podcast MP3 from a script (non-streaming convenience wrapper).
 
     Returns (absolute_path, web_filename).
     """
     filename = None
-    for event in generate_audio_stream(script, user):
+    for event in generate_audio_stream(script):
         if event[0] == "done":
             filename = event[1]
     path = os.path.join(current_app.instance_path, "podcasts", filename)
@@ -444,6 +451,9 @@ def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
             user = db.session.get(User, user_id)
             if run is None or user is None:
                 job.emit({"type": "error", "message": "Edition not found."})
+                return
+            if not user.has_podcast_access:
+                job.emit({"type": "error", "message": "Podcast export isn't enabled for this account."})
                 return
 
             # ── Script phase ──────────────────────────────────────────────
@@ -483,7 +493,7 @@ def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
 
             job.emit({"type": "phase", "phase": "audio"})
             filename, chapters = None, []
-            for event in generate_audio_stream(script, user):
+            for event in generate_audio_stream(script):
                 if event[0] == "progress":
                     job.emit({"type": "audio_progress", "done": event[1], "total": event[2]})
                 elif event[0] == "done":

@@ -53,7 +53,7 @@
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">{{ status_badge(s) }}</td>
     <td class="text-nowrap">
-      {% if s.subscription_status and s.can_manage(current_user) %}
+      {% if s.subscription_status and s.subscription_status != 'subscribed' and s.can_manage(current_user) %}
         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
                 data-bs-target="#subscribe-modal-{{ s.id }}">Instructions</button>
       {% endif %}
@@ -92,7 +92,7 @@
 
 {% for s in sources %}
   {% for child in s.children %}
-    {% if child.subscription_status and child.can_manage(current_user) %}
+    {% if child.subscription_status and child.subscription_status != 'subscribed' and child.can_manage(current_user) %}
     <div class="modal fade" id="subscribe-modal-{{ child.id }}" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog">
         <div class="modal-content">
