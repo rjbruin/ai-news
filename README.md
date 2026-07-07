@@ -13,9 +13,14 @@ open questions; this README describes the app as it exists today.
 ## Features
 
 - **Pluggable sources** — drop a `NewsSource` subclass into `app/sources/`.
-  Ships with `imap_newsletter` (subscribe a mailbox to AI newsletters; an LLM
-  splits each email into discrete items) and `rss_feed` (poll an RSS/Atom
-  feed).
+  Ships with `imap_newsletter` (subscribe a mailbox to AI newsletters; each
+  distinct newsletter sender is auto-detected and split into its own
+  reviewable/retractable source, see below) and `rss_feed` (poll an RSS/Atom
+  feed). All sources — and, for `imap_newsletter`, every newsletter detected
+  inside a mailbox — are listed on `/sources` so anyone can see what's
+  feeding the shared news pool. Any **approved** user can add their own
+  source, paid for by one of their own API keys, and retract it
+  (disable/delete) at any time — see **API keys & sources** below.
 - **Pluggable summaries** — drop a `NewsSummary` subclass into
   `app/summaries/`. Ships with `app_page` (deterministic in-app overview),
   `agentic_page` (LLM-authored edition, see below), and `printed` (print/PDF
@@ -37,13 +42,19 @@ open questions; this README describes the app as it exists today.
   agent memory — all without blocking the web process.
 - **Auth** — register (username + email), password login, and **magic-link**
   login (signed, short-lived tokens). Admin status is derived from
-  `ADMIN_EMAILS` (comma-separated), not stored per-user.
+  `ADMIN_EMAILS` (comma-separated), not stored per-user. A separate `approved`
+  flag (set by an admin) gates self-service source/API-key management —
+  admins are always implicitly approved.
 - **PWA** — installable on Android/iOS, app icon, offline shell via a service
   worker.
-- **LLM** — a global OpenRouter key powers ingestion (newsletter extraction)
-  and tagging; agentic summary generation is billed to each user's own
-  OpenRouter key (configured in Settings), so the app itself never pays for
-  the more expensive per-edition generation.
+- **LLM / API keys** — ingestion (extraction) and tagging run on whichever
+  `ApiKey` a source is assigned, so cost is attributed per source/per key
+  instead of always hitting one shared budget. The legacy `OPENROUTER_API_KEY`
+  env var is exposed as a singleton **global key**, manageable by any admin;
+  approved users can also add their own OpenRouter keys (Settings → API Keys)
+  and assign them to sources they create. Agentic summary generation is
+  separately billed to each user's own OpenRouter key (configured in
+  Settings) regardless of source ownership.
 
 ## Architecture
 
@@ -108,7 +119,42 @@ class, no core changes." Shipped sources:
 
 `app/services/ingest.py` orchestrates a poll: fetch new `RawDocument`s,
 extract items, hash-dedup on normalized title+URL (`dedup_hash`), persist as
-`NewsItem`s, and hand off to the tagging engine.
+`NewsItem`s, and hand off to the tagging engine. An `imap_newsletter` mailbox
+is a single `Source`, but a mailbox typically carries many distinct
+newsletters — so `ingest_source()` special-cases that type: it groups the
+fetched emails by sender and, for each sender not seen before, auto-creates a
+child `Source` (`Source.parent_source_id` pointing at the mailbox), inheriting
+the mailbox's owner and `ApiKey`. From then on each newsletter is reviewable
+and retractable independently on `/sources` — disabling one stops its emails
+from being extracted/tagged (saving LLM cost) while still recording that mail
+arrived, so re-enabling it later doesn't miss anything. Child sources are
+never polled directly (`ingest_all_due` only considers `parent_source_id IS
+NULL` sources); polling the mailbox re-syncs all of its newsletters at once.
+
+### API keys & self-service sources
+
+Every `Source` is assigned an `ApiKey` (`app/models.py`) — the credential that
+pays for that source's extraction and tagging calls. `ApiKey.get_key()`
+resolves to either the decrypted per-user secret, or, for the single
+`is_global=True` row, the `OPENROUTER_API_KEY` env var (never duplicated into
+the DB). `ApiKey.manageable_by(user)` returns a user's own keys plus the
+global key when the user is an admin — that's what makes the global key
+"owned by all admins" without a join table, since admin-ness is itself
+derived from `ADMIN_EMAILS`.
+
+`services/ingest.ingest_source()` resolves the source's key up front, passes
+the decrypted secret + resolved model down into the source plugin
+(`NewsSource.api_key`/`.model`, threaded through to `sources/extract.py` and
+`tagging/llm.py`) instead of always reading the global config, and records a
+per-poll `ApiKeyUsage` row (tokens + USD cost from OpenRouter's `usage`
+field) tagged with both the key and the source — so `Source.usage_tokens` /
+`usage_cost` and `ApiKey.total_tokens` / `total_cost` are simple aggregate
+queries over that ledger. Revoking a key (`ApiKey.revoked_at`) immediately
+disables every source that used it; a source's owner (`Source.owner_user_id`,
+checked via `Source.can_manage()`) or any admin can retract (disable) or
+delete it from `/sources`. Self-service creation (`/sources/new`,
+`/keys/new`) is gated behind `User.is_approved` (an admin-set `approved` flag,
+plus admins are always approved).
 
 ### Tagging
 
@@ -158,14 +204,17 @@ audio via ElevenLabs TTS and expose it as a per-user podcast RSS feed
 ### Data model
 
 Key tables (`app/models.py`): `User` (auth, admin derived from
-`ADMIN_EMAILS`, encrypted OpenRouter key), `Source` (plugin type + config
-JSON + poll interval), `IngestRun` (per-poll audit trail), `NewsItem`
-(cleaned text, dedup hash, one-liner, status), `Tag` / `NewsItemTag`
-(taxonomy + per-item matches with confidence/method), `Summary` (a
-configured summary — type, scope mode, schedule, params) / `SummaryRun` (one
-generated edition — content, artifacts, agent cost/log), `Alert` (in-app
-notifications), and `AgentMemory` (the HEADLINES dedup store). Migrations are
-managed with Alembic under [migrations/](migrations).
+`ADMIN_EMAILS`, `approved` flag, encrypted OpenRouter key), `ApiKey`
+(owner or `is_global`, encrypted secret / env-backed for the global key,
+optional model override) / `ApiKeyUsage` (per-poll tokens + cost ledger,
+keyed by key and source), `Source` (plugin type + config JSON + poll
+interval + owner + assigned `ApiKey`), `IngestRun` (per-poll audit trail),
+`NewsItem` (cleaned text, dedup hash, one-liner, status), `Tag` /
+`NewsItemTag` (taxonomy + per-item matches with confidence/method), `Summary`
+(a configured summary — type, scope mode, schedule, params) / `SummaryRun`
+(one generated edition — content, artifacts, agent cost/log), `Alert`
+(in-app notifications), and `AgentMemory` (the HEADLINES dedup store).
+Migrations are managed with Alembic under [migrations/](migrations).
 
 ### Auth
 

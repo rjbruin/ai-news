@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}API keys · Dispatch{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">API keys</h1>
+<p class="text-body-secondary small">
+  These OpenRouter keys pay for fetching and tagging the news sources you assign them to
+  (see <a href="{{ url_for('web.sources') }}">Sources</a>). Revoke a key to stop it being used
+  immediately — any source using it is disabled automatically.
+</p>
+
+<div class="table-responsive shadow-sm mb-4">
+  <table class="table bg-white align-middle mb-0">
+    <thead><tr><th>Label</th><th>Model</th><th>Sources</th><th>Usage</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for k in keys %}
+      <tr>
+        <td>
+          {{ k.label }}
+          {% if k.is_global %}<span class="badge text-bg-secondary">shared / global</span>{% endif %}
+        </td>
+        <td class="small">{{ k.model or 'system default' }}</td>
+        <td class="small">{{ k.sources.count() }}</td>
+        <td class="small">{{ k.total_requests }} call(s) · {{ k.total_tokens }} tok · ${{ '%.4f' % k.total_cost }}</td>
+        <td class="small">{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else '—' }}</td>
+        <td class="small">
+          {% if k.active %}
+            <span class="text-success">active</span>
+          {% else %}
+            <span class="text-danger">revoked</span>
+          {% endif %}
+        </td>
+        <td class="text-nowrap">
+          {% if k.active %}
+          <form method="post" action="{{ url_for('web.api_key_revoke', key_id=k.id) }}" class="d-inline"
+                onsubmit="return confirm('Revoke this key? Sources using it will be disabled.')">
+            <button class="btn btn-sm btn-outline-secondary">Revoke</button></form>
+          {% else %}
+          <form method="post" action="{{ url_for('web.api_key_reactivate', key_id=k.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">Reactivate</button></form>
+          {% endif %}
+          {% if not k.is_global %}
+          <form method="post" action="{{ url_for('web.api_key_delete', key_id=k.id) }}" class="d-inline"
+                onsubmit="return confirm('Delete this key permanently?')">
+            <button class="btn btn-sm btn-outline-danger">Delete</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="text-body-secondary">No API keys yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card shadow-sm" style="max-width: 480px">
+  <div class="card-header fw-semibold">Add a key</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('web.api_key_new') }}">
+      <div class="mb-3">
+        <label class="form-label">Label</label>
+        <input name="label" class="form-control" placeholder="e.g. My OpenRouter key" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">OpenRouter API key</label>
+        <input type="password" name="secret" class="form-control" autocomplete="off" placeholder="sk-or-..." required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Model override <span class="text-body-secondary small">(optional)</span></label>
+        <input name="model" class="form-control" placeholder="anthropic/claude-haiku-4.5">
+        <div class="form-text">Leave blank to use the system default model.</div>
+      </div>
+      <button class="btn btn-primary">Add key</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

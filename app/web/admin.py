@@ -15,7 +15,17 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..extensions import db
-from ..models import IngestRun, NewsItem, NewsItemTag, Source, Summary, SummaryRun, Tag, User
+from ..models import (
+    ApiKey,
+    IngestRun,
+    NewsItem,
+    NewsItemTag,
+    Source,
+    Summary,
+    SummaryRun,
+    Tag,
+    User,
+)
 from ..services import ingest
 from ..services.summarize import resend_edition_email
 from ..sources import registry as source_registry
@@ -46,7 +56,9 @@ def index():
     )
     return render_template(
         "admin/index.html",
-        sources=Source.query.order_by(Source.created_at.desc()).all(),
+        sources=Source.query.filter_by(parent_source_id=None)
+        .order_by(Source.created_at.desc())
+        .all(),
         users=User.query.order_by(User.created_at).all(),
         source_types=source_registry.all_types(),
         recent_runs=recent_runs,
@@ -57,15 +69,21 @@ def index():
 @admin_required
 def source_new():
     types = source_registry.all_types()
+    keys = [k for k in ApiKey.manageable_by(current_user) if k.active]
     if request.method == "POST":
         type_key = request.form.get("type_key")
         plugin_cls = types.get(type_key)
+        key_id = request.form.get("api_key_id", type=int)
+        key = db.session.get(ApiKey, key_id) if key_id else None
         if plugin_cls is None:
             flash("Unknown source type.", "danger")
+        elif key is None or key not in keys:
+            flash("Choose an API key for this source.", "danger")
         else:
             source = Source(
                 type_key=type_key,
                 name=(request.form.get("name") or plugin_cls.label).strip(),
+                api_key_id=key.id,
                 config=_collect_config(plugin_cls),
                 poll_interval_override=_int_or_none(
                     request.form.get("poll_interval_override")
@@ -76,13 +94,19 @@ def source_new():
             db.session.commit()
             flash("Source added.", "success")
             return redirect(url_for("admin.index"))
-    return render_template("admin/source_edit.html", source=None, types=types)
+    return render_template("admin/source_edit.html", source=None, types=types, keys=keys)
 
 
 @bp.route("/sources/<int:source_id>/poll", methods=["POST"])
 @admin_required
 def source_poll(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
+    if source.is_newsletter_subscription:
+        flash(
+            "This is a newsletter detected inside a mailbox source — poll the mailbox instead.",
+            "danger",
+        )
+        return redirect(url_for("admin.index"))
     stats = ingest.ingest_source(source)
     msg = (
         f"Polled '{source.name}': {stats['fetched']} emails fetched, "
@@ -99,6 +123,12 @@ def source_poll(source_id: int):
 @admin_required
 def source_reset(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
+    if source.is_newsletter_subscription:
+        flash(
+            "This is a newsletter detected inside a mailbox source — reset the mailbox instead.",
+            "danger",
+        )
+        return redirect(url_for("admin.source_detail", source_id=source_id))
     # Delete items first (cascades to NewsItemTag), then runs
     NewsItem.query.filter_by(source_id=source_id).delete(synchronize_session=False)
     IngestRun.query.filter_by(source_id=source_id).delete(synchronize_session=False)
@@ -198,6 +228,20 @@ def tagging_log():
         NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(500).all()
     )
     return render_template("admin/tagging_log.html", items=items)
+
+
+@bp.route("/users/<int:user_id>/approve", methods=["POST"])
+@admin_required
+def user_approve(user_id: int):
+    """Toggle whether a user may add their own sources / API keys."""
+    user = db.session.get(User, user_id) or abort(404)
+    user.approved = not user.approved
+    db.session.commit()
+    flash(
+        f'{user.username} is now {"approved" if user.approved else "unapproved"}.',
+        "success",
+    )
+    return redirect(url_for("admin.index"))
 
 
 @bp.route("/tags/<int:tag_id>/promote", methods=["POST"])

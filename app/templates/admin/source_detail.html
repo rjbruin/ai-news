@@ -5,6 +5,7 @@
   <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary">← Admin</a>
   <h1 class="h3 mb-0 me-auto">{{ source.name }}</h1>
   {% if not source.enabled %}<span class="badge text-bg-secondary">disabled</span>{% endif %}
+  {% if not source.is_newsletter_subscription %}
   <form method="post" action="{{ url_for('admin.source_poll', source_id=source.id) }}" class="d-inline">
     <button class="btn btn-sm btn-outline-primary">Poll now</button>
   </form>
@@ -12,7 +13,16 @@
         onsubmit="return confirm('Delete all existing items and re-poll this source?')">
     <button class="btn btn-sm btn-outline-danger">Clear &amp; re-poll</button>
   </form>
+  {% endif %}
 </div>
+
+{% if source.is_newsletter_subscription %}
+<p class="text-body-secondary small">
+  This newsletter was auto-detected inside
+  <a href="{{ url_for('admin.source_detail', source_id=source.parent_source_id) }}">{{ source.parent_source.name }}</a>
+  — poll or reset that mailbox to refresh it.
+</p>
+{% endif %}
 
 <div class="card shadow-sm mb-4">
   <div class="card-body row g-2 small">

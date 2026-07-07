@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from app.models import NewsItem, Source, Summary
+from app.models import ApiKey, NewsItem, Source, Summary
 from app.services import ingest, summarize
 from app.sources import registry as source_registry
 from app.sources.base import ExtractedItem, NewsSource, RawDocument
@@ -20,11 +20,20 @@ class FakeSource(NewsSource):
         ]
 
 
+def _make_api_key(db) -> ApiKey:
+    key = ApiKey(label="Test key", provider="openrouter")
+    key.set_key("sk-or-test")
+    db.session.add(key)
+    db.session.commit()
+    return key
+
+
 def test_ingest_source_creates_and_tags_items(app, db, sample_tags):
     app.config["TAGGING_MODE"] = "nb_only"
     app.config["NB_CONFIDENCE_THRESHOLD"] = 0.05
     source_registry.register(FakeSource)
-    source = Source(type_key="fake", name="Fake", config={})
+    api_key = _make_api_key(db)
+    source = Source(type_key="fake", name="Fake", config={}, api_key_id=api_key.id)
     db.session.add(source)
     db.session.commit()
 
@@ -35,12 +44,40 @@ def test_ingest_source_creates_and_tags_items(app, db, sample_tags):
 
 def test_ingest_dedups(app, db):
     source_registry.register(FakeSource)
-    source = Source(type_key="fake", name="Fake", config={})
+    api_key = _make_api_key(db)
+    source = Source(type_key="fake", name="Fake", config={}, api_key_id=api_key.id)
     db.session.add(source)
     db.session.commit()
     ingest.ingest_source(source)
     ingest.ingest_source(source)  # same items again
     assert NewsItem.query.count() == 2  # no duplicates
+
+
+def test_ingest_source_without_api_key_fails_gracefully(app, db):
+    source_registry.register(FakeSource)
+    source = Source(type_key="fake", name="Fake", config={})
+    db.session.add(source)
+    db.session.commit()
+
+    stats = ingest.ingest_source(source)
+    assert stats["new_items"] == 0
+    assert "no active api key" in source.last_status.lower()
+
+
+def test_revoked_api_key_blocks_ingest(app, db):
+    from app.models import utcnow
+
+    source_registry.register(FakeSource)
+    api_key = _make_api_key(db)
+    api_key.revoked_at = utcnow()
+    db.session.commit()
+    source = Source(type_key="fake", name="Fake", config={}, api_key_id=api_key.id)
+    db.session.add(source)
+    db.session.commit()
+
+    stats = ingest.ingest_source(source)
+    assert stats["new_items"] == 0
+    assert "no active api key" in source.last_status.lower()
 
 
 def test_summary_fixed_period_scope(app, db, sample_items):

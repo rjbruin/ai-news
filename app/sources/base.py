@@ -45,8 +45,21 @@ class NewsSource(ABC):
     # Declarative config schema: {field: {"type", "label", "required", "secret"}}
     config_schema: dict = {}
 
-    def __init__(self, config: dict | None = None):
+    def __init__(
+        self,
+        config: dict | None = None,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        usage_hook=None,
+    ):
         self.config = config or {}
+        # Credentials from the Source's assigned ApiKey (see services.ingest),
+        # used by the default LLM-based extract() below. usage_hook, if set,
+        # is called with each LLM response's usage dict for cost accounting.
+        self.api_key = api_key
+        self.model = model
+        self.usage_hook = usage_hook
 
     @abstractmethod
     def fetch(self, since: datetime | None) -> list[RawDocument]:
@@ -60,4 +73,6 @@ class NewsSource(ABC):
         """
         from .extract import extract_items
 
-        return extract_items(doc)
+        return extract_items(
+            doc, api_key=self.api_key, model=self.model, usage_hook=self.usage_hook
+        )
