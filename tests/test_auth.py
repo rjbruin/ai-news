@@ -100,6 +100,74 @@ def test_magic_link_token_roundtrip(app, user):
     assert tokens.verify(token, purpose="login") is None
 
 
+def test_magic_link_peek_does_not_consume_token(app, user):
+    token = tokens.generate(user, purpose="login")
+    # A scanner/prefetcher GET-ing the link (peek) must not burn the token.
+    assert tokens.peek(token, purpose="login").id == user.id
+    assert tokens.peek(token, purpose="login").id == user.id
+    assert tokens.peek(token, purpose="login").id == user.id
+    # The real user can still consume it afterwards.
+    assert tokens.verify(token, purpose="login").id == user.id
+    assert tokens.verify(token, purpose="login") is None
+
+
+def test_magic_link_get_shows_confirm_page_without_logging_in(client, db, user):
+    token = tokens.generate(user, purpose="login")
+    resp = client.get(f"/auth/magic/{token}")
+    assert resp.status_code == 200
+    assert b"Confirm sign-in" in resp.data
+    assert user.email.encode() in resp.data
+
+    # GET must not have consumed the token or logged the user in.
+    resp2 = client.get("/dashboard")
+    assert resp2.status_code == 302  # still anonymous
+    assert tokens.verify(token, purpose="login").id == user.id  # token still valid
+
+
+def test_magic_link_survives_a_scanner_prefetch(client, db, user):
+    """The core bug: a mail scanner GETs the link before the real user
+    clicks it. With the old GET-consumes design this would silently log
+    the scanner in and burn the token, leaving the real user with a
+    "link is invalid or has expired" error. Confirm the link still works
+    after being GET-ed any number of times, and only the POST consumes it."""
+    token = tokens.generate(user, purpose="login")
+
+    for _ in range(3):  # simulate repeated scanner prefetches
+        scanner = client.application.test_client()
+        r = scanner.get(f"/auth/magic/{token}")
+        assert r.status_code == 200
+
+    resp = client.post(f"/auth/magic/{token}", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Dashboard" in resp.data
+
+    # Now actually consumed — a second POST must fail.
+    resp2 = client.post(f"/auth/magic/{token}", follow_redirects=True)
+    assert b"invalid or has expired" in resp2.data
+
+
+def test_magic_link_post_logs_in_and_verifies_email(client, db):
+    u = User(username="unverified", email="unverified@dispatch-users.test-domain.com")
+    u.set_password("password123")
+    db.session.add(u)
+    db.session.commit()
+    assert u.email_verified is False
+
+    token = tokens.generate(u, purpose="login")
+    resp = client.post(f"/auth/magic/{token}", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Dashboard" in resp.data
+    db.session.refresh(u)
+    assert u.email_verified is True
+
+
+def test_magic_link_get_already_authenticated_redirects_to_dashboard(auth_client, db, user):
+    token = tokens.generate(user, purpose="login")
+    resp = auth_client.get(f"/auth/magic/{token}", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Dashboard" in resp.data
+
+
 def test_magic_link_wrong_purpose_rejected(app, user):
     token = tokens.generate(user, purpose="login")
     assert tokens.verify(token, purpose="verify") is None

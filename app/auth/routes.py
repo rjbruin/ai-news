@@ -110,6 +110,22 @@ def magic_link():
 
 @bp.route("/magic/<token>")
 def magic_login(token: str):
+    """Show a confirm-sign-in page rather than logging in directly on GET —
+    mail scanners (Safe Links, Gmail link prefetching, etc.) GET every link
+    in an email to check it, which would otherwise burn this single-use
+    token before the real user clicks it. Actual login happens on POST
+    (see magic_login_confirm)."""
+    if current_user.is_authenticated:
+        return redirect(url_for("web.dashboard"))
+    user = tokens.peek(token, purpose="login")
+    if user is None:
+        flash("That sign-in link is invalid or has expired.", "danger")
+        return redirect(url_for("auth.login"))
+    return render_template("auth/magic_confirm.html", token=token, user=user)
+
+
+@bp.route("/magic/<token>", methods=["POST"])
+def magic_login_confirm(token: str):
     user = tokens.verify(token, purpose="login")
     if user is None:
         flash("That sign-in link is invalid or has expired.", "danger")
