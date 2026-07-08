@@ -5,7 +5,7 @@ affecting anyone else — every source is on by default; this table only
 tracks per-user exceptions.
 
 Revision ID: f0a1b2c3d4e5
-Revises: d8e9f0a1b2c3
+Revises: e9f0a1b2c3d4
 Create Date: 2026-07-08 00:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'f0a1b2c3d4e5'
-down_revision = 'd8e9f0a1b2c3'
+down_revision = 'e9f0a1b2c3d4'
 branch_labels = None
 depends_on = None
 
