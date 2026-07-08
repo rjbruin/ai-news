@@ -44,13 +44,17 @@
     <td class="small">{{ s.owner_display(current_user) }}</td>
     <td class="small">
       {% if s.api_key %}
-        {{ s.api_key.label }}
+        {{ s.payment_label(current_user) }}
         {% if not s.api_key.active %}<span class="badge text-bg-danger">revoked</span>{% endif %}
+        {% if s.usage_visible_to(current_user) %}
+        <br><span class="text-body-secondary">
+          ${{ '%.2f' % s.usage_cost }} total, ${{ '%.2f' % s.usage_cost_since(one_week_ago) }} in the last week
+        </span>
+        {% endif %}
       {% else %}
         <span class="text-danger">none assigned</span>
       {% endif %}
     </td>
-    <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">{{ status_badge(s) }}</td>
     <td class="small">
       {% if not (s.parent_source_id is none and s.type_key == 'imap_newsletter') %}
@@ -85,7 +89,7 @@
 
 <div class="table-responsive shadow-sm">
   <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Name</th><th>Owner</th><th>API key</th><th>Usage</th><th>Status</th><th>In my editions</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Owner</th><th>Payment</th><th>Status</th><th>In my editions</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
       {{ source_row(s) }}
@@ -93,7 +97,7 @@
         {{ source_row(child, nested=True) }}
       {% endfor %}
     {% else %}
-      <tr><td colspan="7" class="text-body-secondary">No sources yet.</td></tr>
+      <tr><td colspan="6" class="text-body-secondary">No sources yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

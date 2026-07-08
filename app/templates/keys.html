@@ -1,7 +1,22 @@
 {% extends "base.html" %}
-{% block title %}API keys · Dispatch{% endblock %}
+{% block title %}Payment · Dispatch{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">API keys</h1>
+<h1 class="h3 mb-3">Payment</h1>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div>
+      <h2 class="h5 mb-1">What are API keys?</h2>
+      <p class="mb-0 text-body-secondary">
+        To cover the cost of the AI models that make this app work, you need to create an account
+        with the website OpenRouter, and provide this app with an <em>API key</em>.
+      </p>
+    </div>
+    <button type="button" class="btn btn-outline-primary text-nowrap" data-bs-toggle="modal"
+            data-bs-target="#api-key-explainer">More about API keys</button>
+  </div>
+</div>
+
 <p class="text-body-secondary small">
   These OpenRouter keys pay for fetching and tagging the news sources you assign them to
   (see <a href="{{ url_for('web.sources') }}">Sources</a>), and one of your own keys can also pay
@@ -63,6 +78,12 @@
 <div class="card shadow-sm" style="max-width: 480px">
   <div class="card-header fw-semibold">Add a key</div>
   <div class="card-body">
+    <p class="text-body-secondary small">
+      Rough idea of cost with the default model: writing one edition is typically a few cents;
+      polling one news source for new items is usually a fraction of a cent. Actual cost depends
+      on the model you pick and how much content there is to process — check OpenRouter's own
+      usage dashboard for exact numbers once you're using a key.
+    </p>
     <form method="post" action="{{ url_for('web.api_key_new') }}">
       <div class="mb-3">
         <label class="form-label">Label</label>
@@ -79,6 +100,46 @@
       </div>
       <button class="btn btn-primary">Add key</button>
     </form>
+  </div>
+</div>
+
+<div class="modal fade" id="api-key-explainer" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">What are API keys?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Dispatch uses AI models to read your news sources and write your editions. Running those
+          models costs real money, charged per request — this app doesn't have a subscription fee,
+          so instead it needs <em>you</em> to bring your own credit to pay for the AI usage your
+          account causes.
+        </p>
+        <p>
+          <strong>OpenRouter</strong> is a service that gives you a single account and a single
+          API key that works with models from many different AI providers (Anthropic, OpenAI,
+          Google, and others). You add credit to your OpenRouter account, then give Dispatch an
+          <em>API key</em> — a secret code, like a password, that lets Dispatch spend from that
+          credit on your behalf, without ever needing your actual OpenRouter login.
+        </p>
+        <p><strong>To create an OpenRouter API key:</strong></p>
+        <ol>
+          <li>Go to <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a> and create an account.</li>
+          <li>Add some credit to your account (OpenRouter accepts card payments; a few dollars goes a long way for this app).</li>
+          <li>Go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a> and create a new API key.</li>
+          <li>Copy the key (it starts with <code>sk-or-</code>) and paste it into the "Add a key" form on this page.</li>
+        </ol>
+        <p class="mb-0 text-body-secondary small">
+          Your key is stored encrypted and is only ever used to pay for AI requests your account
+          triggers — nothing else has access to your OpenRouter credit.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
