@@ -19,6 +19,13 @@ def test_index_shows_enabled_source_badges(client, db):
     assert b"Debug Seed Data" in resp.data
 
 
+def test_index_sources_header_links_to_register(client):
+    resp = client.get("/")
+    html = resp.data.decode()
+    assert '<a href="/auth/register" class="card-header' in html
+    assert "Sources already being tracked" in html
+
+
 def test_index_shows_admin_shared_edition_demo(client, db, admin):
     from app.models import Summary, SummaryRun
 

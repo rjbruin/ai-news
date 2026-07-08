@@ -570,10 +570,15 @@ def test_admin_ignore_rejects_non_subscription(admin_client, db, mailbox):
     assert b"Only newsletter subscriptions" in resp.data
 
 
-def test_admin_ignore_rejects_pending_without_sender(admin_client, db, pending_subscription):
-    resp = admin_client.post(f"/admin/sources/{pending_subscription.id}/ignore", follow_redirects=True)
+def test_admin_ignore_deletes_pending_subscription_without_sender(admin_client, db, pending_subscription):
+    """A manually-added subscription that hasn't received any mail yet has
+    no sender address to remember — ignoring it should just delete it
+    rather than error out."""
+    source_id = pending_subscription.id
+    resp = admin_client.post(f"/admin/sources/{source_id}/ignore", follow_redirects=True)
     assert resp.status_code == 200
-    assert b"hasn&#39;t received any mail yet" in resp.data or b"hasn't received any mail yet" in resp.data
+    assert b"removed" in resp.data
+    assert db.session.get(Source, source_id) is None
 
 
 def test_admin_un_ignore(admin_client, db, mailbox):

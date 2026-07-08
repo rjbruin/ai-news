@@ -324,22 +324,27 @@ def source_ignore(source_id: int):
         flash("Only newsletter subscriptions can be marked as not-a-newsletter.", "danger")
         return redirect(url_for("admin.index"))
     addr = (source.config or {}).get("newsletter_sender")
-    if not addr:
-        flash("This subscription hasn't received any mail yet — nothing to ignore.", "danger")
-        return redirect(url_for("admin.index"))
 
-    mailbox_id = source.parent_source_id
-    existing = IgnoredSender.query.filter_by(mailbox_source_id=mailbox_id, email=addr).first()
-    if existing is None:
-        db.session.add(IgnoredSender(
-            mailbox_source_id=mailbox_id,
-            email=addr,
-            display_name=(source.config or {}).get("newsletter_sender_name") or source.name,
-            created_by_user_id=current_user.id,
-        ))
+    # A subscription that hasn't received any mail yet has no sender address
+    # to remember — there's nothing for future polling/reindexing to skip,
+    # so just delete it instead of recording an IgnoredSender row.
+    if addr:
+        mailbox_id = source.parent_source_id
+        existing = IgnoredSender.query.filter_by(mailbox_source_id=mailbox_id, email=addr).first()
+        if existing is None:
+            db.session.add(IgnoredSender(
+                mailbox_source_id=mailbox_id,
+                email=addr,
+                display_name=(source.config or {}).get("newsletter_sender_name") or source.name,
+                created_by_user_id=current_user.id,
+            ))
+    name = source.name
     db.session.delete(source)
     db.session.commit()
-    flash(f'"{addr}" will be ignored — it will no longer be treated as a newsletter.', "info")
+    if addr:
+        flash(f'"{addr}" will be ignored — it will no longer be treated as a newsletter.', "info")
+    else:
+        flash(f'"{name}" removed.', "info")
     return redirect(url_for("admin.index"))
 
 

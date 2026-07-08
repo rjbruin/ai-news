@@ -51,7 +51,9 @@
 {% endif %}
 
 <div class="card shadow-sm mb-4">
-  <div class="card-header fw-semibold">Sources already being tracked</div>
+  <a href="{{ url_for('auth.register') }}" class="card-header fw-semibold text-body d-block text-decoration-none">
+    Sources already being tracked
+  </a>
   <div class="card-body">
     {% if source_badges %}
       <div class="d-flex flex-wrap gap-2">
