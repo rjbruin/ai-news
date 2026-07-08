@@ -2,28 +2,77 @@
 {% block content %}
 <div class="p-5 mb-4 bg-white rounded-3 shadow-sm border">
   <div class="container-fluid py-3">
-    <h1 class="display-6 fw-bold"><span class="brand-mark">📰</span> Dispatch</h1>
+    <h1 class="display-6 fw-bold">
+      <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="40" height="40" class="brand-mark align-middle me-1">
+      Dispatch
+    </h1>
     <p class="col-md-9 fs-5 text-body-secondary">
-      Collects AI news from your sources, tags it against a shared taxonomy,
-      and delivers it the way you want — an overview page, a printable
-      collection, or an AI-generated podcast.
+      Point Dispatch at your newsletters and RSS feeds; it pulls out the individual stories, tags
+      them against a shared taxonomy, and has an AI agent write a daily or weekly edition from
+      whatever matches your interests — as a page, a printable PDF, or a two-host news podcast.
     </p>
     <a class="btn btn-primary btn-lg" href="{{ url_for('auth.register') }}">Get started</a>
     <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('auth.login') }}">Sign in</a>
   </div>
 </div>
-<div class="row g-4">
+<div class="row g-4 mb-4">
   <div class="col-md-4"><div class="card h-100 shadow-sm"><div class="card-body">
-    <h5 class="card-title">Pluggable sources</h5>
-    <p class="card-text text-body-secondary">Subscribe a mailbox to newsletters and let the system extract discrete stories.</p>
+    <h5 class="card-title">Any source, one taxonomy</h5>
+    <p class="card-text text-body-secondary">Subscribe a mailbox to newsletters or add an RSS/Atom feed. Every story gets tagged automatically against a shared topic taxonomy.</p>
   </div></div></div>
   <div class="col-md-4"><div class="card h-100 shadow-sm"><div class="card-body">
-    <h5 class="card-title">Smart tagging</h5>
-    <p class="card-text text-body-secondary">A shared taxonomy with your own tags. Try a tag and preview its matches before saving.</p>
+    <h5 class="card-title">An agent writes your edition</h5>
+    <p class="card-text text-body-secondary">Tell it what you care about; it selects, groups, and writes up the stories that matter — no manual curation required.</p>
   </div></div></div>
   <div class="col-md-4"><div class="card h-100 shadow-sm"><div class="card-body">
-    <h5 class="card-title">Flexible summaries</h5>
-    <p class="card-text text-body-secondary">Choose a format and a time window. New formats drop in as plugins.</p>
+    <h5 class="card-title">Read it your way</h5>
+    <p class="card-text text-body-secondary">Browse it on the web, export a printable PDF, or generate a narrated podcast episode of the same edition.</p>
   </div></div></div>
 </div>
+
+{% if demo_run %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">A recent edition</span>
+    <a href="{{ url_for('web.edition_shared', token=demo_run.share_token) }}">Read the full edition →</a>
+  </div>
+  <div class="card-body">
+    <p class="text-body-secondary small mb-2">{{ demo_run.label or demo_run.generated_at.strftime('%Y-%m-%d') }}</p>
+    <div class="demo-edition-excerpt">
+      {% if demo_run.document %}
+        {% from "summaries/partials/_blocks.html" import render_blocks %}
+        {{ render_blocks(demo_run.document) }}
+      {% elif demo_run.content %}
+        {{ demo_run.content | safe }}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Sources already being tracked</div>
+  <div class="card-body">
+    {% if source_badges %}
+      <div class="d-flex flex-wrap gap-2">
+        {% for label in source_badges %}
+          <span class="badge text-bg-light border text-body-secondary">{{ label }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-body-secondary small mb-0">No sources configured yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+  /* Clamp the demo edition preview so the frontpage doesn't turn into the
+     entire edition — it links out to the real thing anyway. */
+  .demo-edition-excerpt { max-height: 420px; overflow: hidden; position: relative; }
+  .demo-edition-excerpt::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 80px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,1));
+  }
+</style>
 {% endblock %}

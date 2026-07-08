@@ -8,6 +8,7 @@
         <h1 class="h4 mb-3">Create your account</h1>
         <form method="post">
           {{ form.hidden_tag() }}
+          {{ form.invite_code() }}
           <div class="mb-3">
             {{ form.username.label(class="form-label") }}
             {{ form.username(class="form-control") }}

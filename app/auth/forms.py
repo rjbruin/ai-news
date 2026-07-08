@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, PasswordField, StringField, SubmitField
+from wtforms import BooleanField, HiddenField, PasswordField, StringField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, Length, Optional, ValidationError
 
 # RFC 2606 reserved domains — never real, deliverable mailboxes. Public
@@ -32,6 +32,7 @@ class RegisterForm(FlaskForm):
     confirm = PasswordField(
         "Confirm password", validators=[Optional(), EqualTo("password")]
     )
+    invite_code = HiddenField()
     submit = SubmitField("Create account")
 
 

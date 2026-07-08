@@ -112,7 +112,26 @@ def podcast_feed_audio(token: str, filename: str):
 def index():
     if current_user.is_authenticated:
         return redirect(url_for("web.dashboard"))
-    return render_template("index.html")
+
+    admin_emails = current_app.config.get("ADMIN_EMAILS", [])
+    demo_run = None
+    if admin_emails:
+        demo_run = (
+            SummaryRun.query
+            .join(Summary, SummaryRun.summary_id == Summary.id)
+            .join(User, Summary.user_id == User.id)
+            .filter(SummaryRun.share_token.isnot(None), User.email.in_(admin_emails))
+            .order_by(SummaryRun.generated_at.desc())
+            .first()
+        )
+
+    enabled_sources = [
+        s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
+        if not (s.parent_source_id is None and s.type_key == "imap_newsletter")
+    ]
+    source_badges = sorted({_source_badge_label(s) for s in enabled_sources})
+
+    return render_template("index.html", demo_run=demo_run, source_badges=source_badges)
 
 
 @bp.route("/alerts/<int:alert_id>/dismiss", methods=["POST"])
