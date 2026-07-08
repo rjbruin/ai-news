@@ -1105,6 +1105,41 @@ def edition_feedback(summary_id: int, run_id: int):
     return redirect(url_for("web.edition_feedback_debug", summary_id=summary_id, run_id=run_id))
 
 
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback/save", methods=["POST"])
+@login_required
+def edition_feedback_save(summary_id: int, run_id: int):
+    """Record feedback for future editions without spending on a revision
+    run now — appended to the reader's INTERESTS memory file, which the
+    agent already reads (and can consolidate) on every future run."""
+    from ..agent import memory as agent_memory
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    text = (request.form.get("feedback") or "").strip()
+    if not text:
+        flash("Enter some feedback first.", "warning")
+        return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+
+    from ..agent.prompt import DEFAULT_INTERESTS
+
+    existing = agent_memory.read(current_user, summary, "interests") or DEFAULT_INTERESTS
+    date = utcnow().strftime("%Y-%m-%d")
+    note_header = "## Unreviewed feedback (not yet consolidated)"
+    if note_header in existing:
+        updated = existing.rstrip() + f"\n- {date}: {text}\n"
+    else:
+        updated = existing.rstrip() + f"\n\n{note_header}\n- {date}: {text}\n"
+    agent_memory.write(current_user, summary, "interests", updated)
+
+    flash("Saved — this will be taken into account starting with the next edition.", "success")
+    return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
+
+
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/feedback/debug")
 @login_required
 def edition_feedback_debug(summary_id: int, run_id: int):
