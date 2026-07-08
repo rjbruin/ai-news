@@ -117,7 +117,8 @@ h1, h2, h3, h4, h5, h6,
 }
 .table-responsive {
   border-radius: var(--bs-border-radius-lg);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid rgba(0, 0, 0, .06);
 }
 .table-responsive .table { margin-bottom: 0; }
