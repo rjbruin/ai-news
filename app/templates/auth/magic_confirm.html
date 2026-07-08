@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Confirm sign-in · Dispatch{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-body text-center">
+        <h1 class="h4 mb-3">Confirm sign-in</h1>
+        <p class="text-body-secondary">Sign in as <strong>{{ user.email }}</strong>?</p>
+        <form method="post" action="{{ url_for('auth.magic_login', token=token) }}">
+          <button type="submit" class="btn btn-primary w-100">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
