@@ -71,6 +71,71 @@ def test_owner_display_preserves_privacy(db, user, admin):
     assert theirs.owner_display(admin) == "other user"
 
 
+def test_payment_label_and_usage_visibility(db, user, admin):
+    other = User(username="other4", email="other4@example.com", email_verified=True)
+    db.session.add(other)
+    db.session.commit()
+
+    global_key = ApiKey.get_or_create_global()
+    mine_key = ApiKey(owner_user_id=user.id, label="Mine")
+    mine_key.set_key("sk-or-mine")
+    theirs_key = ApiKey(owner_user_id=other.id, label="Theirs")
+    theirs_key.set_key("sk-or-theirs")
+    db.session.add_all([mine_key, theirs_key])
+    db.session.commit()
+
+    global_source = Source(type_key="rss_feed", name="Global", config={}, api_key_id=global_key.id)
+    mine_source = Source(type_key="rss_feed", name="Mine", config={}, api_key_id=mine_key.id)
+    theirs_source = Source(type_key="rss_feed", name="Theirs", config={}, api_key_id=theirs_key.id)
+    unassigned = Source(type_key="rss_feed", name="Unassigned", config={})
+    db.session.add_all([global_source, mine_source, theirs_source, unassigned])
+    db.session.commit()
+
+    assert global_source.payment_label(user) == "Included in system"
+    assert mine_source.payment_label(user) == "your API key"
+    assert theirs_source.payment_label(user) == "another user's API key"
+    assert unassigned.payment_label(user) == "none assigned"
+
+    assert global_source.usage_visible_to(user) is False
+    assert mine_source.usage_visible_to(user) is True
+    assert theirs_source.usage_visible_to(user) is False
+    # Admins don't get special visibility into another user's key either.
+    assert theirs_source.usage_visible_to(admin) is False
+
+
+def test_sources_page_hides_costs_except_own_key(auth_client, db, user):
+    from datetime import timedelta
+
+    from app.models import ApiKeyUsage, utcnow
+
+    global_key = ApiKey.get_or_create_global()
+    mine_key = ApiKey(owner_user_id=user.id, label="Mine")
+    mine_key.set_key("sk-or-mine")
+    db.session.add(mine_key)
+    db.session.commit()
+
+    global_source = Source(type_key="rss_feed", name="Global Feed", config={}, api_key_id=global_key.id)
+    mine_source = Source(type_key="rss_feed", name="Mine Feed", config={}, api_key_id=mine_key.id)
+    db.session.add_all([global_source, mine_source])
+    db.session.commit()
+
+    db.session.add(ApiKeyUsage(api_key_id=mine_key.id, source_id=mine_source.id, kind="ingest", tokens=1, cost=1.2345))
+    old = ApiKeyUsage(api_key_id=mine_key.id, source_id=mine_source.id, kind="ingest", tokens=1, cost=9.0)
+    db.session.add(old)
+    db.session.commit()
+    old.created_at = utcnow() - timedelta(days=30)
+    db.session.commit()
+
+    resp = auth_client.get("/sources")
+    html = resp.data.decode()
+    assert "Payment" in html
+    assert "Usage" not in html  # old column header removed
+    assert "Included in system" in html
+    assert "your API key" in html
+    assert "$10.23 total" in html  # 1.2345 + 9.0 rounded
+    assert "$1.23 in the last week" in html  # only the recent row
+
+
 def test_type_label_uses_plugin_label(app, db):
     with app.app_context():
         rss = Source(type_key="rss_feed", name="Feed", config={})
@@ -159,6 +224,21 @@ def test_approved_user_can_add_and_revoke_key(auth_client, db, user):
     db.session.refresh(source)
     assert not key.active
     assert not source.enabled  # dependent source auto-disabled
+
+
+def test_payment_page_shows_hero_and_explainer_modal(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+
+    resp = auth_client.get("/keys")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "Payment" in html
+    assert "What are API keys?" in html
+    assert "More about API keys" in html
+    assert "openrouter.ai" in html
+    assert "id=\"api-key-explainer\"" in html
+    assert "a few cents" in html  # cost expectation blurb in "Add a key"
 
 
 def test_owner_can_retract_own_source_but_not_others(auth_client, db, user):

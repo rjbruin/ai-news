@@ -51,7 +51,7 @@
         <option value="{{ k.id }}">{{ k.label }}{{ ' (shared, global)' if k.is_global else '' }}</option>
         {% endfor %}
       </select>
-      <div class="form-text">Pays for fetching and tagging this source's items. Manage your keys in <a href="{{ url_for('web.api_keys') }}">API Keys</a>.</div>
+      <div class="form-text">Pays for fetching and tagging this source's items. Manage your keys on the <a href="{{ url_for('web.api_keys') }}">Payment</a> page.</div>
     </div>
 
     <div class="mb-3 cfg-group cfg-not-imap_newsletter" style="display:none">

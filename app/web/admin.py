@@ -28,6 +28,7 @@ from ..models import (
     ApiKey,
     IgnoredSender,
     IngestRun,
+    Invite,
     NewsItem,
     NewsItemTag,
     Source,
@@ -35,6 +36,7 @@ from ..models import (
     SummaryRun,
     Tag,
     User,
+    utcnow,
 )
 from ..services import costs, ingest, poll_registry
 from ..services.summarize import resend_edition_email
@@ -80,6 +82,7 @@ def index():
         admin_settings=AdminSettings.get(),
         elevenlabs_key_configured=bool(current_app.config.get("ELEVENLABS_API_KEY")),
         cost_summary=costs.cost_summary(),
+        invites=Invite.query.order_by(Invite.created_at.desc()).all(),
     )
 
 
@@ -467,6 +470,58 @@ def save_admin_settings():
     db.session.commit()
     flash("Admin settings saved.", "success")
     return redirect(url_for("admin.index") + "#admin-settings")
+
+
+@bp.route("/registration-open/toggle", methods=["POST"])
+@admin_required
+def registration_open_toggle():
+    settings = AdminSettings.get()
+    settings.registration_open = not settings.registration_open
+    db.session.commit()
+    flash(
+        "Registration is now open to anyone." if settings.registration_open
+        else "Registration is now invite-only.",
+        "info",
+    )
+    return redirect(url_for("admin.index") + "#invites")
+
+
+@bp.route("/invites/new", methods=["POST"])
+@admin_required
+def invite_new():
+    import secrets
+
+    try:
+        max_uses = max(1, int(request.form.get("max_uses") or 1))
+    except (TypeError, ValueError):
+        max_uses = 1
+    invite = Invite(
+        code=secrets.token_urlsafe(16), max_uses=max_uses, created_by_user_id=current_user.id,
+    )
+    db.session.add(invite)
+    db.session.commit()
+    flash("Invite link created.", "success")
+    return redirect(url_for("admin.index") + "#invites")
+
+
+@bp.route("/invites/<int:invite_id>/revoke", methods=["POST"])
+@admin_required
+def invite_revoke(invite_id: int):
+    invite = db.session.get(Invite, invite_id) or abort(404)
+    invite.revoked_at = utcnow()
+    db.session.commit()
+    flash("Invite revoked.", "info")
+    return redirect(url_for("admin.index") + "#invites")
+
+
+@bp.route("/invites/<int:invite_id>/delete", methods=["POST"])
+@admin_required
+def invite_delete(invite_id: int):
+    invite = db.session.get(Invite, invite_id) or abort(404)
+    db.session.delete(invite)
+    db.session.commit()
+    flash("Invite deleted.", "info")
+    return redirect(url_for("admin.index") + "#invites")
 
 
 @bp.route("/tags/<int:tag_id>/promote", methods=["POST"])

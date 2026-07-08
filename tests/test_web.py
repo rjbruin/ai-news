@@ -2,6 +2,66 @@ def test_index_ok(client):
     assert client.get("/").status_code == 200
 
 
+def test_index_shows_no_emoji_logo(client):
+    resp = client.get("/")
+    assert b"\xf0\x9f\x93\xb0" not in resp.data  # newspaper emoji U+1F4F0
+    assert b"icon-192.png" in resp.data
+
+
+def test_index_shows_enabled_source_badges(client, db):
+    from app.models import Source
+
+    src = Source(type_key="seed", name="Debug Seed Data", enabled=True)
+    db.session.add(src)
+    db.session.commit()
+
+    resp = client.get("/")
+    assert b"Debug Seed Data" in resp.data
+
+
+def test_index_shows_admin_shared_edition_demo(client, db, admin):
+    from app.models import Summary, SummaryRun
+
+    summary = Summary(
+        user_id=admin.id, name="Admin Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = SummaryRun(
+        summary_id=summary.id, label="Monday July 6",
+        document=[{"type": "intro", "markdown": "A busy day."}],
+        share_token="demo-token-123",
+    )
+    db.session.add(run)
+    db.session.commit()
+
+    resp = client.get("/")
+    assert b"A recent edition" in resp.data
+    assert b"demo-token-123" in resp.data
+    assert b"Create" not in resp.data  # no podcast/PDF create dropdown leaking in
+
+
+def test_index_does_not_show_non_admin_shared_edition(client, db, user):
+    from app.models import Summary, SummaryRun
+
+    summary = Summary(
+        user_id=user.id, name="User Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = SummaryRun(
+        summary_id=summary.id, document=[{"type": "intro", "markdown": "Hi."}],
+        share_token="user-token-456",
+    )
+    db.session.add(run)
+    db.session.commit()
+
+    resp = client.get("/")
+    assert b"A recent edition" not in resp.data
+
+
 def test_dashboard_requires_login(client):
     resp = client.get("/dashboard")
     assert resp.status_code == 302

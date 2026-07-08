@@ -108,13 +108,18 @@ def _edition_label(summary: Summary, range_start: datetime | None, range_end: da
 # ─────────────────────────── item scoping ────────────────────────────
 
 def items_in_window(
-    start: datetime | None, end: datetime | None, *, exclude_seed: bool = False
+    start: datetime | None, end: datetime | None, *, exclude_seed: bool = False, user=None,
 ) -> list[NewsItem]:
     """Return news items fetched within [start, end] (naive-UTC aware inputs).
 
     ``exclude_seed`` drops items from the "seed" debug fixture source — used
     by debug_agentic so it exercises the agent against real ingested news,
     keeping the seed fixtures available for other, dedicated test cases.
+
+    ``user``, if given, drops items from any source that user has turned off
+    for their own editions (see UserDisabledSource) — sources are shared
+    across everyone, but each user can opt individual ones out of just their
+    own editions.
     """
     q = NewsItem.query
     if start is not None:
@@ -124,12 +129,23 @@ def items_in_window(
     items = q.order_by(NewsItem.fetched_at.desc()).all()
     if exclude_seed:
         items = [it for it in items if not (it.source and it.source.type_key == "seed")]
+    if user is not None:
+        from ..models import UserDisabledSource
+
+        disabled_ids = {
+            row.source_id for row in
+            UserDisabledSource.query.filter_by(user_id=user.id).all()
+        }
+        if disabled_ids:
+            items = [it for it in items if it.source_id not in disabled_ids]
     return items
 
 
 def items_in_scope(summary: Summary) -> list[NewsItem]:
     start, end = resolve_range(summary)
-    return items_in_window(start, end, exclude_seed=summary.type_key == "debug_agentic")
+    return items_in_window(
+        start, end, exclude_seed=summary.type_key == "debug_agentic", user=summary.user,
+    )
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -301,7 +317,9 @@ def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None, cancel_ev
 
     start = _aware(parent_run.range_start)
     end = _aware(parent_run.range_end) or utcnow()
-    items = items_in_window(start, end, exclude_seed=summary.type_key == "debug_agentic")
+    items = items_in_window(
+        start, end, exclude_seed=summary.type_key == "debug_agentic", user=summary.user,
+    )
 
     agent_log: list[dict] = []
 
