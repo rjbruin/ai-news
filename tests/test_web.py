@@ -95,7 +95,10 @@ def test_dashboard_no_onboarding_for_already_seen_user(auth_client, db, user):
 
 
 def test_fresh_registration_sees_onboarding_on_first_login(client, db):
-    from app.models import User
+    from app.models import AdminSettings, User
+
+    AdminSettings.get().registration_open = True
+    db.session.commit()
 
     client.post(
         "/auth/register",

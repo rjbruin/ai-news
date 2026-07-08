@@ -4,7 +4,7 @@ Tracks whether the first-visit onboarding tutorial has been shown, so it
 only ever appears once per account.
 
 Revision ID: 117aa3fc3b06
-Revises: d8e9f0a1b2c3
+Revises: f0a1b2c3d4e5
 Create Date: 2026-07-08 00:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '117aa3fc3b06'
-down_revision = 'd8e9f0a1b2c3'
+down_revision = 'f0a1b2c3d4e5'
 branch_labels = None
 depends_on = None
 
