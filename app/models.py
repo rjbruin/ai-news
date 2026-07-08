@@ -376,6 +376,27 @@ class Source(db.Model):
             return "you"
         return "other user"
 
+    def payment_label(self, viewer: "User") -> str:
+        """Who's actually paying for this source's usage, from ``viewer``'s
+        point of view — deliberately vague about anyone else's key, same
+        privacy stance as owner_display."""
+        if self.api_key is None:
+            return "none assigned"
+        if self.api_key.is_global:
+            return "Included in system"
+        if self.api_key.owner_user_id == viewer.id:
+            return "your API key"
+        return "another user's API key"
+
+    def usage_visible_to(self, viewer: "User") -> bool:
+        """Only the key's own owner gets to see its usage/cost — not the
+        operator's global spend, not another user's."""
+        return bool(
+            self.api_key is not None
+            and not self.api_key.is_global
+            and self.api_key.owner_user_id == viewer.id
+        )
+
     @property
     def usage_tokens(self) -> int:
         return int(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.tokens)).scalar() or 0)
@@ -383,6 +404,12 @@ class Source(db.Model):
     @property
     def usage_cost(self) -> float:
         return float(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0)
+
+    def usage_cost_since(self, cutoff) -> float:
+        return float(
+            self.usage_entries.filter(ApiKeyUsage.created_at >= cutoff)
+            .with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0
+        )
 
 
 class IgnoredSender(db.Model):

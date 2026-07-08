@@ -504,9 +504,10 @@ def sources():
         s.id: _mailbox_address(s) for s in top_level if s.type_key == "imap_newsletter"
     }
     subscribe_id = request.args.get("subscribe", type=int)
+    from datetime import timedelta
     return render_template(
         "sources.html", sources=top_level, mailbox_addresses=mailbox_addresses,
-        subscribe_id=subscribe_id,
+        subscribe_id=subscribe_id, one_week_ago=utcnow() - timedelta(days=7),
     )
 
 
