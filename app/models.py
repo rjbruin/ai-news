@@ -659,6 +659,9 @@ class AdminSettings(db.Model):
     elevenlabs_voice_host_a = db.Column(db.String(120), nullable=True)
     elevenlabs_voice_host_b = db.Column(db.String(120), nullable=True)
     elevenlabs_model = db.Column(db.String(120), nullable=True)
+    # Whether anyone can self-register without an invite. Off by default —
+    # registration is invite-only until an admin explicitly opts in.
+    registration_open = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
     @classmethod
     def get(cls) -> "AdminSettings":
@@ -668,6 +671,27 @@ class AdminSettings(db.Model):
             db.session.add(row)
             db.session.commit()
         return row
+
+
+class Invite(db.Model):
+    """An admin-created invite link, redeemable up to ``max_uses`` times to
+    register an account while registration is otherwise closed."""
+
+    __tablename__ = "invites"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(32), nullable=False, unique=True, index=True)
+    max_uses = db.Column(db.Integer, nullable=False, default=1)
+    uses_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+    @property
+    def is_usable(self) -> bool:
+        return self.revoked_at is None and self.uses_count < self.max_uses
 
 
 # Convenience export used by the factory.
@@ -688,4 +712,5 @@ __all__ = [
     "AgentMemory",
     "AdminSettings",
     "EditionRecipient",
+    "Invite",
 ]

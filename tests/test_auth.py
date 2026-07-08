@@ -1,8 +1,14 @@
 from app.auth import tokens
-from app.models import User
+from app.models import AdminSettings, User
+
+
+def _open_registration(db):
+    AdminSettings.get().registration_open = True
+    db.session.commit()
 
 
 def test_register_creates_user(client, db):
+    _open_registration(db)
     resp = client.post(
         "/auth/register",
         data={
@@ -19,6 +25,7 @@ def test_register_creates_user(client, db):
 
 
 def test_register_rejects_reserved_example_domain(client, db):
+    _open_registration(db)
     resp = client.post(
         "/auth/register",
         data={
@@ -36,6 +43,7 @@ def test_register_rejects_reserved_example_domain(client, db):
 
 
 def test_register_rejects_duplicate_email(client, db):
+    _open_registration(db)
     existing = User(username="dupe", email="dupe@dispatch-users.test-domain.com", email_verified=True)
     existing.set_password("password123")
     db.session.add(existing)
@@ -51,6 +59,7 @@ def test_register_rejects_duplicate_email(client, db):
 
 
 def test_register_rate_limited_after_repeated_attempts(client, db):
+    _open_registration(db)
     for _ in range(5):
         client.post(
             "/auth/register",
