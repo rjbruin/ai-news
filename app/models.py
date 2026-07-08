@@ -70,6 +70,12 @@ class User(UserMixin, db.Model):
     # implicitly approved (see is_approved); this flag is for everyone else.
     approved = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
+    # Whether the first-visit onboarding tutorial has been shown. Flipped to
+    # True the moment it's shown (not on explicit dismissal) so it reliably
+    # only ever appears once, even if the user closes the tab without
+    # clicking anything.
+    has_seen_onboarding = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+
     tags = db.relationship("Tag", back_populates="owner", lazy="dynamic")
     summaries = db.relationship(
         "Summary", back_populates="user", lazy="dynamic",

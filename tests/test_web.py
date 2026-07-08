@@ -7,6 +7,55 @@ def test_dashboard_requires_login(client):
     assert resp.status_code == 302
 
 
+def test_dashboard_shows_onboarding_once_for_new_user(auth_client, db, user):
+    # auth_client's login redirect already visits /dashboard once — reset the
+    # flag to simulate a genuinely fresh registration for this test.
+    user.has_seen_onboarding = False
+    db.session.commit()
+
+    resp = auth_client.get("/dashboard")
+    assert resp.status_code == 200
+    assert b"onboarding-modal" in resp.data
+    assert b"Welcome to Dispatch" in resp.data
+    assert b"AI models that cost money" in resp.data
+
+    db.session.refresh(user)
+    assert user.has_seen_onboarding is True
+
+    resp2 = auth_client.get("/dashboard")
+    assert b"onboarding-modal" not in resp2.data
+
+
+def test_dashboard_no_onboarding_for_already_seen_user(auth_client, db, user):
+    user.has_seen_onboarding = True
+    db.session.commit()
+
+    resp = auth_client.get("/dashboard")
+    assert b"onboarding-modal" not in resp.data
+
+
+def test_fresh_registration_sees_onboarding_on_first_login(client, db):
+    from app.models import User
+
+    client.post(
+        "/auth/register",
+        data={
+            "username": "freshuser", "email": "freshuser@dispatch-users.test-domain.com",
+            "password": "password123", "confirm": "password123", "submit": "Create account",
+        },
+        follow_redirects=True,
+    )
+    new_user = User.query.filter_by(email="freshuser@dispatch-users.test-domain.com").first()
+    assert new_user.has_seen_onboarding is False
+
+    resp = client.post(
+        "/auth/login",
+        data={"email": new_user.email, "password": "password123", "submit": "Sign in"},
+        follow_redirects=True,
+    )
+    assert b"onboarding-modal" in resp.data
+
+
 def test_non_admin_cannot_access_admin(auth_client):
     resp = auth_client.get("/admin/")
     assert resp.status_code == 403
