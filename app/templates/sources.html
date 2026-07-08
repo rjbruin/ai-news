@@ -52,6 +52,15 @@
     </td>
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
     <td class="small">{{ status_badge(s) }}</td>
+    <td class="small">
+      {% if not (s.parent_source_id is none and s.type_key == 'imap_newsletter') %}
+      <form method="post" action="{{ url_for('web.source_toggle_mine', source_id=s.id) }}" class="d-inline">
+        <button class="btn btn-sm {{ 'btn-outline-secondary' if s.id in disabled_for_me else 'btn-outline-success' }}">
+          {{ 'Off for me' if s.id in disabled_for_me else 'On for me' }}
+        </button>
+      </form>
+      {% endif %}
+    </td>
     <td class="text-nowrap">
       {% if s.subscription_status and s.subscription_status != 'subscribed' and s.can_manage(current_user) %}
         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
@@ -76,7 +85,7 @@
 
 <div class="table-responsive shadow-sm">
   <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Name</th><th>Owner</th><th>API key</th><th>Usage</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Owner</th><th>API key</th><th>Usage</th><th>Status</th><th>In my editions</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
       {{ source_row(s) }}
@@ -84,7 +93,7 @@
         {{ source_row(child, nested=True) }}
       {% endfor %}
     {% else %}
-      <tr><td colspan="6" class="text-body-secondary">No sources yet.</td></tr>
+      <tr><td colspan="7" class="text-body-secondary">No sources yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

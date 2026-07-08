@@ -27,7 +27,8 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
-    ApiKey, Alert, EditionRecipient, NewsItem, Source, Summary, SummaryRun, Tag, User, utcnow,
+    ApiKey, Alert, EditionRecipient, NewsItem, Source, Summary, SummaryRun, Tag, User,
+    UserDisabledSource, utcnow,
 )
 from ..services import edition_mail, generation_registry, ingest, summarize
 from ..sources import registry as source_registry
@@ -523,10 +524,32 @@ def sources():
         s.id: _mailbox_address(s) for s in top_level if s.type_key == "imap_newsletter"
     }
     subscribe_id = request.args.get("subscribe", type=int)
+    disabled_for_me = {
+        row.source_id for row in
+        UserDisabledSource.query.filter_by(user_id=current_user.id).all()
+    }
     return render_template(
         "sources.html", sources=top_level, mailbox_addresses=mailbox_addresses,
-        subscribe_id=subscribe_id,
+        subscribe_id=subscribe_id, disabled_for_me=disabled_for_me,
     )
+
+
+@bp.route("/sources/<int:source_id>/toggle-mine", methods=["POST"])
+@login_required
+def source_toggle_mine(source_id: int):
+    """Turn a (shared) source on/off for just the current user's own
+    editions — independent of who owns/pays for the source."""
+    source = db.session.get(Source, source_id) or abort(404)
+    row = UserDisabledSource.query.filter_by(
+        user_id=current_user.id, source_id=source.id,
+    ).first()
+    if row is None:
+        db.session.add(UserDisabledSource(user_id=current_user.id, source_id=source.id))
+        db.session.commit()
+    else:
+        db.session.delete(row)
+        db.session.commit()
+    return redirect(url_for("web.sources"))
 
 
 @bp.route("/sources/new", methods=["GET", "POST"])
