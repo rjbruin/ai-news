@@ -164,6 +164,23 @@ class EditionRecipient(db.Model):
         return self.confirmed_at is not None
 
 
+class UserDisabledSource(db.Model):
+    """Marks that a user has turned a (shared) source off for their own
+    editions. Absence of a row means the source is on for that user — every
+    source is on by default; this table only tracks the exceptions."""
+
+    __tablename__ = "user_disabled_sources"
+    __table_args__ = (db.UniqueConstraint("user_id", "source_id", name="uq_user_disabled_source"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    user = db.relationship("User")
+    source = db.relationship("Source")
+
+
 class AuthToken(db.Model):
     """Single-use signed-token records for magic-link login / verification."""
 
@@ -382,6 +399,27 @@ class Source(db.Model):
             return "you"
         return "other user"
 
+    def payment_label(self, viewer: "User") -> str:
+        """Who's actually paying for this source's usage, from ``viewer``'s
+        point of view — deliberately vague about anyone else's key, same
+        privacy stance as owner_display."""
+        if self.api_key is None:
+            return "none assigned"
+        if self.api_key.is_global:
+            return "Included in system"
+        if self.api_key.owner_user_id == viewer.id:
+            return "your API key"
+        return "another user's API key"
+
+    def usage_visible_to(self, viewer: "User") -> bool:
+        """Only the key's own owner gets to see its usage/cost — not the
+        operator's global spend, not another user's."""
+        return bool(
+            self.api_key is not None
+            and not self.api_key.is_global
+            and self.api_key.owner_user_id == viewer.id
+        )
+
     @property
     def usage_tokens(self) -> int:
         return int(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.tokens)).scalar() or 0)
@@ -389,6 +427,12 @@ class Source(db.Model):
     @property
     def usage_cost(self) -> float:
         return float(self.usage_entries.with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0)
+
+    def usage_cost_since(self, cutoff) -> float:
+        return float(
+            self.usage_entries.filter(ApiKeyUsage.created_at >= cutoff)
+            .with_entities(db.func.sum(ApiKeyUsage.cost)).scalar() or 0.0
+        )
 
 
 class IgnoredSender(db.Model):
@@ -665,6 +709,9 @@ class AdminSettings(db.Model):
     elevenlabs_voice_host_a = db.Column(db.String(120), nullable=True)
     elevenlabs_voice_host_b = db.Column(db.String(120), nullable=True)
     elevenlabs_model = db.Column(db.String(120), nullable=True)
+    # Whether anyone can self-register without an invite. Off by default —
+    # registration is invite-only until an admin explicitly opts in.
+    registration_open = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
     @classmethod
     def get(cls) -> "AdminSettings":
@@ -674,6 +721,27 @@ class AdminSettings(db.Model):
             db.session.add(row)
             db.session.commit()
         return row
+
+
+class Invite(db.Model):
+    """An admin-created invite link, redeemable up to ``max_uses`` times to
+    register an account while registration is otherwise closed."""
+
+    __tablename__ = "invites"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(32), nullable=False, unique=True, index=True)
+    max_uses = db.Column(db.Integer, nullable=False, default=1)
+    uses_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+    @property
+    def is_usable(self) -> bool:
+        return self.revoked_at is None and self.uses_count < self.max_uses
 
 
 # Convenience export used by the factory.
@@ -694,4 +762,6 @@ __all__ = [
     "AgentMemory",
     "AdminSettings",
     "EditionRecipient",
+    "UserDisabledSource",
+    "Invite",
 ]

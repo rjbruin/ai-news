@@ -22,7 +22,26 @@
   --ag-coral-tint: #faece7;
 }
 
-body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+body {
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6,
+.navbar-brand, .card-header, .an-h1, .an-h2, .an-h3, .an-h4, .an-h5 {
+  font-family: "Lexend", "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  letter-spacing: -.01em;
+}
+
+/* Softer, more contemporary corner radius across every Bootstrap component —
+   the stock 4px default reads as "unstyled Bootstrap" more than almost
+   anything else about the framework's look. */
+:root {
+  --bs-border-radius: .55rem;
+  --bs-border-radius-sm: .4rem;
+  --bs-border-radius-lg: .8rem;
+  --bs-border-radius-xl: 1.1rem;
+}
 
 .app-navbar {
   background: linear-gradient(120deg, var(--brand-dark), var(--brand) 55%, var(--ag-teal));
@@ -56,7 +75,55 @@ body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-se
 }
 
 .card { border-color: rgba(0,0,0,.07); border-radius: .75rem; }
-.badge { font-weight: 500; }
+.card-header { font-weight: 600; letter-spacing: -.005em; }
+.badge { font-weight: 600; letter-spacing: .01em; padding: .38em .65em; }
+
+/* Form controls — Bootstrap's default focus ring is a generic blue that
+   ignores the app's brand color entirely. */
+.form-control, .form-select {
+  border-color: rgba(0, 0, 0, .12);
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 .2rem rgba(31, 58, 95, .15);
+}
+.form-check-input:checked {
+  background-color: var(--brand);
+  border-color: var(--brand);
+}
+.form-check-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 .2rem rgba(31, 58, 95, .15);
+}
+
+/* Tables — stock Bootstrap tables are the single most "default template"
+   looking element on data-heavy pages (Sources, Admin, editions list). A
+   tinted header and softer row dividers read as considered, not default. */
+.table {
+  --bs-table-border-color: rgba(0, 0, 0, .06);
+}
+.table > thead {
+  background: var(--ag-blue-tint);
+}
+.table > thead th {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #185fa5;
+  border-bottom: none;
+  padding-top: .65rem;
+  padding-bottom: .65rem;
+}
+.table-responsive {
+  border-radius: var(--bs-border-radius-lg);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, .06);
+}
+.table-responsive .table { margin-bottom: 0; }
+.table-hover > tbody > tr:hover > * {
+  background-color: var(--ag-blue-tint);
+}
 
 /* Hover-lift — a small affordance for clickable cards/rows (dashboard
    featured edition, Editions list rows, agentic content blocks). Kept to a

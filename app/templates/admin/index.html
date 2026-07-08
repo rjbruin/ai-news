@@ -151,6 +151,63 @@
   </table>
 </div>
 
+<h2 class="h5 mt-4" id="invites" style="scroll-margin-top:5rem">Invites</h2>
+<p class="text-body-secondary small mb-2">
+  Registration is currently
+  <strong>{{ 'open to anyone' if admin_settings.registration_open else 'invite-only' }}</strong>.
+  <form method="post" action="{{ url_for('admin.registration_open_toggle') }}" class="d-inline">
+    <button class="btn btn-sm btn-outline-secondary">
+      {{ 'Make invite-only' if admin_settings.registration_open else 'Open registration to anyone' }}
+    </button>
+  </form>
+</p>
+<form method="post" action="{{ url_for('admin.invite_new') }}" class="d-flex align-items-end gap-2 mb-3">
+  <div>
+    <label class="form-label small mb-1" for="max_uses">New invite — number of uses</label>
+    <input type="number" name="max_uses" id="max_uses" class="form-control form-control-sm"
+           style="width: 100px" min="1" value="1">
+  </div>
+  <button class="btn btn-sm btn-primary">Create invite link</button>
+</form>
+<div class="table-responsive shadow-sm mb-4">
+  <table class="table bg-white align-middle mb-0">
+    <thead><tr><th>Link</th><th>Uses</th><th>Created by</th><th>Created</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for inv in invites %}
+      <tr>
+        <td class="small">
+          <code>{{ url_for('auth.register', invite=inv.code, _external=True) }}</code>
+        </td>
+        <td class="small">{{ inv.uses_count }} / {{ inv.max_uses }}</td>
+        <td class="small">{{ inv.created_by.username if inv.created_by else '—' }}</td>
+        <td class="small">{{ inv.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="small">
+          {% if inv.revoked_at %}
+            <span class="badge text-bg-secondary">revoked</span>
+          {% elif inv.is_usable %}
+            <span class="badge text-bg-success">active</span>
+          {% else %}
+            <span class="badge text-bg-light border text-body-secondary">used up</span>
+          {% endif %}
+        </td>
+        <td class="text-nowrap">
+          {% if not inv.revoked_at %}
+          <form method="post" action="{{ url_for('admin.invite_revoke', invite_id=inv.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">Revoke</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('admin.invite_delete', invite_id=inv.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="text-body-secondary">No invites created yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 <h2 class="h5">Costs</h2>
 <p class="text-body-secondary small mb-2">
   Spend on the shared global credentials over the last {{ cost_summary.days }} days — per-user OpenRouter

@@ -14,39 +14,67 @@ from flask import (
 from flask_login import current_user, login_user, logout_user
 
 from ..extensions import db
-from ..models import User, utcnow
+from ..models import AdminSettings, EditionRecipient, Invite, User, utcnow
 from . import tokens
 from .email_utils import send_email
 from .forms import LoginForm, MagicLinkForm, RegisterForm
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
-# In-process per-IP rate limit for registration attempts, to blunt bots
-# fuzzing the public /auth/register form. Deliberately simple (in-memory
-# dict, no external dependency) — sufficient for the single-worker
-# deployment this app runs; a multi-worker deployment would need a shared
-# store instead.
-_REGISTER_WINDOW_SECONDS = 600
-_REGISTER_MAX_ATTEMPTS = 5
-_register_attempts: dict[str, list[float]] = {}
+# In-process per-IP rate limits on the public auth endpoints, to blunt bots
+# fuzzing registration, password brute-forcing, and magic-link email
+# bombing (repeatedly spamming a real user's inbox with sign-in links).
+# Deliberately simple (in-memory dict, no external dependency) — sufficient
+# for the single-worker deployment this app runs; a multi-worker deployment
+# would need a shared store instead. Separate buckets per endpoint so
+# hammering one doesn't lock a legitimate user out of another.
+_RATE_LIMIT_WINDOW_SECONDS = 600
+_rate_limit_buckets: dict[str, dict[str, list[float]]] = {}
 
 
-def _register_rate_limited(ip: str) -> bool:
+def _rate_limited(bucket: str, key: str, max_attempts: int) -> bool:
     now = time.monotonic()
-    attempts = [t for t in _register_attempts.get(ip, []) if now - t < _REGISTER_WINDOW_SECONDS]
+    attempts_by_key = _rate_limit_buckets.setdefault(bucket, {})
+    attempts = [t for t in attempts_by_key.get(key, []) if now - t < _RATE_LIMIT_WINDOW_SECONDS]
     attempts.append(now)
-    _register_attempts[ip] = attempts
-    return len(attempts) > _REGISTER_MAX_ATTEMPTS
+    attempts_by_key[key] = attempts
+    return len(attempts) > max_attempts
+
+
+def _find_usable_invite(code: str | None) -> Invite | None:
+    if not code:
+        return None
+    invite = Invite.query.filter_by(code=code).first()
+    return invite if invite and invite.is_usable else None
 
 
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for("web.dashboard"))
-    form = RegisterForm()
-    if form.is_submitted() and _register_rate_limited(request.remote_addr or "unknown"):
+
+    registration_open = AdminSettings.get().registration_open
+    invite_code = request.args.get("invite") if request.method == "GET" else request.form.get("invite_code")
+    invite = None if registration_open else _find_usable_invite(invite_code)
+
+    if request.method == "GET" and not registration_open and invite is None:
+        # No form to show at all — an invite (or open registration) is required
+        # before anyone can even attempt to register. POST falls through to the
+        # form-validation branch below instead, so a submitted-but-invalid/
+        # exhausted invite gets a specific error rather than this generic page.
+        return render_template("auth/register_closed.html")
+
+    form = RegisterForm(invite_code=invite_code)
+    if form.is_submitted() and _rate_limited("register", request.remote_addr or "unknown", 5):
         flash("Too many registration attempts — please try again later.", "danger")
     elif form.validate_on_submit():
+        # Re-resolve the invite from the submitted hidden field — request.args
+        # (used above for the GET-time check) isn't present on POST.
+        invite = None if registration_open else _find_usable_invite(form.invite_code.data)
+        if not registration_open and invite is None:
+            flash("That invite link is invalid or has already been used up.", "danger")
+            return render_template("auth/register.html", form=form)
+
         email = form.email.data.strip().lower()
         if User.query.filter_by(email=email).first():
             flash("That email is already registered.", "danger")
@@ -59,9 +87,9 @@ def register():
             db.session.add(user)
             db.session.commit()
 
-            from ..models import EditionRecipient
-
             db.session.add(EditionRecipient(user_id=user.id, email=email, confirmed_at=utcnow()))
+            if invite is not None:
+                invite.uses_count += 1
             db.session.commit()
 
             _send_verification(user)
@@ -79,7 +107,9 @@ def login():
         return redirect(url_for("web.dashboard"))
     form = LoginForm()
     magic_form = MagicLinkForm()
-    if form.submit.data and form.validate_on_submit():
+    if form.submit.data and _rate_limited("login", request.remote_addr or "unknown", 10):
+        flash("Too many sign-in attempts — please try again later.", "danger")
+    elif form.submit.data and form.validate_on_submit():
         email = form.email.data.strip().lower()
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(form.password.data):
@@ -92,6 +122,9 @@ def login():
 @bp.route("/magic-link", methods=["POST"])
 def magic_link():
     form = MagicLinkForm()
+    if _rate_limited("magic-link", request.remote_addr or "unknown", 5):
+        flash("Too many sign-in link requests — please try again later.", "danger")
+        return redirect(url_for("auth.login"))
     if form.validate_on_submit():
         email = form.email.data.strip().lower()
         user = User.query.filter_by(email=email).first()
@@ -110,6 +143,22 @@ def magic_link():
 
 @bp.route("/magic/<token>")
 def magic_login(token: str):
+    """Show a confirm-sign-in page rather than logging in directly on GET —
+    mail scanners (Safe Links, Gmail link prefetching, etc.) GET every link
+    in an email to check it, which would otherwise burn this single-use
+    token before the real user clicks it. Actual login happens on POST
+    (see magic_login_confirm)."""
+    if current_user.is_authenticated:
+        return redirect(url_for("web.dashboard"))
+    user = tokens.peek(token, purpose="login")
+    if user is None:
+        flash("That sign-in link is invalid or has expired.", "danger")
+        return redirect(url_for("auth.login"))
+    return render_template("auth/magic_confirm.html", token=token, user=user)
+
+
+@bp.route("/magic/<token>", methods=["POST"])
+def magic_login_confirm(token: str):
     user = tokens.verify(token, purpose="login")
     if user is None:
         flash("That sign-in link is invalid or has expired.", "danger")

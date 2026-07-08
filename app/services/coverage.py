@@ -66,7 +66,10 @@ def edition_coverage(run) -> dict:
     """
     summary = run.summary
     exclude_seed = summary is not None and summary.type_key == "debug_agentic"
-    scope = items_in_window(run.range_start, run.range_end, exclude_seed=exclude_seed)
+    scope = items_in_window(
+        run.range_start, run.range_end, exclude_seed=exclude_seed,
+        user=summary.user if summary else None,
+    )
 
     included_ids, included_urls = _document_references(run.document)
 

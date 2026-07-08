@@ -35,8 +35,36 @@ def generate(user: User, purpose: str, max_age: int = DEFAULT_MAX_AGE) -> str:
     return token
 
 
+def peek(token: str, purpose: str, max_age: int = DEFAULT_MAX_AGE) -> User | None:
+    """Like verify(), but read-only — checks signature/purpose/expiry/unused
+    status without consuming the token.
+
+    Used to show a "confirm sign-in" page on GET before a magic link is
+    actually consumed: email providers and corporate mail scanners (Safe
+    Links, Gmail's link prefetching, etc.) routinely GET every link in an
+    email to scan it, which would silently burn a single-use magic-link
+    token before the real user ever clicks it if GET alone logged them in.
+    """
+    try:
+        data = _serializer().loads(token, max_age=max_age)
+    except (BadSignature, SignatureExpired):
+        return None
+    if data.get("purpose") != purpose:
+        return None
+
+    record = (
+        AuthToken.query.filter_by(token_hash=_hash(token), purpose=purpose, used=False)
+        .order_by(AuthToken.id.desc())
+        .first()
+    )
+    if record is None:
+        return None
+    return db.session.get(User, data.get("uid"))
+
+
 def verify(token: str, purpose: str, max_age: int = DEFAULT_MAX_AGE) -> User | None:
-    """Validate a token's signature, purpose, expiry and single-use status."""
+    """Validate a token's signature, purpose, expiry and single-use status,
+    then consume it (mark used) so it can't be replayed."""
     try:
         data = _serializer().loads(token, max_age=max_age)
     except (BadSignature, SignatureExpired):
