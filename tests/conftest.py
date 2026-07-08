@@ -21,8 +21,8 @@ def give_edition_key(db, user, secret: str = "sk-or-test", model: str | None = N
 
 @pytest.fixture
 def app():
-    from app.auth.routes import _register_attempts
-    _register_attempts.clear()
+    from app.auth.routes import _rate_limit_buckets
+    _rate_limit_buckets.clear()
     app = create_app(TestConfig)
     with app.app_context():
         _db.create_all()

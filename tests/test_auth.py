@@ -72,6 +72,32 @@ def test_register_rate_limited_after_repeated_attempts(client, db):
     assert User.query.filter_by(email="final@dispatch-users.test-domain.com").first() is None
 
 
+def test_login_rate_limited_after_repeated_attempts(client, user):
+    for _ in range(10):
+        client.post(
+            "/auth/login",
+            data={"email": user.email, "password": "wrong", "submit": "Sign in"},
+        )
+    resp = client.post(
+        "/auth/login",
+        data={"email": user.email, "password": "password123", "submit": "Sign in"},
+        follow_redirects=True,
+    )
+    assert b"Too many sign-in attempts" in resp.data
+    assert b"Dashboard" not in resp.data  # correct password, but still blocked
+
+
+def test_magic_link_rate_limited_after_repeated_attempts(client, user):
+    for _ in range(5):
+        client.post("/auth/magic-link", data={"email": user.email, "submit": "Email me a sign-in link"})
+    resp = client.post(
+        "/auth/magic-link",
+        data={"email": user.email, "submit": "Email me a sign-in link"},
+        follow_redirects=True,
+    )
+    assert b"Too many sign-in link requests" in resp.data
+
+
 def test_password_login_and_logout(client, user):
     resp = client.post(
         "/auth/login",

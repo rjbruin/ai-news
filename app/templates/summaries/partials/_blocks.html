@@ -55,7 +55,7 @@
     <ul>
       {% for it in block['items'] %}
       <li>
-        <span>{{ it.headline | safe }}</span>
+        <span>{{ it.headline }}</span>
         {%- if it.url %}<a href="{{ it.url }}" class="story-source" target="_blank" rel="noopener">{{ it.url | url_domain }}</a>{% endif %}
       </li>
       {% endfor %}
