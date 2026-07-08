@@ -1,0 +1,89 @@
+{# First-visit onboarding tutorial, shown once from the dashboard (see
+   web.dashboard, which flips User.has_seen_onboarding the moment this is
+   rendered). A simple multi-step modal — no JS framework, just show/hide. #}
+<div class="modal fade" id="onboarding-modal" tabindex="-1" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Welcome to Dispatch</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Skip"></button>
+      </div>
+      <div class="modal-body" style="min-height: 260px">
+
+        <div class="onboarding-step">
+          <h6 class="fw-bold mb-2">What Dispatch does</h6>
+          <p>
+            Dispatch watches the news sources you point it at — newsletters, RSS/Atom feeds —
+            pulls out the individual stories, and tags each one against a shared topic taxonomy.
+            An AI agent then writes you an edition from whatever matches your interests, on
+            whatever schedule you set.
+          </p>
+        </div>
+
+        <div class="onboarding-step d-none">
+          <h6 class="fw-bold mb-2">Sources are shared, but configurable per person</h6>
+          <p>
+            Everyone using this instance shares the same pool of sources on the
+            <strong>Sources</strong> page — no need to set up your own newsletter subscription if
+            someone already has. Approved users can add their own sources too.
+          </p>
+          <p class="mb-0">
+            Don't want a particular source in your own editions? Turn it off just for yourself
+            from the "In my editions" toggle on the Sources page — it stays on for everyone else.
+          </p>
+        </div>
+
+        <div class="onboarding-step d-none">
+          <h6 class="fw-bold mb-2">Your edition is written for you</h6>
+          <p>
+            There's nothing to manually curate — the agent selects, groups, and writes up the
+            stories that match your interests every time an edition is cut. Head to
+            <strong>Settings</strong> to configure the release schedule, your interests, and how
+            the content should be structured.
+          </p>
+          <p class="mb-0">
+            Once you have an edition, you can also export it as a printable PDF or generate a
+            narrated podcast episode of it, if that's enabled for your account.
+          </p>
+        </div>
+
+        <div class="onboarding-step d-none">
+          <h6 class="fw-bold mb-2">⚠️ This runs on AI models that cost money</h6>
+          <p>
+            Reading your sources and writing your editions uses AI models, and those cost real
+            money per request. This app doesn't charge a subscription — instead, you bring your
+            own OpenRouter API key to pay for the AI usage your account causes.
+          </p>
+          <p class="mb-0">
+            Before your own sources can be polled or your editions generated, set up a key on the
+            <strong>Payment</strong> page — it walks you through creating one, and gives you a
+            rough idea of what it costs.
+          </p>
+        </div>
+
+      </div>
+      <div class="modal-footer d-flex justify-content-between align-items-center">
+        <div class="d-flex gap-1">
+          <span class="onboarding-dot active"></span>
+          <span class="onboarding-dot"></span>
+          <span class="onboarding-dot"></span>
+          <span class="onboarding-dot"></span>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary onboarding-back invisible">Back</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Skip</button>
+          <button type="button" class="btn btn-primary onboarding-next">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .onboarding-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--bs-border-color);
+    display: inline-block;
+  }
+  .onboarding-dot.active { background: var(--brand); }
+</style>

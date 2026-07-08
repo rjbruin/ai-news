@@ -167,6 +167,10 @@
   </div>
 </div>
 {% endif %}
+
+{% if show_onboarding %}
+{% include "partials/_onboarding.html" %}
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>
@@ -176,5 +180,33 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating…';
   });
 });
+{% if show_onboarding %}
+(function () {
+  const modalEl = document.getElementById('onboarding-modal');
+  const steps = Array.from(modalEl.querySelectorAll('.onboarding-step'));
+  const dots = Array.from(modalEl.querySelectorAll('.onboarding-dot'));
+  const backBtn = modalEl.querySelector('.onboarding-back');
+  const nextBtn = modalEl.querySelector('.onboarding-next');
+  let i = 0;
+
+  function render() {
+    steps.forEach((el, idx) => el.classList.toggle('d-none', idx !== i));
+    dots.forEach((el, idx) => el.classList.toggle('active', idx === i));
+    backBtn.classList.toggle('invisible', i === 0);
+    nextBtn.textContent = i === steps.length - 1 ? 'Set up payment' : 'Next';
+  }
+  backBtn.addEventListener('click', () => { i = Math.max(0, i - 1); render(); });
+  nextBtn.addEventListener('click', () => {
+    if (i === steps.length - 1) {
+      window.location.href = "{{ url_for('web.api_keys') }}";
+      return;
+    }
+    i = Math.min(steps.length - 1, i + 1);
+    render();
+  });
+  render();
+  new bootstrap.Modal(modalEl).show();
+})();
+{% endif %}
 </script>
 {% endblock %}

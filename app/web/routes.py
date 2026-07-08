@@ -178,6 +178,14 @@ def dashboard():
     source_badges = sorted({_source_badge_label(s) for s in enabled_sources})
     has_api_key = ApiKey.query.filter_by(owner_user_id=current_user.id).first() is not None
 
+    # Flip the flag as soon as we decide to show it — not on explicit
+    # dismissal — so it reliably only ever appears once, even if the user
+    # closes the tab without clicking anything.
+    show_onboarding = not current_user.has_seen_onboarding
+    if show_onboarding:
+        current_user.has_seen_onboarding = True
+        db.session.commit()
+
     return render_template(
         "dashboard.html",
         my_summaries=my_summaries,
@@ -187,6 +195,7 @@ def dashboard():
         other_summaries=other_summaries,
         source_badges=source_badges,
         has_api_key=has_api_key,
+        show_onboarding=show_onboarding,
     )
 
 
