@@ -74,3 +74,20 @@ def test_render_html_produces_expected_markup(app):
     assert "<blockquote" in html
     # markdown rendered: bold tag present
     assert "<strong>Claude 4</strong>" in html or "<b>Claude 4</b>" in html
+
+
+def test_more_news_headline_is_html_escaped(app):
+    """Regression test: more_news headlines come from agent-generated text,
+    which is ultimately derived from attacker-reachable ingested news
+    content (see the prompt-injection hardening in app/llm/prompt_safety.py).
+    A headline must never be able to inject markup — it previously bypassed
+    escaping entirely via a stray `| safe` filter."""
+    doc = validate_document([
+        {"type": "more_news", "items": [
+            {"headline": "<img src=x onerror=alert(1)>", "url": "https://example.com/x"},
+        ]},
+    ])
+    with app.app_context():
+        html = render.render_html(doc)
+    assert "<img src=x onerror=alert(1)>" not in html
+    assert "&lt;img src=x onerror=alert(1)&gt;" in html
