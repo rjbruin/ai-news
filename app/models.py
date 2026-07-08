@@ -76,6 +76,12 @@ class User(UserMixin, db.Model):
     # clicking anything.
     has_seen_onboarding = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
+    # Prepaid balance in whole USD cents, topped up via Lemon Squeezy (see
+    # BalanceTransaction for the audit ledger). Not yet spendable anywhere —
+    # see TODO_PAYMENT_PHASE4.md for wiring this into ingestion/editions/
+    # podcasts.
+    balance_cents = db.Column(db.Integer, default=0, nullable=False, server_default="0")
+
     tags = db.relationship("Tag", back_populates="owner", lazy="dynamic")
     summaries = db.relationship(
         "Summary", back_populates="user", lazy="dynamic",
@@ -87,6 +93,10 @@ class User(UserMixin, db.Model):
     )
     featured_summary = db.relationship("Summary", foreign_keys=[featured_summary_id])
     edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
+    balance_transactions = db.relationship(
+        "BalanceTransaction", back_populates="user", lazy="dynamic",
+        foreign_keys="BalanceTransaction.user_id",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
@@ -744,6 +754,54 @@ class Invite(db.Model):
         return self.revoked_at is None and self.uses_count < self.max_uses
 
 
+class BalanceTransaction(db.Model):
+    """Immutable audit log of every change to a User.balance_cents — one row
+    per event, never updated in place. Powers the transaction history shown
+    on the Payment page and is the idempotency guard for Lemon Squeezy
+    webhook redelivery (see ls_event_id)."""
+
+    __tablename__ = "balance_transactions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False)  # topup|spend|adjustment
+    amount_cents = db.Column(db.Integer, nullable=False)  # signed: +credit, -debit
+    balance_after_cents = db.Column(db.Integer, nullable=False)
+    # Set for kind="spend" once Phase 4 wires in actual spending.
+    source_id = db.Column(db.Integer, db.ForeignKey("sources.id"), nullable=True, index=True)
+    summary_run_id = db.Column(db.Integer, db.ForeignKey("summary_runs.id"), nullable=True, index=True)
+    usage_kind = db.Column(db.String(20), nullable=True)  # ingest|confirm|agent|podcast_script|podcast_audio
+    # Set for kind="topup": Lemon Squeezy references for support lookups.
+    # ls_event_id has a unique index — it's the idempotency key that stops a
+    # webhook redelivery from double-crediting the same order.
+    ls_order_id = db.Column(db.String(64), nullable=True, index=True)
+    ls_event_id = db.Column(db.String(64), nullable=True, unique=True, index=True)
+    note = db.Column(db.String(255), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    user = db.relationship("User", foreign_keys=[user_id], back_populates="balance_transactions")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+
+class LemonsqueezyProduct(db.Model):
+    """Admin-managed mapping from a Lemon Squeezy variant to the USD amount
+    credited to the buyer's balance on purchase. The Lemon Squeezy checkout
+    price itself is set higher than credited_amount_cents in the Lemon
+    Squeezy dashboard, to cover Lemon Squeezy's processing fee — this app
+    never computes fee math, it trusts this row as the source of truth for
+    what to credit."""
+
+    __tablename__ = "lemonsqueezy_products"
+
+    id = db.Column(db.Integer, primary_key=True)
+    variant_id = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    label = db.Column(db.String(120), nullable=False)
+    credited_amount_cents = db.Column(db.Integer, nullable=False)
+    active = db.Column(db.Boolean, default=True, nullable=False, server_default="1")
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+
 # Convenience export used by the factory.
 __all__ = [
     "User",
@@ -764,4 +822,6 @@ __all__ = [
     "EditionRecipient",
     "UserDisabledSource",
     "Invite",
+    "BalanceTransaction",
+    "LemonsqueezyProduct",
 ]
