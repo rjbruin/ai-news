@@ -1,4 +1,4 @@
-from app.models import EditionRecipient, Summary
+from app.models import AdminSettings, EditionRecipient, Summary
 from app.services import edition_mail
 
 
@@ -13,6 +13,8 @@ def _agentic_summary(db, user, send_email=False):
 
 
 def test_registration_seeds_default_recipient(client, db):
+    AdminSettings.get().registration_open = True
+    db.session.commit()
     resp = client.post(
         "/auth/register",
         data={
