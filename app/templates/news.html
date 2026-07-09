@@ -1,10 +1,22 @@
 {% extends "base.html" %}
-{% from "partials/_news_item.html" import news_item %}
+{% from "partials/_news_item.html" import news_item with context %}
+{% from "partials/_topic_picker.html" import topic_picker %}
 {% block title %}News · Dispatch{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">News</h1>
 </div>
+
+<form method="get" class="card shadow-sm mb-3">
+  <div class="card-body">
+    <label class="form-label small fw-semibold">Filter by topic</label>
+    {{ topic_picker('topic', selected_topics, available_topics, 'news-topic-filter') }}
+    <button class="btn btn-sm btn-primary mt-1">Filter</button>
+    {% if selected_topics %}
+    <a href="{{ url_for('web.news') }}" class="btn btn-sm btn-outline-secondary mt-1">Clear</a>
+    {% endif %}
+  </div>
+</form>
 
 <div class="list-group shadow-sm">
   {% for item in items %}

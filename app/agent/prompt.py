@@ -121,6 +121,8 @@ def _section(title: str, body: str) -> str:
 
 def compose_system_prompt(user, summary) -> str:
     """Build the full system prompt from static role text + memory files."""
+    from ..models import Tag
+
     retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
 
     interests = memory.ensure_default(user, summary, "interests", DEFAULT_INTERESTS)
@@ -128,6 +130,12 @@ def compose_system_prompt(user, summary) -> str:
         user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG
     )
     history = memory.read(user, summary, "history")
+
+    emphasized_ids = (summary.params or {}).get("emphasized_topic_ids") or []
+    emphasized_text = ""
+    if emphasized_ids:
+        emphasized_tags = Tag.query.filter(Tag.id.in_(emphasized_ids)).order_by(Tag.name).all()
+        emphasized_text = ", ".join(t.name for t in emphasized_tags)
 
     headline_rows = memory.recent_headlines(user, summary, days=retention)
     headlines_text = "\n\n".join(
@@ -139,6 +147,9 @@ def compose_system_prompt(user, summary) -> str:
         _ROLE,
         _section("READER INTERESTS (INTERESTS.md)", interests),
         _section("CONTENT CONFIGURATION", content_config),
+        _section(
+            "EMPHASIZED TOPICS (prioritize these when present in scope)", emphasized_text,
+        ),
         _section("HISTORY (running notes)", history),
         _section(
             f"RECENT HEADLINES (last {retention} days — do not re-report)",

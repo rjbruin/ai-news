@@ -50,6 +50,11 @@ class AgenticDailyPageSummary(NewsSummary):
             "min": 1,
             "max": 200,
         },
+        "emphasized_topic_ids": {
+            "type": "topics",
+            "label": "Topics to emphasize",
+            "default": [],
+        },
     }
 
     def build(

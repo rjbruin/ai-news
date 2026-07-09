@@ -1,0 +1,40 @@
+{#
+  Reusable autocomplete + removable-badges topic picker. Renders hidden
+  inputs named `field_name` (one per selected topic id), so the server side
+  can read selections with request.form.getlist(field_name) /
+  request.args.getlist(field_name) with zero new parsing code — same
+  convention this app already uses for checkboxes-style params.
+
+  all_tags: iterable of Tag objects the user is allowed to pick from
+            (global + their own, unarchived).
+  selected_tags: iterable of Tag objects pre-selected (for pre-populating
+                 badges on page load).
+#}
+{% macro topic_picker(field_name, selected_tags, all_tags, input_id) %}
+{% set ns = namespace(items=[]) %}
+{% for t in all_tags %}
+  {% set _ = ns.items.append({"id": t.id, "name": t.name}) %}
+{% endfor %}
+<div class="topic-picker" data-field-name="{{ field_name }}"
+     data-all-topics='{{ ns.items | tojson }}'>
+  <div class="topic-picker-badges d-flex flex-wrap gap-1 mb-2">
+    {% for t in selected_tags %}
+    <span class="badge text-bg-secondary topic-picker-badge d-inline-flex align-items-center gap-1" data-tag-id="{{ t.id }}">
+      {{ t.name }}
+      <button type="button" class="btn-close btn-close-white" style="font-size:.55rem" aria-label="Remove"></button>
+    </span>
+    {% endfor %}
+  </div>
+  <div class="position-relative">
+    <input type="text" class="form-control form-control-sm topic-picker-search"
+           id="{{ input_id }}" placeholder="Search topics…" autocomplete="off">
+    <div class="list-group position-absolute w-100 topic-picker-dropdown"
+         style="z-index:1000; display:none; max-height:240px; overflow-y:auto;"></div>
+  </div>
+  <div class="topic-picker-hidden-inputs">
+    {% for t in selected_tags %}
+    <input type="hidden" name="{{ field_name }}" value="{{ t.id }}">
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}

@@ -132,8 +132,14 @@ def test_non_admin_cannot_access_admin(auth_client):
 
 
 def test_authenticated_pages_render(auth_client, sample_tags, sample_items):
-    for path in ["/dashboard", "/news", "/summaries", "/tags"]:
+    for path in ["/dashboard", "/news", "/summaries", "/topics"]:
         assert auth_client.get(path).status_code == 200
+
+
+def test_tags_redirects_to_topics(auth_client):
+    resp = auth_client.get("/tags")
+    assert resp.status_code == 301
+    assert resp.headers["Location"].endswith("/topics")
 
 
 def test_admin_pages_render(admin_client, sample_tags):
@@ -141,20 +147,20 @@ def test_admin_pages_render(admin_client, sample_tags):
     assert admin_client.get("/admin/sources/new").status_code == 200
 
 
-def test_tags_page_lists_global_and_own_tags(auth_client, db, user, sample_tags):
+def test_topics_page_lists_global_and_own_topics(auth_client, db, user, sample_tags):
     from app.models import Tag
 
     mine = Tag(name="My Own Tag", scope="user", owner_user_id=user.id)
     db.session.add(mine)
     db.session.commit()
 
-    resp = auth_client.get("/tags")
+    resp = auth_client.get("/topics")
     assert resp.status_code == 200
     assert b"LLMs" in resp.data
     assert b"My Own Tag" in resp.data
 
 
-def test_admin_can_promote_tag_from_tags_page(admin_client, db, admin):
+def test_admin_can_promote_tag_from_topics_page(admin_client, db, admin):
     from app.models import Tag
 
     tag = Tag(name="Promote Me", scope="user", owner_user_id=admin.id)
@@ -174,12 +180,12 @@ def test_nav_order_editions_before_news_and_admin_on_right(admin_client):
     assert html.index(">Settings<") < html.index(">Admin<") < html.index(">Sign out<")
 
 
-def test_tags_nav_link_hidden_for_non_admin(auth_client):
-    assert b">Tags<" not in auth_client.get("/dashboard").data
+def test_topics_nav_link_shown_for_non_admin(auth_client):
+    assert b">Topics<" in auth_client.get("/dashboard").data
 
 
-def test_tags_nav_link_shown_for_admin(admin_client):
-    assert b">Tags<" in admin_client.get("/dashboard").data
+def test_topics_nav_link_shown_for_admin(admin_client):
+    assert b">Topics<" in admin_client.get("/dashboard").data
 
 
 def test_dashboard_no_header_shows_sources_and_key_nudge(auth_client, db, user):

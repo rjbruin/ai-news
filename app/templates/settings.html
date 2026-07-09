@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_topic_picker.html" import topic_picker %}
 {% block title %}Settings · Dispatch{% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">Settings</h1>
@@ -76,6 +77,10 @@
           <input type="number" name="param_{{ field }}" class="form-control"
                  value="{{ cur_val if cur_val is not none else spec.get('default', '') }}"
                  min="{{ spec.get('min', 1) }}" max="{{ spec.get('max', '') }}">
+          {% elif spec.type == 'topics' %}
+          <label class="form-label">{{ spec.label }}</label>
+          {{ topic_picker('param_' ~ field, selected_emphasized_topics, available_topics, 'p_' ~ field) }}
+          <div class="form-text">Tells the editor which topics to prioritize when present in scope.</div>
           {% else %}
           <label class="form-label">{{ spec.label }}</label>
           <input name="param_{{ field }}" class="form-control" value="{{ cur_val }}">

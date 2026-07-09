@@ -27,7 +27,7 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
-    ApiKey, Alert, EditionRecipient, NewsItem, Source, Summary, SummaryRun, Tag, User,
+    ApiKey, Alert, EditionRecipient, NewsItem, NewsItemTag, Source, Summary, SummaryRun, Tag, User,
     UserDisabledSource, utcnow,
 )
 from ..services import edition_mail, generation_registry, ingest, summarize
@@ -403,6 +403,17 @@ def settings():
 
     recipients = current_user.edition_recipients.order_by(EditionRecipient.created_at).all()
 
+    available_topics = (
+        Tag.query.filter(
+            Tag.archived_at.is_(None),
+            db.or_(Tag.scope == "global", Tag.owner_user_id == current_user.id),
+        ).order_by(Tag.name).all()
+    )
+    selected_emphasized_topics = []
+    if summary:
+        emphasized_ids = set((summary.params or {}).get("emphasized_topic_ids") or [])
+        selected_emphasized_topics = [t for t in available_topics if t.id in emphasized_ids]
+
     return render_template(
         "settings.html",
         summary=summary, types=types,
@@ -411,6 +422,8 @@ def settings():
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
         podcast_feed_url=podcast_feed_url,
         recipients=recipients,
+        available_topics=available_topics,
+        selected_emphasized_topics=selected_emphasized_topics,
     )
 
 
@@ -721,25 +734,137 @@ def _int_or_none(val):
         return None
 
 
-# ───────────────────────── Tags ─────────────────────────
+# ───────────────────────── Topics ─────────────────────────
 @bp.route("/tags")
+def tags_redirect():
+    """Old URL, kept as a permanent redirect for any bookmarked links."""
+    return redirect(url_for("web.topics"), code=301)
+
+
+@bp.route("/topics")
 @login_required
-def tags():
-    global_tags = Tag.query.filter_by(scope="global").order_by(Tag.name).all()
+def topics():
+    from ..tagging.engine import topic_stats
+
+    global_tags = (
+        Tag.query.filter_by(scope="global", archived_at=None).order_by(Tag.name).all()
+    )
     my_tags = (
-        Tag.query.filter_by(scope="user", owner_user_id=current_user.id)
+        Tag.query.filter_by(scope="user", owner_user_id=current_user.id, archived_at=None)
         .order_by(Tag.name)
         .all()
     )
-    return render_template("tags.html", global_tags=global_tags, my_tags=my_tags)
+    archived_tags = (
+        Tag.query.filter(
+            Tag.archived_at.isnot(None),
+            db.or_(Tag.scope == "global", Tag.owner_user_id == current_user.id),
+        ).order_by(Tag.name).all()
+    )
+    stats = {}
+    if current_user.is_admin:
+        t1 = current_app.config.get("TOPIC_GRADUATION_THRESHOLD_1", 20)
+        t2 = current_app.config.get("TOPIC_GRADUATION_THRESHOLD_2", 100)
+        stats = topic_stats(global_tags, threshold_1=t1, threshold_2=t2)
+    return render_template(
+        "topics.html", global_tags=global_tags, my_tags=my_tags,
+        archived_tags=archived_tags, stats=stats,
+    )
+
+
+@bp.route("/topics/create", methods=["POST"])
+@approved_required
+def topic_create():
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    make_global = current_user.is_admin and bool(request.form.get("is_global"))
+    if not name:
+        flash("Topic name is required.", "danger")
+        return redirect(url_for("web.topics"))
+    if Tag.query.filter_by(name=name).first():
+        flash(f'A topic named "{name}" already exists.', "danger")
+        return redirect(url_for("web.topics"))
+    tag = Tag(
+        name=name, explanation=description or None, keywords=[],
+        scope="global" if make_global else "user",
+        owner_user_id=None if make_global else current_user.id,
+    )
+    db.session.add(tag)
+    db.session.commit()
+    flash(f'Topic "{name}" created.', "success")
+    return redirect(url_for("web.topics"))
+
+
+def _can_manage_topic(tag: Tag) -> bool:
+    return current_user.is_admin or (tag.scope == "user" and tag.owner_user_id == current_user.id)
+
+
+@bp.route("/topics/<int:tag_id>/edit", methods=["POST"])
+@approved_required
+def topic_edit(tag_id: int):
+    tag = db.session.get(Tag, tag_id) or abort(404)
+    if not _can_manage_topic(tag):
+        abort(403)
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    if name and name != tag.name and Tag.query.filter_by(name=name).first():
+        flash(f'A topic named "{name}" already exists.', "danger")
+        return redirect(url_for("web.topics"))
+    if name:
+        tag.name = name
+    tag.explanation = description or None
+    db.session.commit()
+    flash(f'Topic "{tag.name}" updated.', "success")
+    return redirect(url_for("web.topics"))
+
+
+@bp.route("/topics/<int:tag_id>/archive", methods=["POST"])
+@approved_required
+def topic_archive(tag_id: int):
+    tag = db.session.get(Tag, tag_id) or abort(404)
+    if not _can_manage_topic(tag):
+        abort(403)
+    tag.archived_at = utcnow()
+    db.session.commit()
+    flash(f'Topic "{tag.name}" archived — it will no longer be applied to new items.', "info")
+    return redirect(url_for("web.topics"))
+
+
+@bp.route("/topics/<int:tag_id>/restore", methods=["POST"])
+@approved_required
+def topic_restore(tag_id: int):
+    tag = db.session.get(Tag, tag_id) or abort(404)
+    if not _can_manage_topic(tag):
+        abort(403)
+    tag.archived_at = None
+    db.session.commit()
+    flash(f'Topic "{tag.name}" restored.', "success")
+    return redirect(url_for("web.topics"))
 
 
 # ───────────────────────── News ─────────────────────────
 @bp.route("/news")
 @login_required
 def news():
-    items = NewsItem.query.order_by(NewsItem.fetched_at.desc()).limit(100).all()
-    return render_template("news.html", items=items)
+    topic_ids = [int(v) for v in request.args.getlist("topic") if v.isdigit()]
+    query = NewsItem.query
+    if topic_ids:
+        query = query.join(
+            NewsItemTag, NewsItemTag.news_item_id == NewsItem.id
+        ).filter(
+            NewsItemTag.tag_id.in_(topic_ids),
+            db.or_(NewsItemTag.user_id.is_(None), NewsItemTag.user_id == current_user.id),
+        ).distinct()
+    items = query.order_by(NewsItem.fetched_at.desc()).limit(100).all()
+    available_topics = (
+        Tag.query.filter(
+            Tag.archived_at.is_(None),
+            db.or_(Tag.scope == "global", Tag.owner_user_id == current_user.id),
+        ).order_by(Tag.name).all()
+    )
+    selected_topics = [t for t in available_topics if t.id in topic_ids]
+    return render_template(
+        "news.html", items=items, available_topics=available_topics, selected_topics=selected_topics,
+    )
 
 
 @bp.route("/news/<int:item_id>/read")
@@ -1411,7 +1536,7 @@ def _collect_params(plugin_cls) -> dict:
     for field, spec in (plugin_cls.param_schema or {}).items():
         if spec.get("type") == "checkbox":
             params[field] = bool(request.form.get(f"param_{field}"))
-        elif spec.get("type") == "checkboxes":
+        elif spec.get("type") in ("checkboxes", "topics"):
             vals = request.form.getlist(f"param_{field}")
             params[field] = [int(v) for v in vals if v.lstrip("-").isdigit()]
         elif spec.get("type") == "number":

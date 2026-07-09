@@ -511,6 +511,14 @@ class NewsItem(db.Model):
 
 # ─────────────────────────────── Tags ───────────────────────────────
 class Tag(db.Model):
+    """A "Topic" in the UI — kept as `Tag` internally for schema continuity.
+
+    ``scope='global'`` topics are admin-managed and apply to everyone;
+    ``scope='user'`` topics are private to ``owner_user_id`` but still get
+    full LLM/classifier treatment (see app/tagging/engine.py), just scoped
+    to that owner via NewsItemTag.user_id.
+    """
+
     __tablename__ = "tags"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -520,6 +528,12 @@ class Tag(db.Model):
     scope = db.Column(db.String(10), default="user", nullable=False)  # global|user
     owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    # Soft delete: an archived topic stops being offered for new
+    # classification/selection, but its historical NewsItemTag rows and
+    # stats remain intact — mirrors ApiKey.revoked_at's revoke/reactivate
+    # shape rather than a hard, data-losing delete.
+    archived_at = db.Column(db.DateTime, nullable=True)
 
     owner = db.relationship("User", back_populates="tags")
     item_links = db.relationship(
@@ -531,6 +545,10 @@ class Tag(db.Model):
     def keyword_list(self) -> list[str]:
         return self.keywords or []
 
+    @property
+    def is_active(self) -> bool:
+        return self.archived_at is None
+
 
 class NewsItemTag(db.Model):
     __tablename__ = "news_item_tags"
@@ -540,6 +558,11 @@ class NewsItemTag(db.Model):
         db.Integer, db.ForeignKey("news_items.id"), nullable=False
     )
     tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=False)
+    # NULL = this application is global (visible to everyone); set = this
+    # application is scoped to a private topic and only ever surfaced to
+    # that owner (see the News-page filter and the picker's available_topics
+    # query, both of which enforce this on the read side too).
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     confidence = db.Column(db.Float, default=0.0)
     method = db.Column(db.String(10), default="nb")  # nb|llm|manual
     confirmed = db.Column(db.Boolean, default=False, nullable=False)
@@ -547,9 +570,18 @@ class NewsItemTag(db.Model):
 
     item = db.relationship("NewsItem", back_populates="tag_links")
     tag = db.relationship("Tag", back_populates="item_links")
+    user = db.relationship("User")
 
     __table_args__ = (
-        db.UniqueConstraint("news_item_id", "tag_id", name="uq_item_tag"),
+        # Backstop for the non-NULL (private-topic) case — SQLite (and
+        # standard SQL) treats every NULL as distinct, so this alone does
+        # NOT stop duplicate (item, tag, user_id=NULL) rows; see the partial
+        # index below for the actual global-row guarantee.
+        db.UniqueConstraint("news_item_id", "tag_id", "user_id", name="uq_item_tag_user"),
+        db.Index(
+            "uq_item_tag_global", "news_item_id", "tag_id",
+            unique=True, sqlite_where=db.text("user_id IS NULL"),
+        ),
     )
 
 
