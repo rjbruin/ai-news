@@ -120,28 +120,30 @@
   <p class="text-body-secondary">This edition has no stored content.</p>
 {% endif %}
 
-{% if not is_shared_view and (run.agent_cost is not none or run.podcast_cost is not none) %}
+{% if not is_shared_view and (total_agent_cost or total_podcast_cost) %}
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
-    <div class="fw-semibold text-body mb-2">Cost</div>
+    <div class="fw-semibold text-body mb-2">
+      Cost{{ ' (all %d revisions)' % revisions|length if revisions|length > 1 else '' }}
+    </div>
     <div class="d-flex flex-column gap-1 small">
-      {% if run.agent_cost is not none %}
+      {% if total_agent_cost %}
       <div class="d-flex justify-content-between">
         <span class="text-body-secondary"><i class="fa-solid fa-robot me-1" aria-hidden="true"></i>Edition generation</span>
-        <span>${{ '%.4f'|format(run.agent_cost) }}</span>
+        <span>${{ '%.4f'|format(total_agent_cost) }}</span>
       </div>
       {% endif %}
-      {% if run.podcast_cost is not none %}
+      {% if total_podcast_cost %}
       <div class="d-flex justify-content-between">
         <span class="text-body-secondary"><i class="fa-solid fa-microphone-lines me-1" aria-hidden="true"></i>Podcast audio</span>
-        <span>${{ '%.4f'|format(run.podcast_cost) }}</span>
+        <span>${{ '%.4f'|format(total_podcast_cost) }}</span>
       </div>
       {% endif %}
-      {% if run.agent_cost is not none and run.podcast_cost is not none %}
+      {% if total_agent_cost and total_podcast_cost %}
       <hr class="my-1">
       <div class="d-flex justify-content-between fw-semibold">
         <span>Total</span>
-        <span>${{ '%.4f'|format(run.agent_cost + run.podcast_cost) }}</span>
+        <span>${{ '%.4f'|format(total_agent_cost + total_podcast_cost) }}</span>
       </div>
       {% endif %}
     </div>

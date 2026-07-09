@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import secrets
 import threading
@@ -33,6 +34,8 @@ from ..models import (
 from ..services import edition_mail, generation_registry, ingest, summarize
 from ..sources import registry as source_registry
 from ..summaries import registry as summary_registry
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("web", __name__)
 
@@ -897,6 +900,7 @@ def generate_stream(summary_id: int):
                 except AgentCancelled:
                     handle.emit({"type": "cancelled"})
                 except Exception as exc:  # noqa: BLE001
+                    logger.exception("Edition generation failed (summary_id=%s)", summary_id)
                     handle.emit({"type": "error", "message": str(exc)})
                 finally:
                     generation_registry.finish(handle)
@@ -931,6 +935,15 @@ def _stream_handle(handle) -> Response:
     )
 
 
+def _chain_costs(chain: list) -> tuple[float, float]:
+    """Sum agent/podcast cost across every revision in an edition's chain,
+    so the cost box reflects the true total spend regardless of which
+    revision is currently being viewed."""
+    total_agent = sum(r.agent_cost for r in chain if r.agent_cost is not None)
+    total_podcast = sum(r.podcast_cost for r in chain if r.podcast_cost is not None)
+    return total_agent, total_podcast
+
+
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>")
 @login_required
 def edition_view(summary_id: int, run_id: int):
@@ -943,6 +956,7 @@ def edition_view(summary_id: int, run_id: int):
     plugin = summary_registry.get(summary.type_key)
     is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
     chain = summarize.revision_chain(run) if is_agentic else [run]
+    total_agent_cost, total_podcast_cost = _chain_costs(chain)
 
     coverage = None
     if is_agentic and run.document:
@@ -953,6 +967,7 @@ def edition_view(summary_id: int, run_id: int):
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
         is_shared_view=False, coverage=coverage,
+        total_agent_cost=total_agent_cost, total_podcast_cost=total_podcast_cost,
     )
 
 
@@ -1160,6 +1175,9 @@ def edition_feedback_stream(summary_id: int, run_id: int):
                 except AgentCancelled:
                     handle.emit({"type": "cancelled"})
                 except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "Edition revision failed (summary_id=%s, run_id=%s)", summary_id, run_id,
+                    )
                     handle.emit({"type": "error", "message": str(exc)})
                 finally:
                     generation_registry.finish(handle)
@@ -1184,14 +1202,18 @@ def generate_cancel(summary_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/logs")
 @login_required
 def edition_logs(summary_id: int, run_id: int):
-    """Static replay of an edition's recorded agent log."""
+    """Static replay of an edition's recorded agent log — one tab per
+    revision in the chain, so any past revision's log stays reachable."""
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    return render_template("summaries/edition_logs.html", summary=summary, run=run)
+    revisions = summarize.revision_chain(run)
+    return render_template(
+        "summaries/edition_logs.html", summary=summary, run=run, revisions=revisions,
+    )
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/read", methods=["POST"])

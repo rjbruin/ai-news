@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import os
 import re
 import struct
@@ -9,6 +10,8 @@ import time
 
 import httpx
 from flask import current_app
+
+logger = logging.getLogger(__name__)
 
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
@@ -515,6 +518,10 @@ def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
                 "audio_url": url_for("web.serve_podcast", filename=filename),
             })
         except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Podcast job failed (run_id=%s, kind=%s, user_id=%s)",
+                run_id, job.kind, user_id,
+            )
             job.emit({"type": "error", "message": str(exc)})
         finally:
             podcast_registry.finish(job)
