@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import threading
+from datetime import datetime
 from functools import wraps
 
 from flask import (
@@ -39,11 +41,12 @@ from ..models import (
     User,
     utcnow,
 )
-from ..services import balance, costs, ingest, poll_registry
+from ..services import balance, costs, ingest, poll_registry, retag_registry
 from ..services.summarize import resend_edition_email
 from ..sources import registry as source_registry
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+logger = logging.getLogger(__name__)
 
 # Module-level so tests can shrink it — avoids a real 30s wait when testing
 # the /admin/poll-events SSE stream.
@@ -87,6 +90,7 @@ def index():
         lemonsqueezy_products=LemonsqueezyProduct.query.order_by(
             LemonsqueezyProduct.credited_amount_cents
         ).all(),
+        retag_state=retag_registry.snapshot(),
     )
 
 
@@ -401,12 +405,82 @@ def poll_all():
     return redirect(url_for("admin.index"))
 
 
-@bp.route("/retag", methods=["POST"])
+def _parse_retag_dt(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+@bp.route("/retag/start", methods=["POST"])
 @admin_required
-def retag():
-    count = ingest.retag_all()
-    flash(f"Re-tagged {count} items.", "success")
-    return redirect(url_for("admin.index"))
+def retag_start():
+    """Async re-tag over an optional [start, end] fetched_at window, run in
+    a background thread and streamed via /admin/retag/events — a plain
+    synchronous retag over the whole item set previously caused gateway
+    timeouts on large datasets."""
+    if retag_registry.is_running():
+        return jsonify({"status": "already_running", **retag_registry.snapshot()}), 202
+
+    start_dt = _parse_retag_dt(request.form.get("start"))
+    end_dt = _parse_retag_dt(request.form.get("end"))
+
+    query = NewsItem.query
+    if start_dt:
+        query = query.filter(NewsItem.fetched_at >= start_dt)
+    if end_dt:
+        query = query.filter(NewsItem.fetched_at <= end_dt)
+    total = query.count()
+
+    start_str = start_dt.isoformat() if start_dt else None
+    end_str = end_dt.isoformat() if end_dt else None
+    retag_registry.start(total, start_str, end_str)
+
+    app = current_app._get_current_object()
+
+    def _run():
+        with app.app_context():
+            try:
+                ingest.retag_all(
+                    start=start_dt, end=end_dt,
+                    progress_cb=lambda processed, _total: retag_registry.progress(processed),
+                )
+                retag_registry.done()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Re-tag all failed")
+                retag_registry.done(error=str(exc))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"status": "started", "total": total}), 202
+
+
+@bp.route("/retag/events")
+@admin_required
+def retag_events():
+    """SSE stream of retag_registry progress — a fresh subscriber first
+    gets a snapshot of the current state (see retag_registry.subscribe),
+    so reopening the modal mid-run shows accurate progress immediately."""
+    q = retag_registry.subscribe()
+
+    def _stream():
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=_POLL_SSE_HEARTBEAT_SECONDS)
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+                    continue
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            retag_registry.unsubscribe(q)
+
+    return Response(
+        stream_with_context(_stream()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @bp.route("/sources/<int:source_id>")

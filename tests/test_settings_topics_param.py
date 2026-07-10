@@ -12,87 +12,89 @@ def _agentic_summary(db, user):
     return s
 
 
-def test_settings_saves_emphasized_topic_ids(auth_client, db, user):
+def _tag_id_in_tier_box(html: bytes, tier: str, tag) -> bool:
+    # The hidden inputs mirroring tier membership are only populated
+    # client-side (see app/static/js/tier_picker.js), so a server-rendered
+    # response has no JS to run — check the badge lands in the right
+    # server-rendered tier box instead, by isolating that box's markup
+    # between its `data-tier="..."` marker and the next one.
+    import re
+
+    text = html.decode()
+    positions = [(m.start(), m.group(1)) for m in re.finditer(r'data-tier="(\w+)"', text)]
+    for i, (pos, name) in enumerate(positions):
+        if name == tier:
+            end = positions[i + 1][0] if i + 1 < len(positions) else len(text)
+            return f'data-tag-id="{tag.id}"' in text[pos:end]
+    return False
+
+
+def test_settings_saves_topic_tiers(auth_client, db, user):
     summary = _agentic_summary(db, user)
-    tag_a = Tag(name="Robotics Focus", scope="global")
-    tag_b = Tag(name="AI Safety Focus", scope="global")
+    tag_a = Tag(name="Highlighted Topic", scope="global")
+    tag_b = Tag(name="Suppressed Topic", scope="global")
     db.session.add_all([tag_a, tag_b])
     db.session.commit()
 
     resp = auth_client.post(
         "/settings",
-        data={"param_emphasized_topic_ids": [str(tag_a.id), str(tag_b.id)]},
+        data={
+            "param_topic_tiers_highlights": [str(tag_a.id)],
+            "param_topic_tiers_none": [str(tag_b.id)],
+        },
         follow_redirects=True,
     )
     assert resp.status_code == 200
     db.session.refresh(summary)
-    assert set(summary.params.get("emphasized_topic_ids")) == {tag_a.id, tag_b.id}
+    tiers = summary.params.get("topic_tiers")
+    assert tiers["highlights"] == [tag_a.id]
+    assert tiers["none"] == [tag_b.id]
 
 
-def _selected_hidden_input(tag) -> bytes:
-    # The topic picker always embeds every pickable topic's name in a JSON
-    # search blob, so asserting on name presence alone can't distinguish
-    # "selected" from "just available" — check the per-selection hidden
-    # input it renders instead.
-    return f'name="param_emphasized_topic_ids" value="{tag.id}"'.encode()
-
-
-def test_settings_page_defaults_to_all_topics_when_never_saved(auth_client, db, user):
+def test_settings_page_defaults_new_topics_to_complete(auth_client, db, user):
     _agentic_summary(db, user)
-    tag_a = Tag(name="Never Saved A", scope="global")
-    tag_b = Tag(name="Never Saved B", scope="global")
-    db.session.add_all([tag_a, tag_b])
+    tag = Tag(name="Never Configured", scope="global")
+    db.session.add(tag)
     db.session.commit()
 
     resp = auth_client.get("/settings")
     assert resp.status_code == 200
-    assert _selected_hidden_input(tag_a) in resp.data
-    assert _selected_hidden_input(tag_b) in resp.data
+    assert _tag_id_in_tier_box(resp.data, "complete", tag)
 
 
-def test_settings_page_respects_explicit_empty_selection(auth_client, db, user):
+def test_settings_page_prepopulates_saved_tiers(auth_client, db, user):
     summary = _agentic_summary(db, user)
-    tag = Tag(name="Explicitly Cleared", scope="global")
-    db.session.add(tag)
+    highlight_tag = Tag(name="Highlight Me", scope="global")
+    none_tag = Tag(name="Skip Me", scope="global")
+    db.session.add_all([highlight_tag, none_tag])
     db.session.commit()
-    # Key present but empty — user explicitly deselected everything, not "never saved".
-    summary.params = {"emphasized_topic_ids": []}
+    summary.params = {"topic_tiers": {"highlights": [highlight_tag.id], "none": [none_tag.id]}}
     db.session.commit()
 
     resp = auth_client.get("/settings")
     assert resp.status_code == 200
-    assert _selected_hidden_input(tag) not in resp.data
+    assert _tag_id_in_tier_box(resp.data, "highlights", highlight_tag)
+    assert _tag_id_in_tier_box(resp.data, "none", none_tag)
 
 
-def test_settings_page_prepopulates_selected_topic_badges(auth_client, db, user):
+def test_prompt_includes_topic_emphasis_section_when_set(app, db, user):
     summary = _agentic_summary(db, user)
-    tag = Tag(name="Preselected Topic", scope="global")
-    db.session.add(tag)
+    highlight_tag = Tag(name="Highlight Tag", scope="global")
+    none_tag = Tag(name="Suppressed Tag", scope="global")
+    db.session.add_all([highlight_tag, none_tag])
     db.session.commit()
-    summary.params = {"emphasized_topic_ids": [tag.id]}
-    db.session.commit()
-
-    resp = auth_client.get("/settings")
-    assert resp.status_code == 200
-    assert b"Preselected Topic" in resp.data
-
-
-def test_prompt_includes_emphasized_topics_section_when_set(app, db, user):
-    summary = _agentic_summary(db, user)
-    tag = Tag(name="Emphasis Tag", scope="global")
-    db.session.add(tag)
-    db.session.commit()
-    summary.params = {"emphasized_topic_ids": [tag.id]}
+    summary.params = {"topic_tiers": {"highlights": [highlight_tag.id], "none": [none_tag.id]}}
     db.session.commit()
 
     with app.app_context():
         prompt = compose_system_prompt(user, summary)
-    assert "EMPHASIZED TOPICS" in prompt
-    assert "Emphasis Tag" in prompt
+    assert "TOPIC EMPHASIS" in prompt
+    assert "Highlight Tag" in prompt
+    assert "Suppressed Tag" in prompt
 
 
-def test_prompt_omits_emphasized_topics_section_when_unset(app, db, user):
+def test_prompt_omits_topic_emphasis_section_when_unset(app, db, user):
     summary = _agentic_summary(db, user)
     with app.app_context():
         prompt = compose_system_prompt(user, summary)
-    assert "EMPHASIZED TOPICS" not in prompt
+    assert "TOPIC EMPHASIS" not in prompt

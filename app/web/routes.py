@@ -412,12 +412,20 @@ def settings():
             db.or_(Tag.scope == "global", Tag.owner_user_id == current_user.id),
         ).order_by(Tag.name).all()
     )
-    # Default to "all topics" until the user has explicitly saved this
-    # setting once (key present in params, even if saved as an empty list).
-    selected_emphasized_topics = list(available_topics)
-    if summary and "emphasized_topic_ids" in (summary.params or {}):
-        emphasized_ids = set(summary.params.get("emphasized_topic_ids") or [])
-        selected_emphasized_topics = [t for t in available_topics if t.id in emphasized_ids]
+    # "complete" is the implicit default tier — a topic only shows up under
+    # highlights/none if explicitly moved there, so a newly created topic
+    # (or one never configured at all) automatically lands in "complete".
+    tiers = (summary.params or {}).get("topic_tiers") or {} if summary else {}
+    highlight_ids = set(tiers.get("highlights") or [])
+    none_ids = set(tiers.get("none") or [])
+    tier_complete, tier_highlights, tier_none = [], [], []
+    for t in available_topics:
+        if t.id in none_ids:
+            tier_none.append(t)
+        elif t.id in highlight_ids:
+            tier_highlights.append(t)
+        else:
+            tier_complete.append(t)
 
     return render_template(
         "settings.html",
@@ -428,7 +436,9 @@ def settings():
         podcast_feed_url=podcast_feed_url,
         recipients=recipients,
         available_topics=available_topics,
-        selected_emphasized_topics=selected_emphasized_topics,
+        tier_complete=tier_complete,
+        tier_highlights=tier_highlights,
+        tier_none=tier_none,
     )
 
 
@@ -775,9 +785,7 @@ def topics():
     )
     stats = {}
     if current_user.is_admin:
-        t1 = current_app.config.get("TOPIC_GRADUATION_THRESHOLD_1", 20)
-        t2 = current_app.config.get("TOPIC_GRADUATION_THRESHOLD_2", 100)
-        stats = topic_stats(global_tags, threshold_1=t1, threshold_2=t2)
+        stats = topic_stats(global_tags)
     return render_template(
         "topics.html", global_tags=global_tags, my_tags=my_tags,
         archived_tags=archived_tags, stats=stats,
@@ -825,11 +833,6 @@ def topic_edit(tag_id: int):
     if name:
         tag.name = name
     tag.explanation = description or None
-    if current_user.is_admin:
-        from ..models import CLASSIFIER_MODES
-
-        mode = (request.form.get("classifier_mode") or "").strip()
-        tag.classifier_mode = mode if mode in CLASSIFIER_MODES else None
     db.session.commit()
     flash(f'Topic "{tag.name}" updated.', "success")
     return redirect(url_for("web.topics"))
@@ -1576,6 +1579,16 @@ def _collect_params(plugin_cls) -> dict:
         elif spec.get("type") in ("checkboxes", "topics"):
             vals = request.form.getlist(f"param_{field}")
             params[field] = [int(v) for v in vals if v.lstrip("-").isdigit()]
+        elif spec.get("type") == "topic_tiers":
+            highlights = [
+                int(v) for v in request.form.getlist(f"param_{field}_highlights")
+                if v.lstrip("-").isdigit()
+            ]
+            none_ids = [
+                int(v) for v in request.form.getlist(f"param_{field}_none")
+                if v.lstrip("-").isdigit()
+            ]
+            params[field] = {"highlights": highlights, "none": none_ids}
         elif spec.get("type") == "number":
             raw = request.form.get(f"param_{field}")
             try:

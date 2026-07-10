@@ -53,7 +53,10 @@ def _tag_docs(tags: list[Tag]) -> list[nb.TagDoc]:
             .order_by(NewsItemTag.created_at.desc())
             .limit(20)
         )
-        examples = [_item_text(link.item) for link in examples_q]
+        # link.item can be None for a stale NewsItemTag row whose NewsItem
+        # was deleted without the link being cleaned up — skip rather than
+        # crash on an otherwise-routine retag/classification pass.
+        examples = [_item_text(link.item) for link in examples_q if link.item is not None]
         docs.append(
             nb.TagDoc(
                 tag_id=t.id,
@@ -79,14 +82,12 @@ def _graduation_state(label_count: int, threshold_1: int, threshold_2: int) -> s
 
 
 def classifier_state(tag: Tag, *, threshold_1: int, threshold_2: int) -> str:
-    """One topic's current graduation state.
-
-    An admin-set ``tag.classifier_mode`` pins the state regardless of label
-    count. Otherwise it's computed from the topic's trustworthy (llm|manual)
-    label count — not stored, so it can never drift from the data it's
-    derived from."""
-    if tag.classifier_mode:
-        return tag.classifier_mode
+    """One topic's current graduation state, computed from its trustworthy
+    (llm|manual) label count — not stored, so it can never drift from the
+    data it's derived from. Every topic graduates the same way (LLM-first,
+    classifier taking over as labels accumulate); there is no per-topic
+    override and this state is purely an internal classification-routing
+    detail, never surfaced to users."""
     label_count = (
         NewsItemTag.query.filter_by(tag_id=tag.id)
         .filter(NewsItemTag.method.in_(["llm", "manual"]))
@@ -95,9 +96,9 @@ def classifier_state(tag: Tag, *, threshold_1: int, threshold_2: int) -> str:
     return _graduation_state(label_count, threshold_1, threshold_2)
 
 
-def topic_stats(tags: list[Tag], *, threshold_1: int, threshold_2: int) -> dict[int, dict]:
-    """Item count + classifier state per topic, in 2 batched queries total
-    (not N+1) — used by the admin Topics view."""
+def topic_stats(tags: list[Tag]) -> dict[int, dict]:
+    """Item count per topic, in one batched query — used by the admin
+    Topics view."""
     from sqlalchemy import func
 
     tag_ids = [t.id for t in tags]
@@ -108,20 +109,7 @@ def topic_stats(tags: list[Tag], *, threshold_1: int, threshold_2: int) -> dict[
         .filter(NewsItemTag.tag_id.in_(tag_ids))
         .group_by(NewsItemTag.tag_id).all()
     )
-    grad_counts = dict(
-        db.session.query(NewsItemTag.tag_id, func.count(NewsItemTag.id))
-        .filter(NewsItemTag.tag_id.in_(tag_ids), NewsItemTag.method.in_(["llm", "manual"]))
-        .group_by(NewsItemTag.tag_id).all()
-    )
-    stats = {}
-    for t in tags:
-        state = t.classifier_mode or _graduation_state(grad_counts.get(t.id, 0), threshold_1, threshold_2)
-        stats[t.id] = {
-            "item_count": counts.get(t.id, 0),
-            "classifier_state": state,
-            "is_override": bool(t.classifier_mode),
-        }
-    return stats
+    return {t.id: {"item_count": counts.get(t.id, 0)} for t in tags}
 
 
 def classify(
