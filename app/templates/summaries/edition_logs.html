@@ -11,6 +11,19 @@
   <div id="cost-ticker" class="small text-body-secondary">Cost so far: $0.0000</div>
 </div>
 
+{% if revisions|length > 1 %}
+<ul class="nav nav-tabs mb-3">
+  {% for r in revisions %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if r.id == run.id else '' }}"
+       href="{{ url_for('web.edition_logs', summary_id=summary.id, run_id=r.id) }}">
+      rev {{ r.revision }}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
 <div class="card shadow-sm">
   <div class="card-body p-0">
     <div id="agent-log"

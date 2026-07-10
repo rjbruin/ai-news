@@ -101,6 +101,59 @@ def test_edition_page_shows_cost_box_and_hides_old_headline_badge(auth_client, d
     assert '<span class="pill pill-amber" title="Generation cost">' not in html
 
 
+def test_cost_box_sums_costs_across_revision_chain(auth_client, db, user):
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    root = SummaryRun(
+        summary_id=summary.id, document=[{"type": "intro", "markdown": "hi"}],
+        revision=1, agent_cost=0.0100, podcast_cost=0.0010,
+    )
+    db.session.add(root)
+    db.session.commit()
+    rev2 = SummaryRun(
+        summary_id=summary.id, document=[{"type": "intro", "markdown": "hi v2"}],
+        revision=2, parent_run_id=root.id, agent_cost=0.0050,
+    )
+    db.session.add(rev2)
+    db.session.commit()
+
+    # Viewing the LATEST revision should show the TOTAL across the whole chain.
+    resp = auth_client.get(f"/summaries/{summary.id}/editions/{rev2.id}")
+    html = resp.data.decode()
+    assert "$0.0150" in html  # 0.0100 + 0.0050
+    assert "$0.0010" in html  # podcast cost only on root
+    assert "all 2 revisions" in html
+
+    # Viewing the EARLIER revision should show the same chain total, not just its own cost.
+    resp = auth_client.get(f"/summaries/{summary.id}/editions/{root.id}")
+    html = resp.data.decode()
+    assert "$0.0150" in html
+
+
+def test_cost_box_omits_revision_count_for_single_revision(auth_client, db, user):
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = SummaryRun(
+        summary_id=summary.id, document=[{"type": "intro", "markdown": "hi"}],
+        revision=1, agent_cost=0.02,
+    )
+    db.session.add(run)
+    db.session.commit()
+
+    resp = auth_client.get(f"/summaries/{summary.id}/editions/{run.id}")
+    html = resp.data.decode()
+    assert "(all" not in html
+    assert "revisions)" not in html
+
+
 def test_editions_list_shows_podcast_cost_badge_on_icon(auth_client, db, user):
     user.podcast_enabled = True
     db.session.commit()
