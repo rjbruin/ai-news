@@ -15,6 +15,8 @@ class FakeNewsletterSource(NewsSource):
 
     docs: list[RawDocument] = []
     scan_pairs: list[tuple[str, str]] = []
+    old_message_uids: list[tuple[str, str]] = []
+    archived_calls: list[list[str]] = []
 
     def fetch(self, since):
         return list(FakeNewsletterSource.docs)
@@ -24,6 +26,13 @@ class FakeNewsletterSource(NewsSource):
 
     def scan_senders(self):
         return list(FakeNewsletterSource.scan_pairs)
+
+    def list_old_message_uids(self, cutoff):
+        return list(FakeNewsletterSource.old_message_uids)
+
+    def archive_messages(self, uids):
+        FakeNewsletterSource.archived_calls.append(list(uids))
+        return len(uids)
 
 
 @pytest.fixture
@@ -35,6 +44,8 @@ def fake_newsletter_source():
     source_registry.register(FakeNewsletterSource)
     FakeNewsletterSource.docs = []
     FakeNewsletterSource.scan_pairs = []
+    FakeNewsletterSource.old_message_uids = []
+    FakeNewsletterSource.archived_calls = []
     yield FakeNewsletterSource
     if original is not None:
         source_registry.register(original)
@@ -680,3 +691,71 @@ def test_newsletter_status_wording_is_terse(db, mailbox, fake_newsletter_source)
     assert child.last_status == "1 new item, 1 checked"
     assert "already seen" not in child.last_status
     assert "docs" not in child.last_status
+
+
+# ───────────────────────── Inbox housekeeping: archiving old mail ─────────────────────────
+
+def test_archives_old_already_ingested_mail(db, mailbox, fake_newsletter_source):
+    # First poll ingests message "1" and creates the child source + IngestRun.
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    ingest.ingest_source(mailbox)
+    fake_newsletter_source.archived_calls = []  # reset — first poll had nothing old to archive
+
+    # Second poll: nothing new arrives, but message "1" now shows up as "old"
+    # in a full-mailbox scan (independent of fetch()'s lookback window).
+    fake_newsletter_source.docs = []
+    fake_newsletter_source.old_message_uids = [("uid-1", "1")]
+    ingest.ingest_source(mailbox)
+
+    assert fake_newsletter_source.archived_calls == [["uid-1"]]
+
+
+def test_does_not_archive_mail_that_was_never_ingested(db, mailbox, fake_newsletter_source):
+    # A message shows up as "old" in the mailbox scan, but this instance has
+    # never recorded an IngestRun for it (e.g. it predates this source) —
+    # must not be archived, since we have no record of its content.
+    fake_newsletter_source.docs = []
+    fake_newsletter_source.old_message_uids = [("uid-99", "never-ingested-id")]
+    ingest.ingest_source(mailbox)
+
+    assert fake_newsletter_source.archived_calls == []
+
+
+def test_archiving_disabled_when_archive_after_days_is_zero(db, mailbox, fake_newsletter_source):
+    mailbox.config = {**(mailbox.config or {}), "archive_after_days": 0}
+    db.session.commit()
+
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    ingest.ingest_source(mailbox)
+    fake_newsletter_source.old_message_uids = [("uid-1", "1")]
+    ingest.ingest_source(mailbox)
+
+    assert fake_newsletter_source.archived_calls == []
+
+
+def test_archive_stats_and_status_reflect_archived_count(db, mailbox, fake_newsletter_source):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    ingest.ingest_source(mailbox)
+
+    fake_newsletter_source.docs = []
+    fake_newsletter_source.old_message_uids = [("uid-1", "1")]
+    stats = ingest.ingest_source(mailbox)
+
+    assert stats["archived"] == 1
+    db.session.refresh(mailbox)
+    assert "1 archived" in mailbox.last_status
+
+
+def test_archiving_failure_does_not_break_the_poll(db, mailbox, fake_newsletter_source, monkeypatch):
+    fake_newsletter_source.docs = [_doc("1", "TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
+    ingest.ingest_source(mailbox)
+
+    def _boom(self, uids):
+        raise RuntimeError("IMAP MOVE failed")
+
+    monkeypatch.setattr(FakeNewsletterSource, "archive_messages", _boom)
+    fake_newsletter_source.docs = []
+    fake_newsletter_source.old_message_uids = [("uid-1", "1")]
+
+    stats = ingest.ingest_source(mailbox)  # must not raise
+    assert stats["archived"] == 0

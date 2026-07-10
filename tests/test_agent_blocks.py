@@ -91,3 +91,37 @@ def test_more_news_headline_is_html_escaped(app):
         html = render.render_html(doc)
     assert "<img src=x onerror=alert(1)>" not in html
     assert "&lt;img src=x onerror=alert(1)&gt;" in html
+
+
+def test_quick_hits_renders_inline_html_formatting(app):
+    """Regression test: quick_hits item text previously went through Jinja's
+    default auto-escaping with no filter at all, so agent-authored <strong>/
+    <em> tags rendered as literal text instead of bold/italic."""
+    doc = validate_document([
+        {"type": "quick_hits", "items": [
+            {"text": "OpenAI ships <strong>GPT-6</strong> today."},
+            {"text": "See <em>the announcement</em>.", "url": "https://example.com/y"},
+        ]},
+    ])
+    with app.app_context():
+        html = render.render_html(doc)
+    assert "<strong>GPT-6</strong>" in html
+    assert "<em>the announcement</em>" in html
+    # Must not leak a stray wrapping <p> into the <li>/<a> (invalid nesting).
+    assert "<p>" not in html
+
+
+def test_quick_hits_sanitizes_disallowed_tags(app):
+    """The mdinline filter must still run agent text through bleach, exactly
+    like the block-level `md` filter — inline formatting is allowed, a
+    script tag is not (its markup is stripped, even though bleach leaves
+    the now-inert text content behind)."""
+    doc = validate_document([
+        {"type": "quick_hits", "items": [
+            {"text": "<script>alert(1)</script>Hi"},
+        ]},
+    ])
+    with app.app_context():
+        html = render.render_html(doc)
+    assert "<script>" not in html
+    assert "<script" not in html

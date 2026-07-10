@@ -27,8 +27,8 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
-    ApiKey, Alert, EditionRecipient, NewsItem, NewsItemTag, Source, Summary, SummaryRun, Tag, User,
-    UserDisabledSource, utcnow,
+    ApiKey, Alert, BalanceTransaction, EditionRecipient, LemonsqueezyProduct, NewsItem,
+    NewsItemTag, Source, Summary, SummaryRun, Tag, User, UserDisabledSource, utcnow,
 )
 from ..services import edition_mail, generation_registry, ingest, summarize
 from ..sources import registry as source_registry
@@ -441,7 +441,15 @@ def regenerate_podcast_feed_token():
 @approved_required
 def api_keys():
     keys = ApiKey.manageable_by(current_user)
-    return render_template("keys.html", keys=keys)
+    topup_products = LemonsqueezyProduct.query.filter_by(active=True).order_by(
+        LemonsqueezyProduct.credited_amount_cents
+    ).all()
+    transactions = (
+        current_user.balance_transactions.order_by(BalanceTransaction.created_at.desc()).limit(50).all()
+    )
+    return render_template(
+        "keys.html", keys=keys, topup_products=topup_products, transactions=transactions,
+    )
 
 
 @bp.route("/keys/new", methods=["POST"])

@@ -8,7 +8,7 @@ private-topic (scope='user') NewsItemTag rows from their tag's owner_user_id
 post-migration and silently leak to every user.
 
 Revision ID: efe315d69bdc
-Revises: 117aa3fc3b06
+Revises: f02aa2e20e4f
 Create Date: 2026-07-09 00:00:00.000000
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'efe315d69bdc'
-down_revision = '117aa3fc3b06'
+down_revision = 'f02aa2e20e4f'
 branch_labels = None
 depends_on = None
 

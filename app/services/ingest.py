@@ -463,16 +463,67 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
                 cost=child_usage["cost"],
             ))
 
+    archived = _archive_old_ingested_mail(mailbox, plugin)
+    stats["archived"] = archived
+
     mailbox.last_polled_at = utcnow()
     summary = f"{stats['new_items']} new item{'s' if stats['new_items'] != 1 else ''} ({len(docs_by_child)} newsletter{'s' if len(docs_by_child) != 1 else ''} checked"
     if new_subscriptions:
         summary += f", {new_subscriptions} new subscription{'s' if new_subscriptions != 1 else ''}"
     if stats["errors"]:
         summary += f", {stats['errors']} error{'s' if stats['errors'] != 1 else ''}"
+    if archived:
+        summary += f", {archived} archived"
     summary += ")"
     mailbox.last_status = summary
     db.session.commit()
     return stats
+
+
+def _archive_old_ingested_mail(mailbox: Source, plugin) -> int:
+    """Housekeeping pass: move mail out of the inbox once it's both older
+    than the mailbox's configured threshold (default 7 days) and already
+    recorded in an IngestRun for one of this mailbox's newsletter children —
+    i.e. it's safe to move because this instance already has its content.
+
+    Failures here are logged and swallowed rather than propagated, so a
+    flaky IMAP MOVE never turns a successful poll into a failed one.
+    """
+    days = int((mailbox.config or {}).get("archive_after_days", 7) or 0)
+    if days <= 0 or not hasattr(plugin, "list_old_message_uids"):
+        return 0
+
+    from datetime import timedelta
+
+    cutoff = (utcnow() - timedelta(days=days)).date()
+    try:
+        candidates = plugin.list_old_message_uids(cutoff)
+    except Exception:  # noqa: BLE001
+        logger.exception("Listing old mail failed for mailbox source %s", mailbox.id)
+        return 0
+    if not candidates:
+        return 0
+
+    child_ids = [c.id for c in mailbox.children]
+    if not child_ids:
+        return 0
+    candidate_ids = [external_id for _uid, external_id in candidates]
+    ingested_ids = {
+        row.external_id
+        for row in IngestRun.query.filter(
+            IngestRun.source_id.in_(child_ids),
+            IngestRun.external_id.in_(candidate_ids),
+        ).all()
+    }
+    uids_to_archive = [uid for uid, external_id in candidates if external_id in ingested_ids]
+    if not uids_to_archive:
+        return 0
+
+    try:
+        return plugin.archive_messages(uids_to_archive)
+    except Exception:  # noqa: BLE001
+        logger.exception("Archiving old mail failed for mailbox source %s", mailbox.id)
+        return 0
 
 
 _CONFIRMATION_EMAIL_SYSTEM = (
