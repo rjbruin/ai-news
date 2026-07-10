@@ -17,6 +17,7 @@
       {% if tag.id in stats %}
       <div class="small text-body-secondary mt-1">
         {{ stats[tag.id].item_count }} item(s) &middot; {{ classifier_label(stats[tag.id].classifier_state) }}
+        {%- if stats[tag.id].is_override %} (manual){% endif %}
       </div>
       {% endif %}
     </div>
@@ -56,6 +57,18 @@
             <label class="form-label small">Description</label>
             <input type="text" name="description" class="form-control" value="{{ tag.explanation or '' }}">
           </div>
+          {% if current_user.is_admin %}
+          <div class="mb-2">
+            <label class="form-label small">Tagging method</label>
+            <select name="classifier_mode" class="form-select">
+              <option value="" {{ 'selected' if not tag.classifier_mode }}>Automatic (graduates with label volume)</option>
+              <option value="llm_only" {{ 'selected' if tag.classifier_mode == 'llm_only' }}>LLM only</option>
+              <option value="hybrid" {{ 'selected' if tag.classifier_mode == 'hybrid' }}>Classifier + LLM (hybrid)</option>
+              <option value="classifier_only" {{ 'selected' if tag.classifier_mode == 'classifier_only' }}>Classifier only</option>
+            </select>
+            <div class="form-text">Overrides the automatic graduation based on how many labels this topic has accumulated.</div>
+          </div>
+          {% endif %}
         </div>
         <div class="modal-footer justify-content-between">
           <button type="submit" formaction="{{ url_for('web.topic_archive', tag_id=tag.id) }}"

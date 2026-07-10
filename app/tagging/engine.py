@@ -79,9 +79,14 @@ def _graduation_state(label_count: int, threshold_1: int, threshold_2: int) -> s
 
 
 def classifier_state(tag: Tag, *, threshold_1: int, threshold_2: int) -> str:
-    """One topic's current graduation state, computed from its trustworthy
-    (llm|manual) label count — not stored, so it can never drift from the
-    data it's derived from."""
+    """One topic's current graduation state.
+
+    An admin-set ``tag.classifier_mode`` pins the state regardless of label
+    count. Otherwise it's computed from the topic's trustworthy (llm|manual)
+    label count — not stored, so it can never drift from the data it's
+    derived from."""
+    if tag.classifier_mode:
+        return tag.classifier_mode
     label_count = (
         NewsItemTag.query.filter_by(tag_id=tag.id)
         .filter(NewsItemTag.method.in_(["llm", "manual"]))
@@ -110,8 +115,12 @@ def topic_stats(tags: list[Tag], *, threshold_1: int, threshold_2: int) -> dict[
     )
     stats = {}
     for t in tags:
-        state = _graduation_state(grad_counts.get(t.id, 0), threshold_1, threshold_2)
-        stats[t.id] = {"item_count": counts.get(t.id, 0), "classifier_state": state}
+        state = t.classifier_mode or _graduation_state(grad_counts.get(t.id, 0), threshold_1, threshold_2)
+        stats[t.id] = {
+            "item_count": counts.get(t.id, 0),
+            "classifier_state": state,
+            "is_override": bool(t.classifier_mode),
+        }
     return stats
 
 
