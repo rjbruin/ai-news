@@ -44,6 +44,7 @@
       </div>
       {% if cur_cls %}
         {% for field, spec in (cur_cls.param_schema or {}).items() %}
+        {% if spec.type != 'topics' %}
         {% set cur_val = (summary.params or {}).get(field, spec.get('default', '')) %}
         <div class="mb-3 param-group
                     {%- if spec.get('scope') == 'day' %} scope-day{% endif %}
@@ -77,15 +78,12 @@
           <input type="number" name="param_{{ field }}" class="form-control"
                  value="{{ cur_val if cur_val is not none else spec.get('default', '') }}"
                  min="{{ spec.get('min', 1) }}" max="{{ spec.get('max', '') }}">
-          {% elif spec.type == 'topics' %}
-          <label class="form-label">{{ spec.label }}</label>
-          {{ topic_picker('param_' ~ field, selected_emphasized_topics, available_topics, 'p_' ~ field) }}
-          <div class="form-text">Tells the editor which topics to prioritize when present in scope.</div>
           {% else %}
           <label class="form-label">{{ spec.label }}</label>
           <input name="param_{{ field }}" class="form-control" value="{{ cur_val }}">
           {% endif %}
         </div>
+        {% endif %}
         {% endfor %}
       {% endif %}
     </div>
@@ -131,6 +129,17 @@
       <p class="form-text mb-2">Your evolving interests. Shared across all editions.</p>
       <textarea name="mem_interests" class="form-control font-monospace" rows="8"
                 spellcheck="false">{{ files.interests }}</textarea>
+      {% if cur_cls %}
+        {% for field, spec in (cur_cls.param_schema or {}).items() %}
+        {% if spec.type == 'topics' %}
+        <div class="mt-3">
+          <label class="form-label">{{ spec.label }}</label>
+          {{ topic_picker('param_' ~ field, selected_emphasized_topics, available_topics, 'p_' ~ field) }}
+          <div class="form-text">Tells the editor which topics to prioritize when present in scope. All topics are included by default.</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      {% endif %}
     </div>
   </div>
 

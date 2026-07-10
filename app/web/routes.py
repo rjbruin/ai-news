@@ -412,9 +412,11 @@ def settings():
             db.or_(Tag.scope == "global", Tag.owner_user_id == current_user.id),
         ).order_by(Tag.name).all()
     )
-    selected_emphasized_topics = []
-    if summary:
-        emphasized_ids = set((summary.params or {}).get("emphasized_topic_ids") or [])
+    # Default to "all topics" until the user has explicitly saved this
+    # setting once (key present in params, even if saved as an empty list).
+    selected_emphasized_topics = list(available_topics)
+    if summary and "emphasized_topic_ids" in (summary.params or {}):
+        emphasized_ids = set(summary.params.get("emphasized_topic_ids") or [])
         selected_emphasized_topics = [t for t in available_topics if t.id in emphasized_ids]
 
     return render_template(
