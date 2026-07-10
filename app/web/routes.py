@@ -823,6 +823,11 @@ def topic_edit(tag_id: int):
     if name:
         tag.name = name
     tag.explanation = description or None
+    if current_user.is_admin:
+        from ..models import CLASSIFIER_MODES
+
+        mode = (request.form.get("classifier_mode") or "").strip()
+        tag.classifier_mode = mode if mode in CLASSIFIER_MODES else None
     db.session.commit()
     flash(f'Topic "{tag.name}" updated.', "success")
     return redirect(url_for("web.topics"))
