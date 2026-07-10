@@ -115,7 +115,7 @@
     <h4 class="agentic-quick-hits__title">⚡ {{ block.title or 'Quick hits' }}</h4>
     <ul>
       {% for it in block['items'] %}
-      <li>{% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.text }}</a>{% else %}{{ it.text }}{% endif %}</li>
+      <li>{% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.text | mdinline }}</a>{% else %}{{ it.text | mdinline }}{% endif %}</li>
       {% endfor %}
     </ul>
   </div>

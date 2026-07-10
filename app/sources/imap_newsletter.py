@@ -1,7 +1,8 @@
 """IMAP newsletter source: pull newsletter emails from a mailbox.
 
 Config keys (fall back to app-level IMAP_* config when omitted):
-  host, port, username, password, folder, mark_seen
+  host, port, username, password, folder, mark_seen, archive_after_days,
+  archive_folder
 
 Deduplication is handled server-side via IngestRun.external_id (the email's
 Message-ID header).  The seen/unseen flag is no longer used for tracking —
@@ -10,7 +11,7 @@ mark_seen is kept as an optional inbox-housekeeping courtesy only.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import bleach
 from bs4 import BeautifulSoup
@@ -69,6 +70,18 @@ class ImapNewsletterSource(NewsSource):
             "required": False,
             "default": False,
         },
+        "archive_after_days": {
+            "type": "number",
+            "label": "Archive already-ingested mail after this many days (0 disables)",
+            "required": False,
+            "default": 7,
+        },
+        "archive_folder": {
+            "type": "text",
+            "label": "Archive folder name",
+            "required": False,
+            "default": "Archive",
+        },
     }
 
     def _conn_params(self) -> dict:
@@ -80,6 +93,8 @@ class ImapNewsletterSource(NewsSource):
             "password": self.config.get("password") or cfg.get("IMAP_PASSWORD"),
             "folder": self.config.get("folder") or cfg.get("IMAP_FOLDER", "INBOX"),
             "mark_seen": bool(self.config.get("mark_seen", False)),
+            "archive_after_days": int(self.config.get("archive_after_days", 7) or 0),
+            "archive_folder": (self.config.get("archive_folder") or "Archive").strip() or "Archive",
         }
 
     def fetch(self, since: datetime | None) -> list[RawDocument]:
@@ -146,3 +161,45 @@ class ImapNewsletterSource(NewsSource):
             for msg in mailbox.fetch(headers_only=True, mark_seen=False, bulk=True):
                 pairs.append((msg.from_ or "", msg.subject or ""))
         return pairs
+
+    def list_old_message_uids(self, cutoff: date) -> list[tuple[str, str]]:
+        """Header-only scan for messages received before ``cutoff``, in the
+        currently-configured folder. Returns (uid, external_id) pairs — the
+        same external_id derivation as fetch() (Message-ID, falling back to
+        the IMAP UID) — so callers can match against IngestRun.external_id
+        to decide what's safe to archive."""
+        from imap_tools import AND, MailBox
+
+        p = self._conn_params()
+        if not (p["host"] and p["username"] and p["password"]):
+            raise RuntimeError("IMAP source is not configured (host/username/password).")
+
+        pairs: list[tuple[str, str]] = []
+        with MailBox(p["host"], port=p["port"], timeout=_IMAP_TIMEOUT).login(
+            p["username"], p["password"], initial_folder=p["folder"]
+        ) as mailbox:
+            for msg in mailbox.fetch(AND(date_lt=cutoff), headers_only=True, mark_seen=False, bulk=True):
+                message_id = (msg.headers.get("message-id") or [""])[0].strip()
+                external_id = message_id or msg.uid
+                pairs.append((msg.uid, external_id))
+        return pairs
+
+    def archive_messages(self, uids: list[str]) -> int:
+        """Move the given UIDs (from the configured folder) into the
+        configured archive folder, creating it if it doesn't exist yet.
+        Returns the number of UIDs moved."""
+        if not uids:
+            return 0
+        from imap_tools import MailBox
+
+        p = self._conn_params()
+        if not (p["host"] and p["username"] and p["password"]):
+            raise RuntimeError("IMAP source is not configured (host/username/password).")
+
+        with MailBox(p["host"], port=p["port"], timeout=_IMAP_TIMEOUT).login(
+            p["username"], p["password"], initial_folder=p["folder"]
+        ) as mailbox:
+            if not mailbox.folder.exists(p["archive_folder"]):
+                mailbox.folder.create(p["archive_folder"])
+            mailbox.move(uids, p["archive_folder"])
+        return len(uids)

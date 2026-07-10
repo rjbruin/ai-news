@@ -213,9 +213,7 @@ def register_template_helpers(app: Flask) -> None:
         suffix = "th" if 11 <= day % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
         return f"{dt.strftime('%B')} {day}{suffix}, {dt.strftime('%H:%M')}"
 
-    @app.template_filter("md")
-    def markdown_filter(text):
-        """Render Markdown to sanitized HTML (for agent-authored block content)."""
+    def _render_markdown(text, *, inline: bool = False):
         import bleach
         import markdown as md
         from markupsafe import Markup
@@ -232,4 +230,20 @@ def register_template_helpers(app: Flask) -> None:
             "img": ["src", "alt", "title"],
         }
         clean = bleach.clean(raw, tags=allowed_tags, attributes=allowed_attrs, strip=True)
+        if inline and clean.startswith("<p>") and clean.endswith("</p>"):
+            # A single line of Markdown always gets wrapped in one <p>...</p> —
+            # strip it for callers rendering inside an inline element (<li>,
+            # <a>) where a nested block-level <p> would be invalid HTML.
+            clean = clean[3:-4]
         return Markup(clean)
+
+    @app.template_filter("md")
+    def markdown_filter(text):
+        """Render Markdown to sanitized HTML (for agent-authored block content)."""
+        return _render_markdown(text)
+
+    @app.template_filter("mdinline")
+    def markdown_inline_filter(text):
+        """Like ``md``, but strips the single wrapping <p> so the result is
+        safe to nest inside an inline element (<li>, <a>)."""
+        return _render_markdown(text, inline=True)
