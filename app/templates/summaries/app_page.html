@@ -1,4 +1,4 @@
-{% from "partials/_news_item.html" import news_item %}
+{% from "partials/_news_item.html" import news_item with context %}
 {# Rendered fragment for the app_page summary plugin. #}
 <div class="text-body-secondary mb-3 small">
   {% if range_start %}{{ range_start.strftime('%Y-%m-%d %H:%M') }} → {% endif %}

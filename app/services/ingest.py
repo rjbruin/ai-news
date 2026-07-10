@@ -131,7 +131,7 @@ def _ingest_plain_source(source: Source) -> dict:
         stats["error_log"] = [msg]
         return stats
 
-    all_tags = Tag.query.all()
+    all_tags = Tag.query.filter_by(archived_at=None).all()
     stats = _ingest_docs_for_source(source, plugin, docs, all_tags)
     stats["fetched"] = len(docs)
 
@@ -407,7 +407,7 @@ def _ingest_newsletter_mailbox(mailbox: Source) -> dict:
         docs_by_child.setdefault(child.id, []).append(doc)
         child_by_id[child.id] = child
 
-    all_tags = Tag.query.all()
+    all_tags = Tag.query.filter_by(archived_at=None).all()
     for child_id, child_docs in docs_by_child.items():
         child = child_by_id[child_id]
 
@@ -963,7 +963,7 @@ def _aware(dt):
 
 def retag_all() -> int:
     """Re-run tagging over all items (e.g. after taxonomy changes)."""
-    tags = Tag.query.all()
+    tags = Tag.query.filter_by(archived_at=None).all()
     count = 0
     for item in NewsItem.query.all():
         tagging_engine.apply_to_item(item, tags)

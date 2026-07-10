@@ -39,7 +39,9 @@
     <a href="{{ url_for('web.news_read', item_id=item.id) }}" class="small">Read full text →</a>
     {% endif %}
     {% for link in item.tag_links %}
+      {% if link.user_id is none or link.user_id == current_user.id %}
       <span class="badge text-bg-light border" title="{{ link.method }} · {{ '%.2f'|format(link.confidence) }}">{{ link.tag.name }}</span>
+      {% endif %}
     {% endfor %}
   </div>
 </div>

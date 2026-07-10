@@ -609,7 +609,7 @@ def tag_promote(tag_id: int):
     tag.scope = "global"
     db.session.commit()
     flash(f'Tag "{tag.name}" promoted to global.', "success")
-    return redirect(url_for("web.tags"))
+    return redirect(url_for("web.topics"))
 
 
 # ───────────────────────── helpers ─────────────────────────

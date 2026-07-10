@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Topics · Dispatch{% endblock %}
+{% macro classifier_label(state) %}
+  {% if state == 'classifier_only' %}classifier only
+  {% elif state == 'hybrid' %}classifier+LLM
+  {% else %}LLM
+  {% endif %}
+{% endmacro %}
+{% macro topic_row(tag, can_manage, archived=False) %}
+<div class="list-group-item">
+  <div class="d-flex justify-content-between align-items-start gap-2">
+    <div>
+      <span class="fw-semibold">{{ tag.name }}</span>
+      {% if tag.scope == 'global' %}<span class="badge text-bg-info">global</span>{% endif %}
+      {% if archived %}<span class="badge text-bg-secondary">archived</span>{% endif %}
+      {% if tag.explanation %}<div class="small text-body-secondary">{{ tag.explanation }}</div>{% endif %}
+      {% if tag.id in stats %}
+      <div class="small text-body-secondary mt-1">
+        {{ stats[tag.id].item_count }} item(s) &middot; {{ classifier_label(stats[tag.id].classifier_state) }}
+      </div>
+      {% endif %}
+    </div>
+    <div class="text-nowrap">
+      {% if can_manage and not archived %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal"
+              data-bs-target="#topic-edit-modal-{{ tag.id }}">Edit</button>
+      {% endif %}
+      {% if current_user.is_admin and tag.scope != 'global' and not archived %}
+      <form method="post" action="{{ url_for('admin.tag_promote', tag_id=tag.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-info">Make global</button>
+      </form>
+      {% endif %}
+      {% if can_manage and archived %}
+      <form method="post" action="{{ url_for('web.topic_restore', tag_id=tag.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-secondary">Restore</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% if can_manage and not archived %}
+<div class="modal fade" id="topic-edit-modal-{{ tag.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('web.topic_edit', tag_id=tag.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit topic</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small">Name</label>
+            <input type="text" name="name" class="form-control" value="{{ tag.name }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Description</label>
+            <input type="text" name="description" class="form-control" value="{{ tag.explanation or '' }}">
+          </div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="submit" formaction="{{ url_for('web.topic_archive', tag_id=tag.id) }}"
+                  formnovalidate
+                  onclick="return confirm('Archive this topic? It stops being applied to new items, but existing labels are kept.')"
+                  class="btn btn-outline-danger">Archive</button>
+          <div>
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-primary">Save</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Topics</h1>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#topic-create-modal">
+    Add a topic
+  </button>
+</div>
+<p class="text-body-secondary">
+  Topics are applied to news items automatically as they're ingested. Global topics apply to everyone;
+  your own topics are private to your account but still get applied to every item — you can select them
+  in your edition settings to tell the editor what to emphasize, and filter the News page by them.
+</p>
+
+<h2 class="h5">Global topics</h2>
+<div class="list-group shadow-sm mb-4">
+  {% for tag in global_tags %}{{ topic_row(tag, current_user.is_admin) }}
+  {% else %}<div class="list-group-item text-body-secondary">No global topics yet.</div>{% endfor %}
+</div>
+
+<h2 class="h5">Your topics</h2>
+<div class="list-group shadow-sm{{ ' mb-4' if archived_tags }}">
+  {% for tag in my_tags %}{{ topic_row(tag, True) }}
+  {% else %}<div class="list-group-item text-body-secondary">You don't have any personal topics.</div>{% endfor %}
+</div>
+
+{% if archived_tags %}
+<h2 class="h5 mt-4">Archived</h2>
+<div class="list-group shadow-sm">
+  {% for tag in archived_tags %}{{ topic_row(tag, current_user.is_admin or tag.owner_user_id == current_user.id, archived=True) }}
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="modal fade" id="topic-create-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('web.topic_create') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Add a topic</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small">Name</label>
+            <input type="text" name="name" class="form-control" placeholder="e.g. Open-source models" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Description</label>
+            <input type="text" name="description" class="form-control"
+                   placeholder="One line describing what belongs under this topic">
+            <div class="form-text">This is what the AI editor uses to decide which items match.</div>
+          </div>
+          {% if current_user.is_admin %}
+          <div class="form-check mt-2">
+            <input type="checkbox" name="is_global" value="1" class="form-check-input" id="topic-is-global">
+            <label class="form-check-label small" for="topic-is-global">Make this a global topic</label>
+          </div>
+          {% endif %}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

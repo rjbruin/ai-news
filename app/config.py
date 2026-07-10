@@ -48,8 +48,16 @@ class Config:
     )
 
     # Tagging
-    TAGGING_MODE = os.environ.get("TAGGING_MODE", "nb_then_llm")
+    # "graduated" (default): per-topic classifier graduation, see
+    # app/tagging/engine.py. Set to nb_only/nb_then_llm/llm_only to force
+    # that single legacy mode for every topic instead (debugging/tests).
+    TAGGING_MODE = os.environ.get("TAGGING_MODE", "graduated")
     NB_CONFIDENCE_THRESHOLD = float(os.environ.get("NB_CONFIDENCE_THRESHOLD", "0.30"))
+    # A topic's classifier graduates from LLM-only to hybrid (TF-IDF tries
+    # first, LLM covers misses) at this many trustworthy (llm|manual)
+    # labels, then to classifier-only (LLM skipped entirely) at the second.
+    TOPIC_GRADUATION_THRESHOLD_1 = int(os.environ.get("TOPIC_GRADUATION_THRESHOLD_1", "20"))
+    TOPIC_GRADUATION_THRESHOLD_2 = int(os.environ.get("TOPIC_GRADUATION_THRESHOLD_2", "100"))
 
     # Lemon Squeezy (prepaid balance top-ups — see app/services/payment.py)
     LEMONSQUEEZY_API_KEY = os.environ.get("LEMONSQUEEZY_API_KEY", "")
