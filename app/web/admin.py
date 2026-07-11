@@ -268,7 +268,14 @@ def source_reset(source_id: int):
             "danger",
         )
         return redirect(url_for("admin.source_detail", source_id=source_id))
-    # Delete items first (cascades to NewsItemTag), then runs
+    # Delete tag links, then items, then runs. NewsItem.tag_links has
+    # cascade="all, delete-orphan" at the ORM level, but that only fires for
+    # db.session.delete(instance) on individually loaded objects — a bulk
+    # Query.delete() (used here for performance on a source with many items)
+    # bypasses it entirely and previously left orphaned NewsItemTag rows
+    # behind whose news_item_id no longer matched any NewsItem.
+    item_ids = db.session.query(NewsItem.id).filter_by(source_id=source_id)
+    NewsItemTag.query.filter(NewsItemTag.news_item_id.in_(item_ids)).delete(synchronize_session=False)
     NewsItem.query.filter_by(source_id=source_id).delete(synchronize_session=False)
     IngestRun.query.filter_by(source_id=source_id).delete(synchronize_session=False)
     source.last_polled_at = None
