@@ -13,7 +13,7 @@ Irreversible by design: the deleted rows have no NewsItem to reattach to,
 so downgrade is a no-op.
 
 Revision ID: c5d6e7f8a9b0
-Revises: a3b4c5d6e7f8
+Revises: b4c5d6e7f8a9
 Create Date: 2026-07-11 00:00:00.000000
 
 """
@@ -22,7 +22,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'c5d6e7f8a9b0'
-down_revision = 'a3b4c5d6e7f8'
+down_revision = 'b4c5d6e7f8a9'
 branch_labels = None
 depends_on = None
 
