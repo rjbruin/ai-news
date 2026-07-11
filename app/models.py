@@ -537,11 +537,6 @@ class Tag(db.Model):
     explanation = db.Column(db.Text, nullable=True)
     scope = db.Column(db.String(10), default="user", nullable=False)  # global|user
     owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    # Admin override of the automatic per-topic graduation state (see
-    # app/tagging/engine.py::classifier_state). NULL means "automatic" —
-    # the state is computed from label-count thresholds as usual. Any of
-    # CLASSIFIER_MODES pins the topic to that state regardless of label count.
-    classifier_mode = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     # Soft delete: an archived topic stops being offered for new
@@ -563,9 +558,6 @@ class Tag(db.Model):
     @property
     def is_active(self) -> bool:
         return self.archived_at is None
-
-
-CLASSIFIER_MODES = ("llm_only", "hybrid", "classifier_only")
 
 
 class NewsItemTag(db.Model):

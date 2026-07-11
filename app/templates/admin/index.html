@@ -6,9 +6,10 @@
   <div class="d-flex flex-wrap gap-2">
     <button type="button" id="poll-all-btn" class="btn btn-outline-primary"
             data-start-url="{{ url_for('admin.poll_all_start') }}">Poll all sources now</button>
-    <form method="post" action="{{ url_for('admin.retag') }}" class="d-inline">
-      <button class="btn btn-outline-secondary">Re-tag all items</button>
-    </form>
+    <button type="button" id="retag-btn" class="btn btn-outline-secondary" data-bs-toggle="modal"
+            data-bs-target="#retag-modal" data-running="{{ '1' if retag_state.running else '0' }}">
+      {% if retag_state.running %}<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Re-tagging…{% else %}Re-tag items{% endif %}
+    </button>
     <a href="{{ url_for('admin.tagging_log') }}" class="btn btn-outline-secondary">Tagging log</a>
     <a href="{{ url_for('admin.source_new') }}" class="btn btn-primary">Add source</a>
   </div>
@@ -427,6 +428,44 @@
     </form>
   </div>
 </div>
+
+<div class="modal fade" id="retag-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Re-tag items</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="retag-form-view">
+          <p class="text-body-secondary small">
+            Re-runs tagging over items in the given time range (by fetch date). Leave a field blank
+            for no bound on that side. This runs in the background — you can close this dialog and
+            check back later.
+          </p>
+          <div class="mb-3">
+            <label class="form-label small">Start</label>
+            <input type="datetime-local" id="retag-start-input" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">End</label>
+            <input type="datetime-local" id="retag-end-input" class="form-control">
+          </div>
+        </div>
+        <div id="retag-progress-view" style="display:none">
+          <div class="progress mb-2" style="height: 1.25rem">
+            <div id="retag-progress-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+          </div>
+          <p id="retag-progress-text" class="text-body-secondary small mb-0">Starting…</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" id="retag-start-btn" class="btn btn-primary">Start</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
@@ -536,6 +575,89 @@
       }
     };
   }
+})();
+</script>
+<script>
+(function() {
+  const btn = document.getElementById('retag-btn');
+  const formView = document.getElementById('retag-form-view');
+  const progressView = document.getElementById('retag-progress-view');
+  const startBtn = document.getElementById('retag-start-btn');
+  const progressBar = document.getElementById('retag-progress-bar');
+  const progressText = document.getElementById('retag-progress-text');
+  const startInput = document.getElementById('retag-start-input');
+  const endInput = document.getElementById('retag-end-input');
+  if (!btn) return;
+
+  function showForm() {
+    formView.style.display = '';
+    progressView.style.display = 'none';
+    startBtn.style.display = '';
+  }
+
+  function showProgress() {
+    formView.style.display = 'none';
+    progressView.style.display = '';
+    startBtn.style.display = 'none';
+  }
+
+  function updateProgress(processed, total) {
+    const pct = total > 0 ? Math.round((processed / total) * 100) : 100;
+    progressBar.style.width = pct + '%';
+    progressText.textContent = processed + ' / ' + total + ' items re-tagged';
+  }
+
+  function setBtnRunning(running) {
+    btn.dataset.running = running ? '1' : '0';
+    btn.innerHTML = running
+      ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Re-tagging…'
+      : 'Re-tag items';
+  }
+
+  btn.addEventListener('click', function() {
+    if (btn.dataset.running === '1') {
+      showProgress();
+    } else {
+      showForm();
+    }
+  });
+
+  startBtn.addEventListener('click', function() {
+    const body = new URLSearchParams();
+    if (startInput.value) body.set('start', startInput.value);
+    if (endInput.value) body.set('end', endInput.value);
+    fetch('{{ url_for("admin.retag_start") }}', {method: 'POST', body: body})
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (typeof data.total === 'number') updateProgress(data.processed || 0, data.total);
+        showProgress();
+        setBtnRunning(true);
+      });
+  });
+
+  if (btn.dataset.running === '1') {
+    setBtnRunning(true);
+    updateProgress(0, 0);
+  }
+
+  const retagEs = new EventSource('{{ url_for("admin.retag_events") }}');
+  retagEs.onmessage = function(e) {
+    const event = JSON.parse(e.data);
+    if (event.type === 'state') {
+      if (event.running) {
+        setBtnRunning(true);
+        updateProgress(event.processed, event.total);
+      }
+    } else if (event.type === 'started') {
+      setBtnRunning(true);
+      updateProgress(0, event.total);
+    } else if (event.type === 'progress') {
+      updateProgress(event.processed, event.total);
+    } else if (event.type === 'done') {
+      setBtnRunning(false);
+      progressText.textContent += event.error ? (' — failed: ' + event.error) : ' — done!';
+    }
+  };
 })();
 </script>
 {% endblock %}

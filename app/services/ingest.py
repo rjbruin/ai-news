@@ -961,11 +961,23 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def retag_all() -> int:
-    """Re-run tagging over all items (e.g. after taxonomy changes)."""
+def retag_all(*, start=None, end=None, progress_cb=None) -> int:
+    """Re-run tagging over items (e.g. after taxonomy changes), optionally
+    scoped to a fetched_at time range. ``progress_cb(processed, total)`` is
+    called after each item so callers can stream progress instead of
+    blocking the request until every item is done."""
     tags = Tag.query.filter_by(archived_at=None).all()
+    query = NewsItem.query
+    if start is not None:
+        query = query.filter(NewsItem.fetched_at >= start)
+    if end is not None:
+        query = query.filter(NewsItem.fetched_at <= end)
+    items = query.all()
+    total = len(items)
     count = 0
-    for item in NewsItem.query.all():
+    for item in items:
         tagging_engine.apply_to_item(item, tags)
         count += 1
+        if progress_cb:
+            progress_cb(count, total)
     return count

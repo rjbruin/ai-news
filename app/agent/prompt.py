@@ -131,11 +131,27 @@ def compose_system_prompt(user, summary) -> str:
     )
     history = memory.read(user, summary, "history")
 
-    emphasized_ids = (summary.params or {}).get("emphasized_topic_ids") or []
-    emphasized_text = ""
-    if emphasized_ids:
-        emphasized_tags = Tag.query.filter(Tag.id.in_(emphasized_ids)).order_by(Tag.name).all()
-        emphasized_text = ", ".join(t.name for t in emphasized_tags)
+    tiers = (summary.params or {}).get("topic_tiers") or {}
+    highlight_ids = tiers.get("highlights") or []
+    none_ids = tiers.get("none") or []
+    emphasis_lines = []
+    if highlight_ids or none_ids:
+        tags_by_id = {
+            t.id: t.name
+            for t in Tag.query.filter(Tag.id.in_(highlight_ids + none_ids)).all()
+        }
+        highlight_names = sorted(tags_by_id[i] for i in highlight_ids if i in tags_by_id)
+        none_names = sorted(tags_by_id[i] for i in none_ids if i in tags_by_id)
+        if highlight_names:
+            emphasis_lines.append(
+                "Cover only as brief highlights (not full stories): " + ", ".join(highlight_names)
+            )
+        if none_names:
+            emphasis_lines.append(
+                "Do not emphasize; include only if clearly newsworthy on its own: "
+                + ", ".join(none_names)
+            )
+    emphasis_text = "\n".join(emphasis_lines)
 
     headline_rows = memory.recent_headlines(user, summary, days=retention)
     headlines_text = "\n\n".join(
@@ -147,9 +163,7 @@ def compose_system_prompt(user, summary) -> str:
         _ROLE,
         _section("READER INTERESTS (INTERESTS.md)", interests),
         _section("CONTENT CONFIGURATION", content_config),
-        _section(
-            "EMPHASIZED TOPICS (prioritize these when present in scope)", emphasized_text,
-        ),
+        _section("TOPIC EMPHASIS", emphasis_text),
         _section("HISTORY (running notes)", history),
         _section(
             f"RECENT HEADLINES (last {retention} days — do not re-report)",

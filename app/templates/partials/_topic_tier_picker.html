@@ -1,0 +1,52 @@
+{#
+  Three-tier drag-and-drop topic picker: Complete / Highlights / None.
+
+  "Complete" is the implicit default tier — only highlights/none selections
+  are submitted (as `{{ field_name }}_highlights` / `{{ field_name }}_none`,
+  read with request.form.getlist()), so a newly created topic automatically
+  lands in Complete without needing to be explicitly listed anywhere.
+
+  all_topics: {complete, highlights, none} — each a list of Tag objects
+              currently in that tier (for initial render).
+#}
+{% macro topic_tier_picker(field_name, tier_complete, tier_highlights, tier_none) %}
+<div class="tier-picker" data-field-name="{{ field_name }}">
+  <div class="row g-2">
+    <div class="col-md-4">
+      <div class="tier-box border rounded p-2 h-100" data-tier="complete">
+        <div class="small fw-semibold mb-1">Complete</div>
+        <div class="text-body-secondary" style="font-size:.75rem">Full coverage when in scope</div>
+        <div class="tier-box-badges d-flex flex-wrap gap-1 mt-2" style="min-height:2.5rem">
+          {% for t in tier_complete %}
+          <span class="badge text-bg-primary tier-badge" draggable="true" data-tag-id="{{ t.id }}" tabindex="0" role="button">{{ t.name }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="tier-box border rounded p-2 h-100" data-tier="highlights">
+        <div class="small fw-semibold mb-1">Highlights</div>
+        <div class="text-body-secondary" style="font-size:.75rem">Brief mentions only</div>
+        <div class="tier-box-badges d-flex flex-wrap gap-1 mt-2" style="min-height:2.5rem">
+          {% for t in tier_highlights %}
+          <span class="badge text-bg-secondary tier-badge" draggable="true" data-tag-id="{{ t.id }}" tabindex="0" role="button">{{ t.name }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="tier-box border rounded p-2 h-100" data-tier="none">
+        <div class="small fw-semibold mb-1">None</div>
+        <div class="text-body-secondary" style="font-size:.75rem">Not specially emphasized</div>
+        <div class="tier-box-badges d-flex flex-wrap gap-1 mt-2" style="min-height:2.5rem">
+          {% for t in tier_none %}
+          <span class="badge text-bg-light text-dark border tier-badge" draggable="true" data-tag-id="{{ t.id }}" tabindex="0" role="button">{{ t.name }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="form-text mt-1">Drag a topic between tiers, or click/tap it to cycle Complete → Highlights → None.</div>
+  <div class="tier-picker-hidden-inputs"></div>
+</div>
+{% endmacro %}

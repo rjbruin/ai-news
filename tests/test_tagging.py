@@ -105,37 +105,12 @@ def test_classifier_state_ignores_nb_labels_for_graduation(db, sample_tags, samp
     assert engine.classifier_state(tag, threshold_1=1, threshold_2=100) == "llm_only"
 
 
-def test_classifier_state_override_pins_state_regardless_of_label_count(db, sample_tags, sample_items):
+def test_topic_stats_reports_item_count(db, sample_tags, sample_items):
     tag = sample_tags[0]
-    tag.classifier_mode = "classifier_only"
+    db.session.add(NewsItemTag(news_item_id=sample_items[0].id, tag_id=tag.id, user_id=None, method="llm"))
     db.session.commit()
-    # 0 labels would normally be llm_only, but the override wins.
-    assert engine.classifier_state(tag, threshold_1=2, threshold_2=4) == "classifier_only"
-
-
-def test_classifier_state_override_cleared_falls_back_to_automatic(db, sample_tags, sample_items):
-    tag = sample_tags[0]
-    tag.classifier_mode = "hybrid"
-    db.session.commit()
-    assert engine.classifier_state(tag, threshold_1=2, threshold_2=4) == "hybrid"
-    tag.classifier_mode = None
-    db.session.commit()
-    assert engine.classifier_state(tag, threshold_1=2, threshold_2=4) == "llm_only"
-
-
-def test_topic_stats_reports_override(db, sample_tags):
-    tag = sample_tags[0]
-    tag.classifier_mode = "llm_only"
-    db.session.commit()
-    stats = engine.topic_stats([tag], threshold_1=2, threshold_2=4)
-    assert stats[tag.id]["classifier_state"] == "llm_only"
-    assert stats[tag.id]["is_override"] is True
-
-
-def test_topic_stats_no_override_reports_automatic(db, sample_tags):
-    tag = sample_tags[0]
-    stats = engine.topic_stats([tag], threshold_1=2, threshold_2=4)
-    assert stats[tag.id]["is_override"] is False
+    stats = engine.topic_stats([tag])
+    assert stats[tag.id]["item_count"] == 1
 
 
 def test_apply_to_item_graduated_llm_only_topic_calls_llm(app, db, sample_tags, sample_items, monkeypatch):
@@ -217,6 +192,19 @@ def test_tag_docs_excludes_nb_method_examples(db, sample_tags, sample_items):
 
     db.session.add(NewsItemTag(news_item_id=sample_items[1].id, tag_id=tag.id, user_id=None, method="llm"))
     db.session.commit()
+    docs = engine._tag_docs([tag])
+    assert len(docs[0].examples) == 1
+
+
+def test_tag_docs_skips_orphaned_links_without_crashing(db, sample_tags, sample_items):
+    """A NewsItemTag row whose news_item_id no longer matches any NewsItem
+    (the item was deleted without its tag links being cleaned up) must be
+    skipped, not crash _item_text() on a None item."""
+    tag = sample_tags[0]
+    db.session.add(NewsItemTag(news_item_id=999999, tag_id=tag.id, user_id=None, method="llm"))
+    db.session.add(NewsItemTag(news_item_id=sample_items[0].id, tag_id=tag.id, user_id=None, method="llm"))
+    db.session.commit()
+
     docs = engine._tag_docs([tag])
     assert len(docs[0].examples) == 1
 

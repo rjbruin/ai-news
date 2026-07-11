@@ -101,61 +101,6 @@ def test_user_cannot_edit_global_topic(auth_client, db, user):
     assert resp.status_code == 403
 
 
-def test_admin_can_set_classifier_mode_override(admin_client, db):
-    tag = Tag(name="Overridable", scope="global")
-    db.session.add(tag)
-    db.session.commit()
-
-    resp = admin_client.post(
-        f"/topics/{tag.id}/edit",
-        data={"name": "Overridable", "description": "", "classifier_mode": "classifier_only"},
-        follow_redirects=True,
-    )
-    assert resp.status_code == 200
-    db.session.refresh(tag)
-    assert tag.classifier_mode == "classifier_only"
-
-
-def test_admin_can_clear_classifier_mode_override(admin_client, db):
-    tag = Tag(name="WasOverridden", scope="global", classifier_mode="hybrid")
-    db.session.add(tag)
-    db.session.commit()
-
-    admin_client.post(
-        f"/topics/{tag.id}/edit",
-        data={"name": "WasOverridden", "description": "", "classifier_mode": ""},
-    )
-    db.session.refresh(tag)
-    assert tag.classifier_mode is None
-
-
-def test_invalid_classifier_mode_is_ignored(admin_client, db):
-    tag = Tag(name="Invalid Mode", scope="global")
-    db.session.add(tag)
-    db.session.commit()
-
-    admin_client.post(
-        f"/topics/{tag.id}/edit",
-        data={"name": "Invalid Mode", "description": "", "classifier_mode": "not_a_real_mode"},
-    )
-    db.session.refresh(tag)
-    assert tag.classifier_mode is None
-
-
-def test_non_admin_classifier_mode_is_ignored(auth_client, db, user):
-    user.approved = True
-    tag = Tag(name="Mine", scope="user", owner_user_id=user.id)
-    db.session.add(tag)
-    db.session.commit()
-
-    auth_client.post(
-        f"/topics/{tag.id}/edit",
-        data={"name": "Mine", "description": "", "classifier_mode": "classifier_only"},
-    )
-    db.session.refresh(tag)
-    assert tag.classifier_mode is None
-
-
 def test_rename_to_existing_name_rejected(admin_client, db):
     a = Tag(name="Topic A", scope="global")
     b = Tag(name="Topic B", scope="global")
