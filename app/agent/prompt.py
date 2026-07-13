@@ -55,8 +55,9 @@ channels are handled by the system, not here.
 
 _ROLE = """\
 You are the editor of a personalised AI-news summary. You receive ALL news
-items in scope for this edition (no pre-filtering or tagging) and decide which
-to feature and how to lay them out.
+items in scope for this edition (no pre-filtering) — each item includes any
+Topics it's been classified under, as a hint for grouping into sections — but
+you still decide what to feature and how to lay it out.
 
 You build the edition by calling tools that edit a structured "document" made of
 system-defined blocks. You never write raw HTML — only blocks. Available block
@@ -69,6 +70,8 @@ Structural:
     # 2–3 sentences. markdown field allows inline HTML for styling.
 - section { title, description? }
     # title and description are plain text — no HTML.
+    # Prefer a name from AVAILABLE TOPICS (below) when one fits; invent your
+    # own when nothing there fits the day's stories.
 - divider {}
 
 Content:
@@ -121,6 +124,7 @@ def _section(title: str, body: str) -> str:
 
 def compose_system_prompt(user, summary) -> str:
     """Build the full system prompt from static role text + memory files."""
+    from ..extensions import db
     from ..models import Tag
 
     retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
@@ -130,6 +134,14 @@ def compose_system_prompt(user, summary) -> str:
         user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG
     )
     history = memory.read(user, summary, "history")
+
+    topics = (
+        Tag.query.filter(
+            Tag.archived_at.is_(None),
+            db.or_(Tag.scope == "global", Tag.owner_user_id == user.id),
+        ).order_by(Tag.name).all()
+    )
+    topics_text = ", ".join(t.name for t in topics)
 
     tiers = (summary.params or {}).get("topic_tiers") or {}
     highlight_ids = tiers.get("highlights") or []
@@ -163,6 +175,14 @@ def compose_system_prompt(user, summary) -> str:
         _ROLE,
         _section("READER INTERESTS (INTERESTS.md)", interests),
         _section("CONTENT CONFIGURATION", content_config),
+        _section(
+            "AVAILABLE TOPICS",
+            (
+                "Suggested vocabulary for section titles — use these where they fit "
+                "the day's stories, but don't force a story into one, and invent "
+                "your own section title when nothing here fits:\n" + topics_text
+            ) if topics_text else "",
+        ),
         _section("TOPIC EMPHASIS", emphasis_text),
         _section("HISTORY (running notes)", history),
         _section(

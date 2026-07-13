@@ -20,7 +20,7 @@ from .context import AgentSession
 
 # ── Item serialisation ──────────────────────────────────────────────────────
 
-def _item_brief(item) -> dict:
+def _item_brief(item, topics: list[str] | None = None) -> dict:
     # Note: deliberately NOT exposing item.source.name (the ingestion feed's
     # display name, e.g. "Newsletters from you@gmail.com") — it's config
     # metadata about how the item was fetched, not a per-article attribution,
@@ -31,6 +31,7 @@ def _item_brief(item) -> dict:
         "title": item.title,
         "one_liner": item.one_liner,
         "item_type": item.item_type,
+        "topics": topics or [],
         "url": item.url,
         "url_domain": url_domain(item.url) or None,
         "published_at": (item.published_at or item.fetched_at).isoformat()
@@ -38,8 +39,8 @@ def _item_brief(item) -> dict:
     }
 
 
-def _item_full(item) -> dict:
-    d = _item_brief(item)
+def _item_full(item, topics: list[str] | None = None) -> dict:
+    d = _item_brief(item, topics)
     d["summary_text"] = item.summary_text
     d["full_text"] = item.full_text
     return d
@@ -48,14 +49,17 @@ def _item_full(item) -> dict:
 # ── Data tools ──────────────────────────────────────────────────────────────
 
 def t_list_scope_items(session: AgentSession) -> dict:
-    return {"count": len(session.items), "items": [_item_brief(i) for i in session.items]}
+    return {
+        "count": len(session.items),
+        "items": [_item_brief(i, session.item_tags.get(i.id, [])) for i in session.items],
+    }
 
 
 def t_get_item(session: AgentSession, item_id: int) -> dict:
     item = session.item_by_id(item_id)
     if item is None:
         return {"error": f"No in-scope item with id {item_id}."}
-    return _item_full(item)
+    return _item_full(item, session.item_tags.get(item_id, []))
 
 
 def t_list_past_editions(session: AgentSession, limit: int = 10, offset: int = 0) -> dict:

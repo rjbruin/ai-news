@@ -259,6 +259,7 @@ def _build_agentic(
     """
     from ..agent import creds, runner
     from ..agent.context import AgentSession
+    from ..tagging.engine import item_topic_names
 
     if not items and summary.type_key == "debug_agentic":
         raise ValueError(
@@ -268,9 +269,10 @@ def _build_agentic(
         )
 
     api_key, model = creds.resolve(summary.user)
+    item_tags = item_topic_names([i.id for i in items], summary.user)
     session = AgentSession(
         user=summary.user, summary=summary, items=items,
-        range_start=start, range_end=end,
+        range_start=start, range_end=end, item_tags=item_tags,
     )
     try:
         max_steps = int((summary.params or {}).get("max_steps")) or None

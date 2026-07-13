@@ -112,6 +112,28 @@ def topic_stats(tags: list[Tag]) -> dict[int, dict]:
     return {t.id: {"item_count": counts.get(t.id, 0)} for t in tags}
 
 
+def item_topic_names(item_ids: list[int], user) -> dict[int, list[str]]:
+    """Topic names per item, scoped to what ``user`` can see (global topics
+    plus their own private ones) — the same visibility rule as the News page
+    filter. No confidence/method filtering: the News page's tag badges show
+    every applied tag regardless of confidence, and this matches that."""
+    if not item_ids:
+        return {}
+    rows = (
+        db.session.query(NewsItemTag.news_item_id, Tag.name)
+        .join(Tag, Tag.id == NewsItemTag.tag_id)
+        .filter(
+            NewsItemTag.news_item_id.in_(item_ids),
+            db.or_(NewsItemTag.user_id.is_(None), NewsItemTag.user_id == user.id),
+        )
+        .all()
+    )
+    result: dict[int, list[str]] = {}
+    for item_id, name in rows:
+        result.setdefault(item_id, []).append(name)
+    return {k: sorted(set(v)) for k, v in result.items()}
+
+
 def classify(
     item_text: str,
     tags: list[Tag],
