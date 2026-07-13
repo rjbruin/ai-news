@@ -49,8 +49,29 @@
 
   const source = new EventSource(`/summaries/${summaryId}/generate/stream`);
   let jobFinished = false;
+  let reconnectTimer = null;
+  // How long to tolerate the browser's automatic EventSource reconnection
+  // attempts (e.g. while a phone is asleep and the tab is backgrounded)
+  // before treating the stream as genuinely lost. The server replays every
+  // event a reconnecting client missed (see GenerationHandle.subscribe in
+  // app/services/generation_registry.py), so a transient drop is invisible
+  // to the user as long as we don't give up on it too eagerly.
+  const RECONNECT_GRACE_MS = 3 * 60 * 1000;
+
+  function clearReconnectTimer() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  }
+
+  function giveUp() {
+    jobFinished = true;
+    source.close();
+    log.handleEvent({type: 'error', message: 'Connection lost.'});
+    document.getElementById('footer-running').classList.add('d-none');
+    document.getElementById('footer-error').classList.remove('d-none');
+  }
 
   source.onmessage = function (e) {
+    clearReconnectTimer();
     const ev = JSON.parse(e.data);
     log.handleEvent(ev);
 
@@ -78,10 +99,24 @@
     // only treat this as a real dropped connection if we haven't already
     // seen a terminal event.
     if (jobFinished) { source.close(); return; }
-    source.close();
-    log.handleEvent({type: 'error', message: 'Connection lost.'});
-    document.getElementById('footer-running').classList.add('d-none');
-    document.getElementById('footer-error').classList.remove('d-none');
+
+    if (source.readyState === EventSource.CONNECTING) {
+      // The browser is auto-retrying (this is exactly what happens when a
+      // phone sleeps mid-generation and wakes back up) — let it keep
+      // trying instead of tearing the whole run down over a blip. Only
+      // give up if it can't reconnect within the grace window.
+      log.setStatus(
+        '<span class="spinner-border spinner-border-sm me-1" role="status"></span>' +
+        '<span class="text-body-secondary small">Reconnecting…</span>'
+      );
+      if (!reconnectTimer) reconnectTimer = setTimeout(giveUp, RECONNECT_GRACE_MS);
+      return;
+    }
+
+    // readyState === CLOSED: the browser gave up on its own (e.g. the
+    // server responded with a non-200 status), so no more retries are
+    // coming — this is a real terminal failure.
+    giveUp();
   };
 }());
 </script>
