@@ -113,6 +113,41 @@ def test_topic_stats_reports_item_count(db, sample_tags, sample_items):
     assert stats[tag.id]["item_count"] == 1
 
 
+def test_item_topic_names_empty_ids_returns_empty_dict(db):
+    assert engine.item_topic_names([], None) == {}
+
+
+def test_item_topic_names_aggregates_and_dedupes_per_item(db, sample_tags, sample_items, user):
+    tag_a, tag_b = sample_tags
+    item = sample_items[0]
+    db.session.add(NewsItemTag(news_item_id=item.id, tag_id=tag_a.id, user_id=None, method="llm"))
+    db.session.add(NewsItemTag(news_item_id=item.id, tag_id=tag_b.id, user_id=None, method="nb"))
+    db.session.commit()
+
+    result = engine.item_topic_names([item.id], user)
+    assert result[item.id] == sorted([tag_a.name, tag_b.name])
+
+
+def test_item_topic_names_omits_items_with_no_tags(db, sample_items, user):
+    result = engine.item_topic_names([sample_items[0].id], user)
+    assert sample_items[0].id not in result
+
+
+def test_item_topic_names_scopes_private_topics_to_owner(db, sample_items, user, admin):
+    item = sample_items[0]
+    private_tag = Tag(name="Owner Only", scope="user", owner_user_id=user.id)
+    db.session.add(private_tag)
+    db.session.commit()
+    db.session.add(NewsItemTag(news_item_id=item.id, tag_id=private_tag.id, user_id=user.id, method="llm"))
+    db.session.commit()
+
+    owner_result = engine.item_topic_names([item.id], user)
+    assert owner_result[item.id] == ["Owner Only"]
+
+    other_result = engine.item_topic_names([item.id], admin)
+    assert item.id not in other_result
+
+
 def test_apply_to_item_graduated_llm_only_topic_calls_llm(app, db, sample_tags, sample_items, monkeypatch):
     app.config["TAGGING_MODE"] = "graduated"
     calls = []

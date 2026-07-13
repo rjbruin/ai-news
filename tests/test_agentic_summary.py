@@ -91,6 +91,51 @@ def test_build_agentic_summary_end_to_end(monkeypatch, db, keyed_user, agentic_s
     assert "Big release" in rows[0].content
 
 
+def test_build_agentic_summary_wires_item_topics_into_agent_session(
+    monkeypatch, db, keyed_user, agentic_summary,
+):
+    """The agent's AgentSession must carry item_tags — populated from the
+    tagging system — so list_scope_items/get_item can expose each item's
+    Topics to the model (see app/agent/tools.py's _item_brief/_item_full)."""
+    from datetime import timedelta
+
+    from app.models import NewsItem, NewsItemTag, Tag, utcnow
+
+    # Pin an explicit range so the item is deterministically in scope,
+    # independent of wall-clock time (the default daily-cutoff window in
+    # resolve_range() depends on the current time of day).
+    now = utcnow()
+    agentic_summary.params = {
+        **(agentic_summary.params or {}),
+        "range_start": (now - timedelta(days=1)).isoformat(),
+        "range_end": (now + timedelta(days=1)).isoformat(),
+    }
+    db.session.commit()
+
+    item = NewsItem(
+        dedup_hash=NewsItem.make_hash("Tagged item", "http://x/tagged"),
+        title="Tagged item", url="http://x/tagged", summary_text="Some AI news.",
+    )
+    db.session.add(item)
+    db.session.commit()
+    tag = Tag(name="Robotics", scope="global")
+    db.session.add(tag)
+    db.session.commit()
+    db.session.add(NewsItemTag(news_item_id=item.id, tag_id=tag.id, user_id=None, method="llm"))
+    db.session.commit()
+
+    captured = {}
+
+    def fake_run_agent(session, **kw):
+        captured["item_tags"] = dict(session.item_tags)
+        return []
+
+    monkeypatch.setattr("app.agent.runner.run_agent", fake_run_agent)
+    summarize.build_summary(agentic_summary, record_run=True)
+
+    assert captured["item_tags"].get(item.id) == ["Robotics"]
+
+
 def test_build_agentic_without_key_raises(monkeypatch, db, agentic_summary):
     from app.agent.creds import MissingCredentials
     # Remove the user's edition key selection.

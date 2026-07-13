@@ -22,6 +22,7 @@ class AgentSession:
     pending_headlines: str | None = None   # set via write_headlines tool
     tokens_used: int = 0
     cost_used: float = 0.0
+    item_tags: dict[int, list[str]] = field(default_factory=dict)  # item_id -> topic names
 
     def item_by_id(self, item_id):
         for it in self.items:

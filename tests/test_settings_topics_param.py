@@ -98,3 +98,49 @@ def test_prompt_omits_topic_emphasis_section_when_unset(app, db, user):
     with app.app_context():
         prompt = compose_system_prompt(user, summary)
     assert "TOPIC EMPHASIS" not in prompt
+
+
+def test_prompt_includes_available_topics_section_when_topics_exist(app, db, user):
+    summary = _agentic_summary(db, user)
+    db.session.add(Tag(name="Robotics", scope="global"))
+    db.session.commit()
+
+    with app.app_context():
+        prompt = compose_system_prompt(user, summary)
+    assert "AVAILABLE TOPICS" in prompt
+    assert "Robotics" in prompt
+
+
+def test_prompt_omits_archived_topic_from_available_topics(app, db, user):
+    from app.models import utcnow
+
+    summary = _agentic_summary(db, user)
+    active = Tag(name="Active Topic", scope="global")
+    archived = Tag(name="Archived Topic", scope="global", archived_at=utcnow())
+    db.session.add_all([active, archived])
+    db.session.commit()
+
+    with app.app_context():
+        prompt = compose_system_prompt(user, summary)
+    assert "Active Topic" in prompt
+    assert "Archived Topic" not in prompt
+
+
+def test_prompt_omits_available_topics_section_when_none_exist(app, db, user):
+    summary = _agentic_summary(db, user)
+    with app.app_context():
+        prompt = compose_system_prompt(user, summary)
+    # The static role text always mentions "AVAILABLE TOPICS" by name (as a
+    # cross-reference for the LLM), so check for the rendered section marker
+    # specifically rather than the bare phrase.
+    assert "===== AVAILABLE TOPICS =====" not in prompt
+
+
+def test_prompt_available_topics_excludes_other_users_private_topics(app, db, user, admin):
+    summary = _agentic_summary(db, user)
+    db.session.add(Tag(name="Admin Only Topic", scope="user", owner_user_id=admin.id))
+    db.session.commit()
+
+    with app.app_context():
+        prompt = compose_system_prompt(user, summary)
+    assert "Admin Only Topic" not in prompt

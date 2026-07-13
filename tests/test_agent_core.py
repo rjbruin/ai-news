@@ -111,6 +111,21 @@ def test_data_tools_scope_and_item(session, sample_items):
     assert "error" in r
 
 
+def test_data_tools_expose_item_topics(session, sample_items):
+    item_id = sample_items[0].id
+    session.item_tags = {item_id: ["Robotics", "Funding"]}
+
+    r = json.loads(tools.dispatch("list_scope_items", {}, session))
+    by_id = {i["id"]: i for i in r["items"]}
+    assert by_id[item_id]["topics"] == ["Robotics", "Funding"]
+    # An item with no entry in item_tags still gets a topics field, just empty.
+    other_id = sample_items[1].id
+    assert by_id[other_id]["topics"] == []
+
+    r = json.loads(tools.dispatch("get_item", {"item_id": item_id}, session))
+    assert r["topics"] == ["Robotics", "Funding"]
+
+
 def test_memory_tools(session, agent_user, agent_summary):
     r = json.loads(tools.dispatch("write_memory", {"kind": "interests", "content": "robots"}, session))
     assert r["ok"]
