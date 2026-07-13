@@ -233,7 +233,10 @@
         <textarea name="feedback" class="form-control mb-2" rows="3"
                   placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
         <div class="text-end">
-          <button class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
+          <button type="submit"
+                  formaction="{{ url_for('web.edition_feedback_save', summary_id=summary.id, run_id=run.id) }}"
+                  class="btn btn-outline-secondary btn-sm">Save for next time</button>
+          <button type="submit" class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
         </div>
       </form>
     </div>
