@@ -180,11 +180,17 @@ def register_template_helpers(app: Flask) -> None:
 
     @app.context_processor
     def inject_globals():
+        from flask import has_request_context
         from flask_login import current_user
         from .models import Alert
 
         result: dict = {"app_version": get_version(), "active_alerts": []}
-        if current_user.is_authenticated:
+        # Background jobs (edition generate/revise) render templates from a
+        # thread that only pushes an app context, not a request context —
+        # current_user resolves to None there (Flask-Login needs a request
+        # context to load it), and current_user.is_authenticated on None
+        # crashed the whole render with an unhelpful AttributeError.
+        if has_request_context() and current_user.is_authenticated:
             result["active_alerts"] = (
                 Alert.query
                 .filter_by(user_id=current_user.id)

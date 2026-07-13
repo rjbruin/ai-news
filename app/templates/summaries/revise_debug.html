@@ -53,12 +53,14 @@
   const log = createAgentLog(logEl, statusEl, costEl);
 
   const source = new EventSource(`/summaries/${summaryId}/editions/${runId}/feedback/stream`);
+  let jobFinished = false;
 
   source.onmessage = function (e) {
     const ev = JSON.parse(e.data);
     log.handleEvent(ev);
 
     if (ev.type === 'done') {
+      jobFinished = true;
       source.close();
       document.getElementById('footer-running').classList.add('d-none');
       const footer = document.getElementById('footer-done');
@@ -67,6 +69,7 @@
         `/summaries/${summaryId}/editions/${ev.run_id}`;
 
     } else if (ev.type === 'error' || ev.type === 'cancelled') {
+      jobFinished = true;
       source.close();
       document.getElementById('footer-running').classList.add('d-none');
       document.getElementById('footer-error').classList.remove('d-none');
@@ -74,6 +77,12 @@
   };
 
   source.onerror = function () {
+    // The server closes the stream right after its final message (done/
+    // error/cancelled), which itself fires a spurious onerror in some
+    // browsers even after source.close() was already called in onmessage —
+    // only treat this as a real dropped connection if we haven't already
+    // seen a terminal event.
+    if (jobFinished) { source.close(); return; }
     source.close();
     log.handleEvent({type: 'error', message: 'Connection lost.'});
     document.getElementById('footer-running').classList.add('d-none');
