@@ -1300,6 +1300,27 @@ def edition_feedback_stream(summary_id: int, run_id: int):
 
     handle = generation_registry.get(summary_id)
     if handle is None:
+        # The job may have already finished (and been cleared from the
+        # registry) while this client was disconnected — e.g. a phone that
+        # slept longer than the revision took. Rather than erroring or
+        # silently re-running the whole revision, check whether it already
+        # succeeded and, if so, report that instead.
+        completed_run = (
+            SummaryRun.query
+            .filter_by(parent_run_id=run_id)
+            .order_by(SummaryRun.generated_at.desc())
+            .first()
+        )
+        if completed_run is not None:
+            def _replay_done():
+                yield f"data: {json.dumps({'type': 'done', 'run_id': completed_run.id})}\n\n"
+
+            return Response(
+                _replay_done(),
+                content_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
         text = session.pop(f"feedback_{run_id}", None)
         if not text:
             abort(400)
