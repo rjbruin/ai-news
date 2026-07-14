@@ -20,6 +20,19 @@ ENTRIES = [
             "New User.last_seen_version column drives the changelog-modal gating.",
         ],
     },
+    {
+        "version": "0.24.1",
+        "date": "2026-07-15",
+        "summary": [
+            "The model used to write your editions is now its own setting on the "
+            "Settings page, independent of which API key pays for it.",
+        ],
+        "admin_extra": [
+            "creds.resolve() now takes an optional summary and reads "
+            "summary.params[\"model\"]; ApiKey.model is unchanged and still governs "
+            "per-source ingestion/tagging model choice only.",
+        ],
+    },
 ]
 
 
