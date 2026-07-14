@@ -81,7 +81,14 @@ def register():
         elif User.query.filter_by(username=form.username.data.strip()).first():
             flash("That username is taken.", "danger")
         else:
-            user = User(username=form.username.data.strip(), email=email)
+            from ..version import get_version
+
+            # New signups skip the changelog for the version they just joined
+            # on — onboarding already covers "what's new to you".
+            user = User(
+                username=form.username.data.strip(), email=email,
+                last_seen_version=get_version(),
+            )
             if form.password.data:
                 user.set_password(form.password.data)
             db.session.add(user)

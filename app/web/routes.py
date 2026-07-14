@@ -1260,6 +1260,7 @@ def edition_feedback(summary_id: int, run_id: int):
         flash("Enter some feedback first.", "warning")
         return redirect(url_for("web.edition_view", summary_id=summary_id, run_id=run_id))
     session[f"feedback_{run_id}"] = text
+    session[f"feedback_scratch_{run_id}"] = request.form.get("from_scratch") == "1"
     return redirect(url_for("web.edition_feedback_debug", summary_id=summary_id, run_id=run_id))
 
 
@@ -1359,6 +1360,7 @@ def edition_feedback_stream(summary_id: int, run_id: int):
         text = session.pop(f"feedback_{run_id}", None)
         if not text:
             abort(400)
+        from_scratch = session.pop(f"feedback_scratch_{run_id}", False)
         handle = generation_registry.start(summary_id, kind="revise", parent_run_id=run_id)
         app = current_app._get_current_object()
 
@@ -1367,7 +1369,7 @@ def edition_feedback_stream(summary_id: int, run_id: int):
                 try:
                     parent_run = db.session.get(SummaryRun, run_id)
                     new_run = summarize.revise_edition(
-                        parent_run, text, log_fn=handle.emit,
+                        parent_run, text, from_scratch=from_scratch, log_fn=handle.emit,
                         cancel_event=handle.cancel_event,
                     )
                     handle.emit({"type": "done", "run_id": new_run.id})

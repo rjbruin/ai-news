@@ -1,0 +1,27 @@
+{# Post-update changelog, shown once (see app/__init__.py::inject_globals,
+   which flips User.last_seen_version the moment this is rendered) after a
+   version bump introduces a new app/changelog.py entry. #}
+<div class="modal fade" id="changelog-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">What's new</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        {% for entry in changelog_entries %}
+        <h6 class="fw-bold mb-2">v{{ entry.version }}</h6>
+        <ul class="mb-3">
+          {% for line in entry.summary %}<li>{{ line }}</li>{% endfor %}
+          {% if current_user.is_admin %}
+            {% for line in entry.admin_extra %}<li class="text-body-secondary">{{ line }}</li>{% endfor %}
+          {% endif %}
+        </ul>
+        {% endfor %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Got it</button>
+      </div>
+    </div>
+  </div>
+</div>

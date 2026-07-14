@@ -182,9 +182,13 @@ def register_template_helpers(app: Flask) -> None:
     def inject_globals():
         from flask import has_request_context
         from flask_login import current_user
+        from .extensions import db
         from .models import Alert
 
-        result: dict = {"app_version": get_version(), "active_alerts": []}
+        result: dict = {
+            "app_version": get_version(), "active_alerts": [],
+            "show_changelog": False, "changelog_entries": [],
+        }
         # Background jobs (edition generate/revise) render templates from a
         # thread that only pushes an app context, not a request context —
         # current_user resolves to None there (Flask-Login needs a request
@@ -198,6 +202,19 @@ def register_template_helpers(app: Flask) -> None:
                 .order_by(Alert.created_at.desc())
                 .all()
             )
+
+            current_version = get_version()
+            if current_user.last_seen_version != current_version:
+                from .changelog import entries_since
+
+                entries = entries_since(current_user.last_seen_version or "0.0.0")
+                if entries:
+                    result["show_changelog"] = True
+                    result["changelog_entries"] = entries
+                # Flip immediately — shown or not, this user is caught up to
+                # current_version, and shouldn't be re-evaluated every request.
+                current_user.last_seen_version = current_version
+                db.session.commit()
         return result
 
     @app.template_filter("url_domain")
