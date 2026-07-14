@@ -232,6 +232,12 @@
             action="{{ url_for('web.edition_feedback', summary_id=summary.id, run_id=run.id) }}">
         <textarea name="feedback" class="form-control mb-2" rows="3"
                   placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="from_scratch" id="feedback-scratch" value="1">
+          <label class="form-check-label small text-body-secondary" for="feedback-scratch">
+            Start this revision from scratch instead of editing the current draft
+          </label>
+        </div>
         <div class="text-end">
           <button type="submit"
                   formaction="{{ url_for('web.edition_feedback_save', summary_id=summary.id, run_id=run.id) }}"

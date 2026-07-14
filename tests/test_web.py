@@ -126,6 +126,77 @@ def test_fresh_registration_sees_onboarding_on_first_login(client, db):
     assert b"onboarding-modal" in resp.data
 
 
+def test_changelog_shown_once_for_stale_user(auth_client, db, user, monkeypatch):
+    from app import changelog
+    from app.version import get_version
+
+    monkeypatch.setattr(changelog, "ENTRIES", [
+        {"version": "99.0.0", "date": "2026-01-01",
+         "summary": ["User-facing summary line."], "admin_extra": ["Admin-only line."]},
+    ])
+    user.last_seen_version = "0.0.0"
+    db.session.commit()
+
+    resp = auth_client.get("/dashboard")
+    assert resp.status_code == 200
+    assert b"changelog-modal" in resp.data
+    assert b"User-facing summary line." in resp.data
+    assert b"Admin-only line." not in resp.data  # non-admin
+
+    db.session.refresh(user)
+    assert user.last_seen_version == get_version()
+
+    resp2 = auth_client.get("/dashboard")
+    assert b"changelog-modal" not in resp2.data
+
+
+def test_changelog_shows_admin_extra_for_admin(admin_client, db, admin, monkeypatch):
+    from app import changelog
+
+    monkeypatch.setattr(changelog, "ENTRIES", [
+        {"version": "99.0.0", "date": "2026-01-01",
+         "summary": ["User-facing summary line."], "admin_extra": ["Admin-only line."]},
+    ])
+    admin.last_seen_version = "0.0.0"
+    db.session.commit()
+
+    resp = admin_client.get("/dashboard")
+    assert b"User-facing summary line." in resp.data
+    assert b"Admin-only line." in resp.data
+
+
+def test_changelog_not_shown_when_already_caught_up(auth_client, db, user, monkeypatch):
+    from app import changelog
+    from app.version import get_version
+
+    monkeypatch.setattr(changelog, "ENTRIES", [
+        {"version": "99.0.0", "date": "2026-01-01",
+         "summary": ["Should not appear."], "admin_extra": []},
+    ])
+    user.last_seen_version = get_version()
+    db.session.commit()
+
+    resp = auth_client.get("/dashboard")
+    assert b"changelog-modal" not in resp.data
+
+
+def test_changelog_entries_since_compares_numerically():
+    from app import changelog
+
+    monkeypatch_entries = [
+        {"version": "0.9.0", "date": "d", "summary": [], "admin_extra": []},
+        {"version": "0.10.0", "date": "d", "summary": [], "admin_extra": []},
+    ]
+    orig = changelog.ENTRIES
+    try:
+        changelog.ENTRIES = monkeypatch_entries
+        # Lexicographic comparison would wrongly treat "0.10.0" <= "0.9.0".
+        versions = [e["version"] for e in changelog.entries_since("0.9.0")]
+        assert versions == ["0.10.0"]
+    finally:
+        changelog.ENTRIES = orig
+
+
 def test_non_admin_cannot_access_admin(auth_client):
     resp = auth_client.get("/admin/")
     assert resp.status_code == 403

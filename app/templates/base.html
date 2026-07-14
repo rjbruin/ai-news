@@ -75,6 +75,10 @@
   {% block content %}{% endblock %}
 </main>
 
+{% if show_changelog %}
+{% include "partials/_changelog.html" %}
+{% endif %}
+
 <footer class="text-center text-body-secondary py-4 small">
   Dispatch · v{{ app_version }}
 </footer>
@@ -89,6 +93,11 @@
       navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}"));
   }
 </script>
+{% if show_changelog %}
+<script>
+  new bootstrap.Modal(document.getElementById('changelog-modal')).show();
+</script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

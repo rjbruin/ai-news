@@ -229,6 +229,38 @@ def test_revise_edition_creates_linked_revision(monkeypatch, db, keyed_user, age
     assert any(b["type"] == "callout" for b in rev.document)
 
 
+def test_revise_edition_from_scratch_drops_seed_document(monkeypatch, db, keyed_user, agentic_summary):
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _scripted_chat())
+    _, _items, run = summarize.build_summary(agentic_summary, record_run=True)
+    assert run.document  # seeded edition has content
+
+    def scratch_chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        # "From scratch" framing, not the "current draft" revise framing.
+        joined = " ".join((m.get("content") or "") for m in messages).lower()
+        assert "from scratch" in joined
+        assert "current draft" not in joined
+        return {"role": "assistant", "content": None, "tool_calls": [{
+            "id": "s1", "type": "function",
+            "function": {"name": "add_block", "arguments": json.dumps({"block": {
+                "type": "callout", "variant": "note", "title": "Fresh", "markdown": "New."}})},
+        }], "_usage": {}}
+
+    state = {"done": False}
+
+    def chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        if not state["done"]:
+            state["done"] = True
+            return scratch_chat(messages, tools=tools, api_key=api_key, model=model)
+        return {"role": "assistant", "content": "ok", "_usage": {}}
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", chat)
+    rev = summarize.revise_edition(run, "Start over please.", from_scratch=True)
+
+    assert rev.parent_run_id == run.id
+    # Only the freshly-added block is present — the parent's blocks weren't seeded.
+    assert [b["type"] for b in rev.document] == ["callout"]
+
+
 def test_revision_chain_and_heads(monkeypatch, db, keyed_user, agentic_summary):
     monkeypatch.setattr("app.agent.runner.openrouter.chat", _scripted_chat())
     _, _items, run = summarize.build_summary(agentic_summary, record_run=True)

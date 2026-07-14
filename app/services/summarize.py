@@ -292,10 +292,19 @@ def _build_agentic(
 
 # ─────────────────────────── feedback revisions ────────────────────────────
 
-def _feedback_instruction(feedback: str) -> str:
+def _feedback_instruction(feedback: str, from_scratch: bool = False) -> str:
+    if from_scratch:
+        framing = (
+            "The reader gave feedback and wants this edition composed from scratch "
+            "(not edited from the previous draft) honoring it."
+        )
+    else:
+        framing = (
+            "The reader gave feedback on the previous edition, which is loaded as your "
+            "current draft document. Revise the draft to address it."
+        )
     return (
-        "The reader gave feedback on the previous edition, which is loaded as your "
-        "current draft document. Revise the draft to address it. If the feedback "
+        f"{framing} If the feedback "
         "expresses a LASTING preference (topics to include or exclude, how much of "
         "each, structural changes), also consolidate it into the appropriate memory "
         "file via write_memory (interests for topic preferences; content_config for "
@@ -304,7 +313,10 @@ def _feedback_instruction(feedback: str) -> str:
     )
 
 
-def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None, cancel_event=None) -> SummaryRun:
+def revise_edition(
+    parent_run: SummaryRun, feedback: str, from_scratch: bool = False,
+    log_fn=None, cancel_event=None,
+) -> SummaryRun:
     """Create a new revision of an agentic edition that applies reader feedback.
 
     Scopes items to the parent edition's window so the revision works from the
@@ -332,8 +344,8 @@ def revise_edition(parent_run: SummaryRun, feedback: str, log_fn=None, cancel_ev
 
     artifact, document, _headlines, cost = _build_agentic(
         summary, plugin, items, start, end,
-        seed_document=parent_run.document or [],
-        extra_instruction=_feedback_instruction(feedback),
+        seed_document=None if from_scratch else (parent_run.document or []),
+        extra_instruction=_feedback_instruction(feedback, from_scratch=from_scratch),
         log_fn=_collect,
         cancel_event=cancel_event,
     )

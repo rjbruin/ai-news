@@ -76,6 +76,12 @@ class User(UserMixin, db.Model):
     # clicking anything.
     has_seen_onboarding = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
+    # Version string of the last release this user was shown the changelog modal
+    # for (see app/changelog.py). Compared against the running app_version on
+    # every request; flipped the moment a newer entry is shown (or skipped, if
+    # a release has no changelog entry) so it can't repeat.
+    last_seen_version = db.Column(db.String(32), nullable=True)
+
     # Prepaid balance in whole USD cents, topped up via Lemon Squeezy (see
     # BalanceTransaction for the audit ledger). Not yet spendable anywhere —
     # see TODO_PAYMENT_PHASE4.md for wiring this into ingestion/editions/
