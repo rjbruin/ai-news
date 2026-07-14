@@ -1,8 +1,32 @@
 {# Shared rendering logic for agent run logs: used by the live (SSE) debug
    page and the static per-edition log replay page. #}
+<style>
+  .log-preview-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .log-preview-toggle {
+    cursor: pointer;
+    font-size: .75rem;
+    color: var(--bs-link-color, #0d6efd);
+    margin-left: .35rem;
+    white-space: nowrap;
+    user-select: none;
+  }
+</style>
 <script>
+function toggleLogPreview(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const collapsed = el.classList.toggle('log-preview-clamp');
+  btn.textContent = collapsed ? 'more' : 'less';
+}
+
 function createAgentLog(logEl, statusEl, costEl) {
   let placeholderCleared = false;
+  let previewSeq = 0;
 
   function clearPlaceholder() {
     if (!placeholderCleared) {
@@ -21,6 +45,16 @@ function createAgentLog(logEl, statusEl, costEl) {
     clearPlaceholder();
     logEl.insertAdjacentHTML('beforeend', html);
     logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // Wraps preview text (tool args/results) so only ~3 lines show by
+  // default, with a "more"/"less" toggle to reveal the rest — previously
+  // this text rendered fully unbounded/wrapped, which for a 300-char tool
+  // result could balloon the log entry across many lines.
+  function previewHTML(text) {
+    const id = (logEl.id || 'log') + '-preview-' + (previewSeq++);
+    return `<span class="log-preview-clamp" id="${id}">${esc(text)}</span>` +
+      `<span class="log-preview-toggle" onclick="toggleLogPreview('${id}', this)">more</span>`;
   }
 
   function fmtCost(c) {
@@ -59,14 +93,14 @@ function createAgentLog(logEl, statusEl, costEl) {
         `<div class="ms-3">` +
         `<span class="text-success">→</span> ` +
         `<code class="text-primary">${esc(ev.name)}</code>` +
-        `<span class="text-body-secondary"> ${esc(ev.args_preview)}</span>` +
+        `<span class="text-body-secondary"> ${previewHTML(ev.args_preview)}</span>` +
         `</div>`
       );
 
     } else if (ev.type === 'tool_result') {
       append(
         `<div class="ms-3 text-body-secondary">` +
-        `<span class="text-secondary">←</span> ${esc(ev.preview)}` +
+        `<span class="text-secondary">←</span> ${previewHTML(ev.preview)}` +
         `</div>`
       );
 

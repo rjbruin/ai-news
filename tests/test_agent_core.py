@@ -100,6 +100,61 @@ def test_editor_rejects_invalid_block(session):
     assert session.document == []  # unchanged
 
 
+def test_add_block_overrides_sources_from_item_id(session, sample_items):
+    item = sample_items[0]
+    r = json.loads(tools.dispatch("add_block", {"block": {
+        "type": "item", "headline": "h", "subheader": "s", "summary": "x",
+        "item_id": item.id, "sources": ["https://model-typed-wrong-url.example"],
+    }}, session))
+    assert r["ok"]
+    assert session.document[0]["sources"] == [{"url": item.url, "domain": "x"}]
+
+
+def test_add_block_keeps_manual_sources_without_item_id(session, sample_items):
+    r = json.loads(tools.dispatch("add_block", {"block": {
+        "type": "item", "headline": "h", "subheader": "s", "summary": "x",
+        "sources": ["https://multi-source-story.example"],
+    }}, session))
+    assert r["ok"]
+    assert session.document[0]["sources"][0]["url"] == "https://multi-source-story.example"
+
+
+def test_update_block_overrides_sources_from_item_id(session, sample_items):
+    item = sample_items[1]
+    r = json.loads(tools.dispatch("add_block", {"block": {
+        "type": "item", "headline": "h", "subheader": "s", "summary": "x",
+    }}, session))
+    bid = r["block_id"]
+
+    r = json.loads(tools.dispatch("update_block", {
+        "block_id": bid,
+        "fields": {"item_id": item.id, "sources": ["https://wrong.example"]},
+    }, session))
+    assert r["ok"]
+    assert session.document[0]["sources"] == [{"url": item.url, "domain": "x"}]
+
+
+def test_set_document_overrides_sources_from_item_id(session, sample_items):
+    item = sample_items[0]
+    r = json.loads(tools.dispatch("set_document", {"blocks": [
+        {
+            "type": "item", "headline": "h", "subheader": "s", "summary": "x",
+            "item_id": item.id, "sources": ["https://wrong.example"],
+        },
+    ]}, session))
+    assert r["block_count"] == 1
+    assert session.document[0]["sources"] == [{"url": item.url, "domain": "x"}]
+
+
+def test_add_block_unresolvable_item_id_keeps_manual_sources(session, sample_items):
+    r = json.loads(tools.dispatch("add_block", {"block": {
+        "type": "item", "headline": "h", "subheader": "s", "summary": "x",
+        "item_id": 999999, "sources": ["https://fallback.example"],
+    }}, session))
+    assert r["ok"]
+    assert session.document[0]["sources"][0]["url"] == "https://fallback.example"
+
+
 def test_data_tools_scope_and_item(session, sample_items):
     r = json.loads(tools.dispatch("list_scope_items", {}, session))
     assert r["count"] == len(sample_items)

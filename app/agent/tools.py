@@ -112,16 +112,36 @@ def t_read_headlines(session: AgentSession, days: int = 7) -> dict:
 
 # ── Editor tools ────────────────────────────────────────────────────────────
 
+def _apply_item_sources(session: AgentSession, block: dict) -> dict:
+    """If a block cites an in-scope item_id, force its sources to that
+    item's real URL — regardless of what the model typed. The model
+    already sees each item's real url via list_scope_items/get_item; this
+    removes any need (and cost/risk of a typo or hallucinated link) for it
+    to retype the URL by hand. Blocks with no item_id (e.g. a story
+    spanning multiple sources) keep whatever sources the model supplied."""
+    if block.get("type") != "item":
+        return block
+    item_id = block.get("item_id")
+    if item_id is None:
+        return block
+    item = session.item_by_id(item_id)
+    if item is not None and item.url:
+        block = {**block, "sources": [item.url]}
+    return block
+
+
 def t_get_document(session: AgentSession) -> dict:
     return {"blocks": session.document}
 
 
 def t_set_document(session: AgentSession, blocks: list) -> dict:
+    blocks = [_apply_item_sources(session, b) for b in blocks]
     session.document = validate_document(blocks)
     return {"ok": True, "block_count": len(session.document)}
 
 
 def t_add_block(session: AgentSession, block: dict, index: int | None = None) -> dict:
+    block = _apply_item_sources(session, block)
     validated = validate_document([block])[0]
     if index is None or index >= len(session.document):
         session.document.append(validated)
@@ -135,6 +155,7 @@ def t_update_block(session: AgentSession, block_id: str, fields: dict) -> dict:
     if idx is None:
         return {"error": f"No block with id {block_id}."}
     merged = {**session.document[idx], **fields, "type": session.document[idx]["type"], "id": block_id}
+    merged = _apply_item_sources(session, merged)
     session.document[idx] = validate_document([merged])[0]
     return {"ok": True, "block_id": block_id}
 

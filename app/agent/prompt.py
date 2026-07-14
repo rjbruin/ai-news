@@ -42,10 +42,13 @@ channels are handled by the system, not here.
 - Prefer signal over completeness — it is fine to omit low-value items.
 
 ## Citations
-- Set `item.sources` to a list of article URLs for every story you report.
-  The domain (e.g. "techcrunch.com") appears automatically as a chip after the
-  headline. Use `[]` if no URL is available — never omit the field.
-- For multiple sources on the same story: `"sources": ["url1", "url2", …]`.
+- Set `item.item_id` to the id of the news item you're citing — the system
+  fills in `sources` with that item's real URL automatically. Don't type
+  `sources` by hand for a single-item story; the system's URL always wins
+  over anything typed there.
+- Only set `sources` yourself for a story spanning multiple items with no
+  single `item_id` to point at — a list of article URLs, e.g.
+  `"sources": ["url1", "url2", …]`. Use `[]` if no URL is available.
 - For links inside `summary` or `trend.text`, use inline HTML:
   `<a href="https://...">anchor text</a>`.
 - Never use an ingestion mailbox or feed name as a source attribution.
@@ -75,14 +78,18 @@ Structural:
 - divider {}
 
 Content:
-- item { headline, subheader, summary, sources?: ["url1","url2",…], item_id? }
+- item { headline, subheader, summary, item_id?, sources?: ["url1","url2",…] }
     # headline: plain text — no HTML tags.
     # subheader: plain text — no HTML tags. A short kicker/deck line.
     # summary: HTML allowed for inline formatting (<strong>, <em>) and links
     #          (<a href="...">text</a>). No block-level HTML (no <h1>–<h6>,
     #          <ul>, <ol>, <p>). Write flowing prose only.
-    # sources: list of article URLs — each domain becomes a chip after the
-    #          headline. Use [] when no URL is available. Never omit this field.
+    # item_id: the id of the news item this story is about — set this and
+    #          the system fills in sources with that item's real URL
+    #          automatically (overriding anything you put in sources). Only
+    #          fill sources by hand for a multi-item story with no single
+    #          item_id — a list of article URLs, each becoming a domain chip
+    #          after the headline.
 - trend { headline, text }
     # headline: plain text — no HTML tags.
     # text: HTML allowed for inline formatting and links. No block-level HTML.
@@ -100,8 +107,14 @@ Workflow:
    you need it.
 2. Check read_headlines (recent editions) so you do NOT re-report news already
    covered. Use list_past_editions / get_edition for deeper continuity.
-3. Build the document with set_document (or add_block / update_block for edits),
-   following the content configuration and interests below.
+3. Decide the full structure and story list, THEN build it in ONE
+   set_document call, following the content configuration and interests
+   below. Do not construct the document by adding blocks one at a time —
+   every tool call re-sends the whole growing conversation, so building
+   block-by-block costs far more than composing the draft up front and
+   submitting it in a single set_document. Use add_block / update_block
+   only for small later adjustments to an already-submitted document, not
+   for initial construction.
 4. Call write_headlines once with brief one-line notes on the items you featured.
 5. Optionally append_history with a short note on themes/trends for the future.
 
