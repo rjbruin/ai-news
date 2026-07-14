@@ -127,15 +127,23 @@ def _doc_to_text(document: list) -> str:
                 if block.get("text"):
                     parts.append(_strip_html(str(block["text"])))
             elif t == "more_news":
+                # Schema is {headline, url?} (see app/agent/blocks.py) — this
+                # used to read item.get("title")/item.get("summary"), fields
+                # that don't exist on this block type, silently dropping
+                # every more_news item from the script.
                 for item in block.get("items", []):
-                    parts.append(f"- {item.get('title', '')} {item.get('summary', '')}")
+                    headline = _strip_html(str(item.get("headline", "")))
+                    if headline:
+                        parts.append(f"- {headline}")
             elif t == "callout":
                 if block.get("text"):
                     parts.append(_strip_html(str(block["text"])))
             elif t == "quick_hits":
                 parts.append("Quick hits:")
                 for item in block.get("items", []):
-                    parts.append(f"- {item.get('text', '')}")
+                    text = _strip_html(str(item.get("text", "")))
+                    if text:
+                        parts.append(f"- {text}")
             elif t in ("quote", "intro"):
                 if block.get("text"):
                     parts.append(_strip_html(str(block["text"])))
