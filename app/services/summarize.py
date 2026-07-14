@@ -268,7 +268,7 @@ def _build_agentic(
             "then save) that covers items already in the system."
         )
 
-    api_key, model = creds.resolve(summary.user)
+    api_key, model = creds.resolve(summary.user, summary=summary)
     item_tags = item_topic_names([i.id for i in items], summary.user)
     session = AgentSession(
         user=summary.user, summary=summary, items=items,
