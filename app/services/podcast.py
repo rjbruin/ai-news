@@ -478,7 +478,7 @@ def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
             if job.kind in ("script", "full", "revise"):
                 job.emit({"type": "phase", "phase": "script"})
                 try:
-                    api_key, model = resolve_creds(user)
+                    api_key, model = resolve_creds(user, summary=run.summary)
                 except MissingCredentials as exc:
                     job.emit({"type": "error", "message": str(exc)})
                     return

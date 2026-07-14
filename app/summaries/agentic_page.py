@@ -50,6 +50,11 @@ class AgenticDailyPageSummary(NewsSummary):
             "min": 1,
             "max": 200,
         },
+        "model": {
+            "type": "text",
+            "label": "Model (OpenRouter model id, blank for system default)",
+            "default": "",
+        },
         "topic_tiers": {
             "type": "topic_tiers",
             "label": "Topic emphasis",
