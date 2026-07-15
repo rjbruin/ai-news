@@ -129,7 +129,12 @@ def _seed_debug_data(app: Flask) -> None:
 
 
 def _purge_empty_editions() -> None:
-    """Delete SummaryRun rows that have neither HTML content nor a file artifact."""
+    """Delete SummaryRun rows that have neither HTML content nor a file artifact.
+
+    Excludes status="failed" rows — those are *meant* to have no content (the
+    generation/revision attempt failed before producing any), and are kept
+    intentionally so the failure and its retry button stay visible.
+    """
     import logging
     from .extensions import db
     from .models import SummaryRun
@@ -139,6 +144,7 @@ def _purge_empty_editions() -> None:
             SummaryRun.query
             .filter(SummaryRun.content.is_(None))
             .filter(SummaryRun.artifact_ref.is_(None))
+            .filter(SummaryRun.status != "failed")
             .delete(synchronize_session=False)
         )
         if result:

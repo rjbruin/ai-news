@@ -1628,6 +1628,33 @@ def edition_delete(summary_id: int, run_id: int):
     return redirect(url_for("web.summaries"))
 
 
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/retry", methods=["POST"])
+@login_required
+def edition_retry(summary_id: int, run_id: int):
+    """Retry a failed generation/revision.
+
+    A failed first-ever generation just re-triggers a normal generate; a
+    failed revision needs its original feedback text back — that can't
+    survive in the session past the failed attempt (see
+    services.summarize.revise_edition), so it was captured on the failed
+    run's retry_context at persist time and gets re-stashed here.
+    """
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id or run.status != "failed":
+        abort(400)
+    if run.parent_run_id is None:
+        return redirect(url_for("web.generate_debug", summary_id=summary_id))
+    ctx = run.retry_context or {}
+    session[f"feedback_{run.parent_run_id}"] = ctx.get("feedback", "")
+    session[f"feedback_scratch_{run.parent_run_id}"] = bool(ctx.get("from_scratch"))
+    return redirect(url_for(
+        "web.edition_feedback_debug", summary_id=summary_id, run_id=run.parent_run_id,
+    ))
+
+
 # ───────────────────────── helpers ─────────────────────────
 def _collect_params(plugin_cls) -> dict:
     params = {}

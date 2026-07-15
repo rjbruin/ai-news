@@ -14,6 +14,9 @@
   <div class="flex-grow-1">
     <h1 class="h3 mb-0">
       {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if run.status == 'failed' %}
+      <span class="pill pill-coral align-middle">Failed</span>
+      {% endif %}
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="pill pill-slate align-middle">rev {{ run.revision }}</span>
       {% endif %}
@@ -33,6 +36,7 @@
   </div>
   {% if not is_shared_view %}
   <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
+    {% if run.status != 'failed' %}
     <div class="dropdown">
       <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
         Create
@@ -72,6 +76,7 @@
       <button class="btn btn-sm btn-outline-secondary">Share</button>
     </form>
     {% endif %}
+    {% endif %}
     <form method="post"
           action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}"
           class="d-inline">
@@ -97,7 +102,15 @@
 {{ channel_hero(run) }}
 {% endif %}
 
-{% if run.artifact_ref and run.artifact_ref.endswith('.pdf') %}
+{% if run.status == 'failed' %}
+  <div class="alert alert-danger" role="alert">
+    <p class="fw-semibold mb-1">This edition failed to generate.</p>
+    <p class="mb-3 small">{{ run.error_message or 'Unknown error.' }}</p>
+    <form method="post" action="{{ url_for('web.edition_retry', summary_id=summary.id, run_id=run.id) }}">
+      <button class="btn btn-sm btn-danger">Retry</button>
+    </form>
+  </div>
+{% elif run.artifact_ref and run.artifact_ref.endswith('.pdf') %}
   {% set pdf_url = url_for('static', filename=run.artifact_ref) %}
   <div class="d-flex gap-2 mb-3">
     <a href="{{ pdf_url }}" download class="btn btn-sm btn-primary">Download PDF</a>
@@ -209,7 +222,7 @@
 </div>
 {% endif %}
 
-{% if is_agentic and not is_shared_view %}
+{% if is_agentic and not is_shared_view and run.status != 'failed' %}
 <style>
   .coverage-chevron { transition: transform .15s ease; }
   .coverage-toggle[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }

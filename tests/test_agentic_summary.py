@@ -138,11 +138,67 @@ def test_build_agentic_summary_wires_item_topics_into_agent_session(
 
 def test_build_agentic_without_key_raises(monkeypatch, db, agentic_summary):
     from app.agent.creds import MissingCredentials
+    from app.models import SummaryRun
     # Remove the user's edition key selection.
     agentic_summary.user.edition_api_key_id = None
     db.session.commit()
     with pytest.raises(MissingCredentials):
         summarize.build_summary(agentic_summary, record_run=True)
+    # A configuration problem (no key at all) shouldn't clutter the editions
+    # list with a "failed" entry — nothing was ever attempted.
+    assert SummaryRun.query.filter_by(summary_id=agentic_summary.id).count() == 0
+
+
+def _chat_fails_on_second_call():
+    """One successful tool turn (so a partial agent_log/cost exists), then
+    an OpenRouter-style failure (e.g. insufficient credits)."""
+    state = {"n": 0}
+
+    def chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        state["n"] += 1
+        if state["n"] == 1:
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c1", "type": "function",
+                "function": {"name": "add_block", "arguments": json.dumps({"block": {
+                    "type": "edition_header", "title": "AI Daily"}})},
+            }], "_usage": {"total_tokens": 100, "cost": 0.002}}
+        raise RuntimeError("OpenRouter HTTP 402: Insufficient credits")
+
+    return chat
+
+
+def test_build_agentic_persists_failed_run_on_agent_error(monkeypatch, db, keyed_user, agentic_summary):
+    from app.models import SummaryRun
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _chat_fails_on_second_call())
+    with pytest.raises(RuntimeError, match="Insufficient credits"):
+        summarize.build_summary(agentic_summary, record_run=True)
+
+    run = SummaryRun.query.filter_by(summary_id=agentic_summary.id).one()
+    assert run.status == "failed"
+    assert "Insufficient credits" in run.error_message
+    assert run.content is None
+    assert run.document is None
+    assert run.agent_log  # partial log from the successful first step
+    assert run.agent_cost == pytest.approx(0.002)
+    assert run.parent_run_id is None
+    assert run.revision == 1
+
+
+def test_revise_edition_persists_failed_run_with_retry_context(monkeypatch, db, keyed_user, agentic_summary):
+    from app.models import SummaryRun
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _scripted_chat())
+    _, _items, run = summarize.build_summary(agentic_summary, record_run=True)
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _chat_fails_on_second_call())
+    with pytest.raises(RuntimeError, match="Insufficient credits"):
+        summarize.revise_edition(run, "Lead with research papers.", from_scratch=True)
+
+    failed = SummaryRun.query.filter_by(summary_id=agentic_summary.id, status="failed").one()
+    assert failed.parent_run_id == run.id
+    assert failed.revision == run.revision + 1
+    assert failed.retry_context == {"feedback": "Lead with research papers.", "from_scratch": True}
 
 
 def test_defaults_seeded_on_first_run(monkeypatch, db, keyed_user, agentic_summary):
