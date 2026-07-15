@@ -101,6 +101,63 @@ def test_summary_fixed_period_scope(app, db, sample_items):
     assert len(items) == 2
 
 
+def test_resolve_range_ignores_failed_run_end(app, db):
+    from app.models import SummaryRun, utcnow
+
+    summary = Summary(
+        user_id=1, name="Daily", type_key="app_page",
+        scope_mode="fixed_period", period="day", params={"group_by_tag": False},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    now = utcnow()
+    successful = SummaryRun(
+        summary_id=summary.id, status="ok", content="<p>ok</p>",
+        range_end=(now - timedelta(hours=6)).replace(tzinfo=None),
+    )
+    db.session.add(successful)
+    db.session.commit()
+
+    # A failed retry attempt with a more recent range_end must not become the
+    # start of the next window — that would shrink scope down to whatever's
+    # arrived since the failure (often nothing), which is the exact bug this
+    # guards against.
+    failed = SummaryRun(
+        summary_id=summary.id, status="failed", error_message="boom",
+        range_end=(now - timedelta(minutes=1)).replace(tzinfo=None),
+    )
+    db.session.add(failed)
+    db.session.commit()
+
+    start, _end = summarize.resolve_range(summary)
+    assert start == successful.range_end.replace(tzinfo=start.tzinfo)
+
+
+def test_cut_due_editions_does_not_skip_when_latest_run_failed(app, db):
+    from app.services.summarize import cut_due_editions
+    from app.models import SummaryRun, utcnow
+
+    summary = Summary(
+        user_id=1, name="Daily", type_key="app_page",
+        scope_mode="fixed_period", period="day", params={"group_by_tag": False},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    _, expected_end = summarize.resolve_range(summary)
+    failed = SummaryRun(
+        summary_id=summary.id, status="failed", error_message="boom",
+        range_end=expected_end.replace(tzinfo=None),
+    )
+    db.session.add(failed)
+    db.session.commit()
+
+    cut = cut_due_editions(force=True)
+    assert cut == 1
+    assert SummaryRun.query.filter_by(summary_id=summary.id, status="ok").count() == 1
+
+
 def test_build_summary_records_run(app, db, sample_items):
     summary = Summary(
         user_id=1, name="Daily", type_key="app_page",
