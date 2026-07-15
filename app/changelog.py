@@ -33,6 +33,20 @@ ENTRIES = [
             "per-source ingestion/tagging model choice only.",
         ],
     },
+    {
+        "version": "0.25.0",
+        "date": "2026-07-15",
+        "summary": [
+            "If an edition fails to generate (e.g. your OpenRouter account runs out "
+            "of credits), it now shows up as a failed edition with the error message "
+            "and a Retry button, instead of silently disappearing.",
+        ],
+        "admin_extra": [
+            "SummaryRun gained status=\"failed\"/error_message/retry_context; "
+            "_purge_empty_editions() was also fixed to stop deleting these on "
+            "restart (it previously treated any content-less row as stale).",
+        ],
+    },
 ]
 
 
