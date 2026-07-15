@@ -47,6 +47,19 @@ ENTRIES = [
             "restart (it previously treated any content-less row as stale).",
         ],
     },
+    {
+        "version": "0.25.1",
+        "date": "2026-07-15",
+        "summary": [
+            "Fixed a bug where retrying a failed edition (or the next scheduled "
+            "edition after one failed) could come up with no news items in scope.",
+        ],
+        "admin_extra": [
+            "resolve_range()/cut_due_editions() now exclude status=\"failed\" runs "
+            "when finding \"the latest run\" — a failed run's range_end was being "
+            "used as the next window's start, and as an \"already cut\" signal.",
+        ],
+    },
 ]
 
 
