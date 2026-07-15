@@ -73,10 +73,15 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
             break
         cutoff -= timedelta(days=1)
 
-    # Start from the end of the last edition so we never miss or repeat items
+    # Start from the end of the last edition so we never miss or repeat items.
+    # Excludes failed runs — a failed attempt produced no content, so its
+    # range_end must not be treated as "already covered" (it would otherwise
+    # shrink the window on retry down to whatever's arrived since the
+    # failure, often nothing).
     latest_run = (
         SummaryRun.query
         .filter_by(summary_id=summary.id)
+        .filter(SummaryRun.status != "failed")
         .order_by(SummaryRun.range_end.desc())
         .first()
     )
@@ -505,9 +510,13 @@ def cut_due_editions(force: bool = False) -> int:
         for summary in Summary.query.filter_by(scope_mode="fixed_period", enabled=True).all():
             try:
                 _, expected_end = resolve_range(summary)
+                # Exclude failed runs — otherwise a failed attempt's range_end
+                # makes this look like the period was already cut, silently
+                # skipping the scheduled edition forever.
                 latest = (
                     SummaryRun.query
                     .filter_by(summary_id=summary.id)
+                    .filter(SummaryRun.status != "failed")
                     .order_by(SummaryRun.range_end.desc())
                     .first()
                 )
