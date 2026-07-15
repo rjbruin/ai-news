@@ -639,6 +639,13 @@ class SummaryRun(db.Model):
     artifact_ref = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default="ok")
 
+    # Set when status == "failed": the exception message shown on the
+    # edition's page, and (for a failed revision) enough context to retry
+    # without the reader retyping their feedback — see
+    # app.services.summarize._persist_failed_run / web.edition_retry.
+    error_message = db.Column(db.Text, nullable=True)
+    retry_context = db.Column(JSONEncodedDict, nullable=True)
+
     # Agentic pipeline: structured block document (IR) + revision chain.
     document = db.Column(JSONEncodedDict, nullable=True)
     revision = db.Column(db.Integer, default=1, nullable=False)

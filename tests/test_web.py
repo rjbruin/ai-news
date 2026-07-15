@@ -361,3 +361,158 @@ def test_editions_list_name_links_to_edition(auth_client, db, user, sample_items
     edition_url = f"/summaries/{summary.id}/editions/{run.id}"
     list_resp = auth_client.get("/summaries")
     assert edition_url.encode() in list_resp.data
+
+
+def _make_failed_run(db, summary, *, parent_run_id=None, retry_context=None):
+    from app.models import SummaryRun, utcnow
+
+    run = SummaryRun(
+        summary_id=summary.id, label="Monday July 6",
+        status="failed", error_message="OpenRouter HTTP 402: Insufficient credits",
+        parent_run_id=parent_run_id, revision=1, retry_context=retry_context,
+        range_end=utcnow(),
+    )
+    db.session.add(run)
+    db.session.commit()
+    return run
+
+
+def test_failed_edition_page_shows_error_and_retry(auth_client, db, user):
+    from app.models import Summary
+
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = _make_failed_run(db, summary)
+
+    resp = auth_client.get(f"/summaries/{summary.id}/editions/{run.id}")
+    assert resp.status_code == 200
+    assert b"Failed" in resp.data
+    assert b"Insufficient credits" in resp.data
+    retry_url = f"/summaries/{summary.id}/editions/{run.id}/retry".encode()
+    assert retry_url in resp.data
+
+
+def test_editions_list_shows_failed_pill_and_retry(auth_client, db, user):
+    from app.models import Summary
+
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = _make_failed_run(db, summary)
+
+    resp = auth_client.get("/summaries")
+    assert b"Failed" in resp.data
+    retry_url = f"/summaries/{summary.id}/editions/{run.id}/retry".encode()
+    assert retry_url in resp.data
+
+
+def test_edition_retry_first_generation_redirects_to_generate_debug(auth_client, db, user):
+    from app.models import Summary
+
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = _make_failed_run(db, summary)
+
+    resp = auth_client.post(f"/summaries/{summary.id}/editions/{run.id}/retry")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(f"/summaries/{summary.id}/generate/debug")
+
+
+def test_edition_retry_revision_restashes_feedback_and_redirects(auth_client, db, user):
+    from app.models import Summary
+
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    parent = _make_failed_run(db, summary)
+    parent.status = "ok"
+    db.session.commit()
+    failed = _make_failed_run(
+        db, summary, parent_run_id=parent.id,
+        retry_context={"feedback": "Drop crypto coverage.", "from_scratch": True},
+    )
+
+    resp = auth_client.post(f"/summaries/{summary.id}/editions/{failed.id}/retry")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(
+        f"/summaries/{summary.id}/editions/{parent.id}/feedback/debug"
+    )
+
+    with auth_client.session_transaction() as sess:
+        assert sess[f"feedback_{parent.id}"] == "Drop crypto coverage."
+        assert sess[f"feedback_scratch_{parent.id}"] is True
+
+
+def test_edition_retry_rejects_non_failed_run(auth_client, db, user):
+    from app.models import Summary, SummaryRun
+
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = SummaryRun(summary_id=summary.id, status="ok", content="<p>hi</p>")
+    db.session.add(run)
+    db.session.commit()
+
+    resp = auth_client.post(f"/summaries/{summary.id}/editions/{run.id}/retry")
+    assert resp.status_code == 400
+
+
+def test_purge_empty_editions_keeps_failed_runs(db, user):
+    from app import _purge_empty_editions
+    from app.models import Summary, SummaryRun
+
+    summary = Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    failed = _make_failed_run(db, summary)
+    # A genuinely empty non-failed row (e.g. a crash before this feature
+    # existed) should still be purged.
+    stale = SummaryRun(summary_id=summary.id, status="ok")
+    db.session.add(stale)
+    db.session.commit()
+
+    failed_id, stale_id = failed.id, stale.id
+    _purge_empty_editions()
+    # The bulk delete inside doesn't sync the identity map, and a plain
+    # expire leaves Session.get() raising ObjectDeletedError for the row
+    # that's actually gone — fully detach so both checks do a clean fetch.
+    db.session.expunge_all()
+
+    assert db.session.get(SummaryRun, failed_id) is not None
+    assert db.session.get(SummaryRun, stale_id) is None
+
+
+def test_edition_retry_requires_ownership(auth_client, db, admin):
+    from app.models import Summary
+
+    summary = Summary(
+        user_id=admin.id, name="Admin's", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = _make_failed_run(db, summary)
+
+    resp = auth_client.post(f"/summaries/{summary.id}/editions/{run.id}/retry")
+    assert resp.status_code == 403

@@ -194,16 +194,28 @@ def build_summary(
             log_fn(event)
 
     if getattr(plugin, "is_agentic", False):
-        artifact, document, pending_headlines, agent_cost = _build_agentic(
-            summary, plugin, items, start, end,
-            seed_document=seed_document, extra_instruction=extra_instruction, log_fn=_collect,
-            cancel_event=cancel_event,
-        )
+        from ..agent.creds import MissingCredentials
+        from ..agent.runner import AgentCancelled
+
+        try:
+            artifact, document, pending_headlines, agent_cost = _build_agentic(
+                summary, plugin, items, start, end,
+                seed_document=seed_document, extra_instruction=extra_instruction, log_fn=_collect,
+                cancel_event=cancel_event,
+            )
+        except (AgentCancelled, MissingCredentials):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if record_run:
+                _persist_failed_run(
+                    summary, start, end, len(items), agent_log,
+                    parent_run_id=parent_run_id, error_message=str(exc),
+                )
+            raise
         # The agent loop only checks cancel_event between steps, so a run that
         # finishes its last step right as cancel is requested can race past
         # every in-loop check. Catch that here, before anything is persisted.
         if cancel_event is not None and cancel_event.is_set():
-            from ..agent.runner import AgentCancelled
             raise AgentCancelled("Generation cancelled.")
     else:
         artifact = plugin.build(
@@ -247,6 +259,51 @@ def build_summary(
         summary.last_consumed_at = utcnow()
     db.session.commit()
     return artifact, items, run
+
+
+def _partial_cost(agent_log: list[dict]) -> float | None:
+    """The last recorded cumulative cost before a run failed, if any."""
+    for event in reversed(agent_log or []):
+        if event.get("type") == "usage" and "total_cost" in event:
+            return event["total_cost"]
+    return None
+
+
+def _persist_failed_run(
+    summary, start, end, item_count, agent_log, *,
+    parent_run_id=None, error_message, retry_context=None,
+):
+    """Record a failed generation/revision attempt as its own SummaryRun.
+
+    Mirrors the successful-run construction in build_summary/revise_edition
+    (same label/revision logic) so a failed run sorts and threads exactly
+    like a real one would have — it just has no content/document, and
+    status="failed" with an error message instead.
+    """
+    now = utcnow()
+    label = _edition_label(summary, start, end, now)
+    revision = 1
+    if parent_run_id is not None:
+        parent = db.session.get(SummaryRun, parent_run_id)
+        if parent is not None:
+            revision = (parent.revision or 1) + 1
+    run = SummaryRun(
+        summary_id=summary.id,
+        range_start=start.replace(tzinfo=None) if start else None,
+        range_end=end.replace(tzinfo=None) if end else None,
+        item_count=item_count,
+        label=label,
+        agent_log=agent_log or None,
+        agent_cost=_partial_cost(agent_log),
+        parent_run_id=parent_run_id,
+        revision=revision,
+        status="failed",
+        error_message=error_message,
+        retry_context=retry_context,
+    )
+    db.session.add(run)
+    db.session.commit()
+    return run
 
 
 def _build_agentic(
@@ -342,15 +399,27 @@ def revise_edition(
         if log_fn is not None:
             log_fn(event)
 
-    artifact, document, _headlines, cost = _build_agentic(
-        summary, plugin, items, start, end,
-        seed_document=None if from_scratch else (parent_run.document or []),
-        extra_instruction=_feedback_instruction(feedback, from_scratch=from_scratch),
-        log_fn=_collect,
-        cancel_event=cancel_event,
-    )
+    from ..agent.creds import MissingCredentials
+    from ..agent.runner import AgentCancelled
+
+    try:
+        artifact, document, _headlines, cost = _build_agentic(
+            summary, plugin, items, start, end,
+            seed_document=None if from_scratch else (parent_run.document or []),
+            extra_instruction=_feedback_instruction(feedback, from_scratch=from_scratch),
+            log_fn=_collect,
+            cancel_event=cancel_event,
+        )
+    except (AgentCancelled, MissingCredentials):
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _persist_failed_run(
+            summary, start, end, len(items), agent_log,
+            parent_run_id=parent_run.id, error_message=str(exc),
+            retry_context={"feedback": feedback, "from_scratch": from_scratch},
+        )
+        raise
     if cancel_event is not None and cancel_event.is_set():
-        from ..agent.runner import AgentCancelled
         raise AgentCancelled("Generation cancelled.")
 
     run = SummaryRun(

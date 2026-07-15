@@ -56,6 +56,9 @@
       {% endif %}
       <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
          class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</a>
+      {% if run.status == 'failed' %}
+      <span class="pill pill-coral">Failed</span>
+      {% else %}
       <span class="pill pill-blue">
         {{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}
       </span>
@@ -64,12 +67,20 @@
         ${{ '%.4f'|format(run.agent_cost) }}
       </span>
       {% endif %}
+      {% endif %}
       <span class="small">{{ channel_icons(run, show_podcast_cost=True) }}</span>
       <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
          class="btn btn-sm btn-outline-primary">Open</a>
       {% if run.agent_log %}
       <a href="{{ url_for('web.edition_logs', summary_id=s.id, run_id=run.id) }}"
          class="btn btn-sm btn-outline-secondary">Logs</a>
+      {% endif %}
+      {% if run.status == 'failed' %}
+      <form method="post"
+            action="{{ url_for('web.edition_retry', summary_id=s.id, run_id=run.id) }}"
+            class="d-inline">
+        <button class="btn btn-sm btn-outline-danger">Retry</button>
+      </form>
       {% endif %}
       <form method="post"
             action="{{ url_for('web.edition_delete', summary_id=s.id, run_id=run.id) }}"
