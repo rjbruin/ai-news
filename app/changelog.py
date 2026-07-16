@@ -82,11 +82,15 @@ ENTRIES = [
         ],
     },
     {
-        "version": "0.27.0",
+        "version": "1.0.0",
         "date": "2026-07-16",
         "summary": [
             "Removed the prepaid balance / card top-up feature — Dispatch is now "
             "bring-your-own-key only. The \"Payment\" page is now called \"API Keys\".",
+            "The read/unread icon on an edition page now highlights on hover, so "
+            "it's clearer it's a clickable toggle.",
+            "Your dashboard's most recent edition now shows how many stories it "
+            "covers out of what was in scope, plus its generation cost.",
         ],
         "admin_extra": [
             "Deleted app/web/payment.py, app/services/balance.py, "
