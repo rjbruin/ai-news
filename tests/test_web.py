@@ -363,6 +363,65 @@ def test_editions_list_name_links_to_edition(auth_client, db, user, sample_items
     assert edition_url.encode() in list_resp.data
 
 
+def test_dashboard_shows_coverage_and_cost_badges_for_featured_run(
+    auth_client, db, user, sample_items, monkeypatch,
+):
+    import json
+
+    from app.models import Summary
+    from app.services import summarize
+    from tests.conftest import give_edition_key
+
+    from datetime import timedelta
+
+    give_edition_key(db, user)
+    item = sample_items[0]
+    state = {"n": 0}
+
+    def _chat(messages, *, tools=None, api_key=None, model=None, **kw):
+        state["n"] += 1
+        if state["n"] == 1:
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c1", "type": "function",
+                "function": {"name": "set_document", "arguments": json.dumps({"blocks": [
+                    {"type": "edition_header", "title": "My Daily"},
+                    {"type": "item", "headline": "h", "subheader": "s", "summary": "x",
+                     "item_id": item.id},
+                ]})},
+            }], "_usage": {"total_tokens": 100, "cost": 0.0123}}
+        return {"role": "assistant", "content": "Done.", "_usage": {"total_tokens": 5, "cost": 0.0}}
+
+    monkeypatch.setattr("app.agent.runner.openrouter.chat", _chat)
+
+    summary = Summary(
+        user_id=user.id, name="My daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    # Backdate items into the resolved window rather than a fixed offset
+    # from wall-clock now() — the daily cutoff's own day-rollover logic also
+    # depends on now(), so a hardcoded offset can land outside the window
+    # depending on what time of day the test happens to run.
+    _, end = summarize.resolve_range(summary)
+    for it in sample_items:
+        it.fetched_at = (end - timedelta(hours=2)).replace(tzinfo=None)
+    db.session.commit()
+
+    _, _, run = summarize.build_summary(summary, record_run=True)
+    assert run is not None
+
+    user.featured_summary_id = summary.id
+    db.session.commit()
+
+    resp = auth_client.get("/dashboard")
+    html = resp.data.decode()
+    assert "stories covered" in html
+    assert f"1/{len(sample_items)} stories covered" in html
+    assert "$0.0123" in html
+
+
 def _make_failed_run(db, summary, *, parent_run_id=None, retry_context=None):
     from app.models import SummaryRun, utcnow
 
