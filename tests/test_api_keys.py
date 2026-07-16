@@ -226,14 +226,14 @@ def test_approved_user_can_add_and_revoke_key(auth_client, db, user):
     assert not source.enabled  # dependent source auto-disabled
 
 
-def test_payment_page_shows_hero_and_explainer_modal(auth_client, db, user):
+def test_api_keys_page_shows_hero_and_explainer_modal(auth_client, db, user):
     user.approved = True
     db.session.commit()
 
     resp = auth_client.get("/keys")
     assert resp.status_code == 200
     html = resp.data.decode()
-    assert "Payment" in html
+    assert "API Keys" in html
     assert "What are API keys?" in html
     assert "More about API keys" in html
     assert "openrouter.ai" in html

@@ -31,7 +31,6 @@ from ..models import (
     IgnoredSender,
     IngestRun,
     Invite,
-    LemonsqueezyProduct,
     NewsItem,
     NewsItemTag,
     Source,
@@ -41,7 +40,7 @@ from ..models import (
     User,
     utcnow,
 )
-from ..services import balance, costs, ingest, poll_registry, retag_registry
+from ..services import costs, ingest, poll_registry, retag_registry
 from ..services.summarize import resend_edition_email
 from ..sources import registry as source_registry
 
@@ -87,9 +86,6 @@ def index():
         elevenlabs_key_configured=bool(current_app.config.get("ELEVENLABS_API_KEY")),
         cost_summary=costs.cost_summary(),
         invites=Invite.query.order_by(Invite.created_at.desc()).all(),
-        lemonsqueezy_products=LemonsqueezyProduct.query.order_by(
-            LemonsqueezyProduct.credited_amount_cents
-        ).all(),
         retag_state=retag_registry.snapshot(),
     )
 
@@ -612,75 +608,6 @@ def invite_delete(invite_id: int):
     db.session.commit()
     flash("Invite deleted.", "info")
     return redirect(url_for("admin.index") + "#invites")
-
-
-@bp.route("/lemonsqueezy-products/new", methods=["POST"])
-@admin_required
-def lemonsqueezy_product_new():
-    variant_id = (request.form.get("variant_id") or "").strip()
-    label = (request.form.get("label") or "").strip()
-    try:
-        credited_amount_cents = round(float(request.form.get("credited_amount_dollars") or 0) * 100)
-    except (TypeError, ValueError):
-        credited_amount_cents = 0
-    if not variant_id or not label or credited_amount_cents <= 0:
-        flash("A variant ID, label, and a positive credited amount are all required.", "danger")
-        return redirect(url_for("admin.index") + "#lemonsqueezy")
-    if LemonsqueezyProduct.query.filter_by(variant_id=variant_id).first() is not None:
-        flash("That variant ID is already mapped to a product.", "danger")
-        return redirect(url_for("admin.index") + "#lemonsqueezy")
-    db.session.add(LemonsqueezyProduct(
-        variant_id=variant_id, label=label, credited_amount_cents=credited_amount_cents,
-    ))
-    db.session.commit()
-    flash("Top-up product added.", "success")
-    return redirect(url_for("admin.index") + "#lemonsqueezy")
-
-
-@bp.route("/lemonsqueezy-products/<int:product_id>/toggle", methods=["POST"])
-@admin_required
-def lemonsqueezy_product_toggle(product_id: int):
-    product = db.session.get(LemonsqueezyProduct, product_id) or abort(404)
-    product.active = not product.active
-    db.session.commit()
-    flash(
-        f'"{product.label}" is now {"active" if product.active else "inactive"}.', "info",
-    )
-    return redirect(url_for("admin.index") + "#lemonsqueezy")
-
-
-@bp.route("/lemonsqueezy-products/<int:product_id>/delete", methods=["POST"])
-@admin_required
-def lemonsqueezy_product_delete(product_id: int):
-    product = db.session.get(LemonsqueezyProduct, product_id) or abort(404)
-    db.session.delete(product)
-    db.session.commit()
-    flash("Top-up product deleted.", "info")
-    return redirect(url_for("admin.index") + "#lemonsqueezy")
-
-
-@bp.route("/users/<int:user_id>/adjust-balance", methods=["POST"])
-@admin_required
-def user_adjust_balance(user_id: int):
-    """Manually credit or debit a user's balance — e.g. after a support
-    issue or a refund. Trusted admin action, so it bypasses debit()'s
-    insufficient-balance guard (a negative adjustment is allowed to take the
-    balance below zero if an admin explicitly does that)."""
-    user = db.session.get(User, user_id) or abort(404)
-    reason = (request.form.get("reason") or "").strip()
-    try:
-        amount_cents = round(float(request.form.get("amount_dollars") or 0) * 100)
-    except (TypeError, ValueError):
-        amount_cents = 0
-    if amount_cents == 0:
-        flash("Enter a non-zero amount to adjust.", "danger")
-        return redirect(url_for("admin.index") + "#users")
-    balance.credit(
-        user.id, amount_cents, kind="adjustment", note=reason or None,
-        created_by_user_id=current_user.id,
-    )
-    flash(f'Adjusted {user.username}\'s balance by ${amount_cents / 100:.2f}.', "success")
-    return redirect(url_for("admin.index") + "#users")
 
 
 @bp.route("/tags/<int:tag_id>/promote", methods=["POST"])
