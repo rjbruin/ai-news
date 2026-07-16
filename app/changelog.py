@@ -60,6 +60,27 @@ ENTRIES = [
             "used as the next window's start, and as an \"already cut\" signal.",
         ],
     },
+    {
+        "version": "0.26.0",
+        "date": "2026-07-16",
+        "summary": [
+            "Editions should now generate noticeably cheaper — fixed a bug where a "
+            "stale memory file could send the editor into an expensive loop of "
+            "trial-and-error, and added AI prompt caching to cut repeated costs.",
+        ],
+        "admin_extra": [
+            "compose_system_prompt now self-heals a drifted content_config, "
+            "rewriting legacy block-type references on read and persisting the "
+            "fix; tools.py validates block/fields args as dicts up front instead "
+            "of surfacing a raw exception; runner.py adds Anthropic ephemeral "
+            "cache_control breakpoints (system prompt + rolling conversation "
+            "breakpoint); strengthened the one-shot set_document nudge for "
+            "first-time generation; get_document defaults to a compact {id, type} "
+            "listing; get_item drops the always-NULL full_text field; history "
+            "memory is now pruned by content length via the hourly "
+            "agent-maintenance job (AGENT_HISTORY_MAX_CHARS).",
+        ],
+    },
 ]
 
 
