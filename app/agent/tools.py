@@ -40,9 +40,11 @@ def _item_brief(item, topics: list[str] | None = None) -> dict:
 
 
 def _item_full(item, topics: list[str] | None = None) -> dict:
+    # full_text is deliberately not exposed here — it's NULL for the
+    # overwhelming majority of items (this app doesn't scrape full article
+    # bodies), so it was pure dead weight in every get_item response.
     d = _item_brief(item, topics)
     d["summary_text"] = item.summary_text
-    d["full_text"] = item.full_text
     return d
 
 
@@ -112,6 +114,19 @@ def t_read_headlines(session: AgentSession, days: int = 7) -> dict:
 
 # ── Editor tools ────────────────────────────────────────────────────────────
 
+def _require_dict(value, what: str) -> None:
+    """Raise a clean, model-readable error instead of letting a wrong-typed
+    argument (e.g. a JSON-encoded string instead of an object) crash deeper
+    in with a raw Python exception name/message — that kind of confusing
+    error has been observed sending the model into an expensive
+    trial-and-error loop trying to rediscover the schema by guessing."""
+    if not isinstance(value, dict):
+        raise BlockValidationError(
+            f"{what} must be a JSON object with the documented fields, "
+            f"not a {type(value).__name__}."
+        )
+
+
 def _apply_item_sources(session: AgentSession, block: dict) -> dict:
     """If a block cites an in-scope item_id, force its sources to that
     item's real URL — regardless of what the model typed. The model
@@ -119,6 +134,7 @@ def _apply_item_sources(session: AgentSession, block: dict) -> dict:
     removes any need (and cost/risk of a typo or hallucinated link) for it
     to retype the URL by hand. Blocks with no item_id (e.g. a story
     spanning multiple sources) keep whatever sources the model supplied."""
+    _require_dict(block, "block")
     if block.get("type") != "item":
         return block
     item_id = block.get("item_id")
@@ -130,8 +146,14 @@ def _apply_item_sources(session: AgentSession, block: dict) -> dict:
     return block
 
 
-def t_get_document(session: AgentSession) -> dict:
-    return {"blocks": session.document}
+def t_get_document(session: AgentSession, full: bool = False) -> dict:
+    if full:
+        return {"blocks": session.document}
+    # Compact by default — just enough to reference existing blocks for
+    # update_block/remove_block/move_block. The model already knows what it
+    # wrote (it's still in the conversation); re-injecting the full document
+    # on every check was one of the biggest sources of redundant tokens.
+    return {"blocks": [{"id": b.get("id"), "type": b.get("type")} for b in session.document]}
 
 
 def t_set_document(session: AgentSession, blocks: list) -> dict:
@@ -151,6 +173,7 @@ def t_add_block(session: AgentSession, block: dict, index: int | None = None) ->
 
 
 def t_update_block(session: AgentSession, block_id: str, fields: dict) -> dict:
+    _require_dict(fields, "fields")
     idx = find_block(session.document, block_id)
     if idx is None:
         return {"error": f"No block with id {block_id}."}
@@ -248,9 +271,8 @@ def dispatch(name: str, args: dict, session: AgentSession) -> str:
 # ── Tool specs (OpenAI function-calling schema) ─────────────────────────────
 
 _BLOCK_DESC = (
-    "A document block. type is one of: edition_header, intro, section, story, "
-    "cluster, callout, quote, quick_hits, divider. See the system prompt for "
-    "each type's fields."
+    "A document block. type is one of: edition_header, intro, section, item, "
+    "trend, more_news, divider. See the system prompt for each type's fields."
 )
 
 TOOL_SPECS = [
@@ -285,8 +307,14 @@ TOOL_SPECS = [
     }},
     {"type": "function", "function": {
         "name": "get_document",
-        "description": "Return the current draft document (list of blocks).",
-        "parameters": {"type": "object", "properties": {}},
+        "description": (
+            "Return the current draft document. By default returns a compact "
+            "list of {id, type} only — you already know what you wrote, this "
+            "is just for referencing ids. Pass full=true only if you actually "
+            "need to re-read block content."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "full": {"type": "boolean", "description": "Return complete block content instead of just id/type."}}},
     }},
     {"type": "function", "function": {
         "name": "set_document",

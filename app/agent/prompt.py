@@ -114,7 +114,9 @@ Workflow:
    block-by-block costs far more than composing the draft up front and
    submitting it in a single set_document. Use add_block / update_block
    only for small later adjustments to an already-submitted document, not
-   for initial construction.
+   for initial construction. get_document defaults to a compact {id, type}
+   listing — you already know what you wrote; only pass full=true if you
+   genuinely need to re-read content back.
 4. Call write_headlines once with brief one-line notes on the items you featured.
 5. Optionally append_history with a short note on themes/trends for the future.
 
@@ -146,6 +148,18 @@ def compose_system_prompt(user, summary) -> str:
     content_config = memory.ensure_default(
         user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG
     )
+    # Self-heal a content_config that drifted from a schema change — e.g.
+    # still referencing a block type since removed. Left uncorrected, the
+    # agent's own memory instructs it to violate the current tool schema,
+    # which reliably sends it into an expensive trial-and-error loop.
+    reconciled, changed = memory.reconcile_content_config(content_config)
+    if changed:
+        content_config = reconciled
+        memory.write(user, summary, "content_config", content_config)
+        current_app.logger.info(
+            "Reconciled stale content_config for summary %d (legacy block types rewritten)",
+            summary.id,
+        )
     history = memory.read(user, summary, "history")
 
     topics = (
