@@ -109,6 +109,9 @@ class Config:
     AGENT_HEADLINES_RETENTION_DAYS = int(
         os.environ.get("AGENT_HEADLINES_RETENTION_DAYS", "7")
     )
+    # history is unbounded/never pruned by age (no date field) — cap by
+    # content length instead, keeping the most recent chars.
+    AGENT_HISTORY_MAX_CHARS = int(os.environ.get("AGENT_HISTORY_MAX_CHARS", "6000"))
 
 
 class DevConfig(Config):

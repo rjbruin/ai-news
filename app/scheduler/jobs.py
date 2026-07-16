@@ -57,6 +57,10 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
                 pruned = agent_memory.prune_headlines(days=days)
                 if pruned:
                     logger.info("Pruned %d old headline file(s)", pruned)
+                max_chars = app.config.get("AGENT_HISTORY_MAX_CHARS", 6000)
+                trimmed = agent_memory.prune_history(max_chars=max_chars)
+                if trimmed:
+                    logger.info("Trimmed %d oversized history file(s)", trimmed)
             except Exception:  # noqa: BLE001
                 logger.exception("Agent memory maintenance failed")
 

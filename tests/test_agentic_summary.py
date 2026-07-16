@@ -10,6 +10,15 @@ from app.summaries import registry as summary_registry
 from conftest import give_edition_key
 
 
+def _msg_text(m: dict) -> str:
+    """Message content may be a plain string or a cache_control content-block
+    list (see app.agent.runner._cache_block) — extract text either way."""
+    content = m.get("content")
+    if isinstance(content, list):
+        return " ".join(b.get("text", "") for b in content)
+    return content or ""
+
+
 @pytest.fixture
 def keyed_user(db):
     u = User(username="ed", email="ed@example.com", email_verified=True)
@@ -258,7 +267,7 @@ def test_revise_edition_creates_linked_revision(monkeypatch, db, keyed_user, age
     # Feedback turn: agent edits the (seeded) draft, then stops.
     def feedback_chat(messages, *, tools=None, api_key=None, model=None, **kw):
         # The opening user message should carry the feedback instruction.
-        assert any("feedback" in (m.get("content") or "").lower() for m in messages)
+        assert any("feedback" in _msg_text(m).lower() for m in messages)
         return {"role": "assistant", "content": None, "tool_calls": [{
             "id": "f1", "type": "function",
             "function": {"name": "add_block", "arguments": json.dumps({"block": {
@@ -292,7 +301,7 @@ def test_revise_edition_from_scratch_drops_seed_document(monkeypatch, db, keyed_
 
     def scratch_chat(messages, *, tools=None, api_key=None, model=None, **kw):
         # "From scratch" framing, not the "current draft" revise framing.
-        joined = " ".join((m.get("content") or "") for m in messages).lower()
+        joined = " ".join(_msg_text(m) for m in messages).lower()
         assert "from scratch" in joined
         assert "current draft" not in joined
         return {"role": "assistant", "content": None, "tool_calls": [{

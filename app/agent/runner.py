@@ -41,7 +41,21 @@ def _items_digest(session: AgentSession) -> str:
     return "\n".join(lines) if lines else "(no items in scope)"
 
 
-def _opening_user_message(session: AgentSession, extra: str | None = None) -> str:
+_FIRST_TIME_NUDGE = (
+    "This is a first-time build (no existing draft) — decide the full "
+    "structure and story list first, then submit it with exactly ONE "
+    "set_document call. The block field names and types are fully documented "
+    "above; trust them. Do not probe the schema by testing placeholder/dummy "
+    "content via add_block or set_document, and do not call get_document to "
+    "check your own work. If a tool call returns an error, fix that SAME "
+    "call using the documented fields — do not start guessing different "
+    "block shapes."
+)
+
+
+def _opening_user_message(
+    session: AgentSession, extra: str | None = None, *, first_time: bool = False,
+) -> str:
     rng = ""
     if session.range_start or session.range_end:
         rng = (
@@ -56,9 +70,35 @@ def _opening_user_message(session: AgentSession, extra: str | None = None) -> st
         f"Use get_item for full text. Build the document with your editor tools, "
         f"then call write_headlines. Follow the content configuration and interests."
     )
+    if first_time:
+        msg += f"\n\n{_FIRST_TIME_NUDGE}"
     if extra:
         msg += f"\n\n{extra}"
     return msg
+
+
+def _cache_block(text: str) -> list[dict]:
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+
+
+def _mark_cache_breakpoint(messages: list[dict]) -> None:
+    """Roll a prompt-cache breakpoint onto the last message before each call.
+
+    Anthropic (via OpenRouter) caches the byte-prefix up to a cache_control
+    marker. The system message (index 0) keeps its own permanent breakpoint,
+    set once at construction. Here we clear any earlier rolling breakpoint
+    (messages only ever grow, so the old prefix stays a cache hit even
+    without keeping its marker) and set a new one on the current last
+    message — 2 breakpoints total, well under Anthropic's 4-breakpoint
+    limit. Other providers on OpenRouter just ignore the extra field.
+    """
+    for msg in messages[1:-1]:
+        content = msg.get("content")
+        if isinstance(content, list):
+            msg["content"] = content[0]["text"] if content else ""
+    last = messages[-1]
+    if isinstance(last.get("content"), str):
+        last["content"] = _cache_block(last["content"])
 
 
 def _clean_assistant_message(msg: dict) -> dict:
@@ -106,8 +146,10 @@ def run_agent(
     emit({"type": "start", "items": len(session.items), "model": model})
 
     messages = [
-        {"role": "system", "content": compose_system_prompt(session.user, session.summary)},
-        {"role": "user", "content": _opening_user_message(session, extra_instruction)},
+        {"role": "system", "content": _cache_block(compose_system_prompt(session.user, session.summary))},
+        {"role": "user", "content": _opening_user_message(
+            session, extra_instruction, first_time=(seed_document is None),
+        )},
     ]
 
     for step in range(max_steps):
@@ -116,6 +158,7 @@ def run_agent(
             raise AgentCancelled("Generation cancelled.")
 
         emit({"type": "llm_call", "step": step + 1})
+        _mark_cache_breakpoint(messages)
         message = openrouter.chat(
             messages, tools=tools.TOOL_SPECS, api_key=api_key, model=model
         )
