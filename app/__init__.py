@@ -51,13 +51,11 @@ def create_app(config_object: type | None = None) -> Flask:
     from .auth.routes import bp as auth_bp
     from .web.routes import bp as web_bp
     from .web.admin import bp as admin_bp
-    from .web.payment import bp as payment_bp
     from .api.routes import bp as api_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(web_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(payment_bp)
     app.register_blueprint(api_bp)
 
     register_template_helpers(app)

@@ -1,55 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Payment · Dispatch{% endblock %}
+{% block title %}API Keys · Dispatch{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Payment</h1>
-
-<div class="card shadow-sm mb-4">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
-      <div>
-        <h2 class="h5 mb-1">Your balance</h2>
-        <p class="mb-0 text-body-secondary small">
-          Top up with a card to prepay for AI usage — a balance top-up is separate from the
-          OpenRouter keys below.
-        </p>
-      </div>
-      <div class="h3 mb-0">${{ '%.2f' % (current_user.balance_cents / 100) }}</div>
-    </div>
-    {% if topup_products %}
-    <div class="d-flex flex-wrap gap-2">
-      {% for p in topup_products %}
-      <form method="post" action="{{ url_for('payment.checkout') }}" class="d-inline">
-        <input type="hidden" name="variant_id" value="{{ p.variant_id }}">
-        <button class="btn btn-outline-primary">{{ p.label }}</button>
-      </form>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-body-secondary small mb-0">Top-ups aren't available yet — check back soon.</p>
-    {% endif %}
-  </div>
-</div>
-
-{% if transactions %}
-<div class="table-responsive shadow-sm mb-4">
-  <table class="table bg-white align-middle mb-0">
-    <thead><tr><th>Date</th><th>Kind</th><th>Amount</th><th>Balance after</th><th>Note</th></tr></thead>
-    <tbody>
-    {% for t in transactions %}
-      <tr>
-        <td class="small">{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-        <td class="small">{{ t.kind }}</td>
-        <td class="small {{ 'text-success' if t.amount_cents > 0 else 'text-danger' }}">
-          {{ '+' if t.amount_cents > 0 else '' }}${{ '%.2f' % (t.amount_cents / 100) }}
-        </td>
-        <td class="small">${{ '%.2f' % (t.balance_after_cents / 100) }}</td>
-        <td class="small text-body-secondary">{{ t.note or '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+<h1 class="h3 mb-3">API Keys</h1>
 
 <div class="card shadow-sm mb-4">
   <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">

@@ -59,11 +59,6 @@ class Config:
     TOPIC_GRADUATION_THRESHOLD_1 = int(os.environ.get("TOPIC_GRADUATION_THRESHOLD_1", "20"))
     TOPIC_GRADUATION_THRESHOLD_2 = int(os.environ.get("TOPIC_GRADUATION_THRESHOLD_2", "100"))
 
-    # Lemon Squeezy (prepaid balance top-ups — see app/services/payment.py)
-    LEMONSQUEEZY_API_KEY = os.environ.get("LEMONSQUEEZY_API_KEY", "")
-    LEMONSQUEEZY_STORE_ID = os.environ.get("LEMONSQUEEZY_STORE_ID", "")
-    LEMONSQUEEZY_WEBHOOK_SECRET = os.environ.get("LEMONSQUEEZY_WEBHOOK_SECRET", "")
-
     # TTS
     ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 
@@ -148,9 +143,6 @@ class IntegrationTestConfig(Config):
     IMAP_SMTP_HOST = ""
     IMAP_USERNAME = ""
     IMAP_PASSWORD = ""
-    LEMONSQUEEZY_API_KEY = ""
-    LEMONSQUEEZY_STORE_ID = ""
-    LEMONSQUEEZY_WEBHOOK_SECRET = ""
 
 
 class TestConfig(Config):
@@ -175,10 +167,3 @@ class TestConfig(Config):
     IMAP_SMTP_HOST = ""
     IMAP_USERNAME = ""
     IMAP_PASSWORD = ""
-    # Lemon Squeezy is never reachable from tests — API key/store id stay
-    # blank so create_checkout() would raise PaymentError if a test forgot
-    # to monkeypatch httpx. The webhook secret has a fixed test value so
-    # tests can craft a validly-signed payload without touching the network.
-    LEMONSQUEEZY_API_KEY = ""
-    LEMONSQUEEZY_STORE_ID = ""
-    LEMONSQUEEZY_WEBHOOK_SECRET = "test-webhook-secret"

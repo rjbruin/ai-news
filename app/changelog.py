@@ -81,6 +81,23 @@ ENTRIES = [
             "agent-maintenance job (AGENT_HISTORY_MAX_CHARS).",
         ],
     },
+    {
+        "version": "0.27.0",
+        "date": "2026-07-16",
+        "summary": [
+            "Removed the prepaid balance / card top-up feature — Dispatch is now "
+            "bring-your-own-key only. The \"Payment\" page is now called \"API Keys\".",
+        ],
+        "admin_extra": [
+            "Deleted app/web/payment.py, app/services/balance.py, "
+            "app/services/payment.py, the BalanceTransaction/LemonsqueezyProduct "
+            "models, users.balance_cents, and the Lemon Squeezy config/admin UI. "
+            "Confirmed zero nonzero balances/transactions/products in production "
+            "before the removal migration. ApiKey.is_global (admin-funded shared "
+            "fallback key via OPENROUTER_API_KEY) is unaffected — it was never "
+            "part of the balance system.",
+        ],
+    },
 ]
 
 

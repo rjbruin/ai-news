@@ -126,7 +126,7 @@
 <h2 class="h5" id="users" style="scroll-margin-top:5rem">Users</h2>
 <div class="table-responsive shadow-sm mb-4">
   <table class="table bg-white align-middle mb-0">
-    <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th><th>Approved</th><th>Podcast</th><th>Balance</th><th></th></tr></thead>
+    <thead><tr><th>Username</th><th>Email</th><th>Verified</th><th>Role</th><th>Approved</th><th>Podcast</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       <tr>
@@ -136,7 +136,6 @@
         <td>{{ 'admin' if u.is_admin else 'user' }}</td>
         <td>{{ '✓' if u.is_approved else '—' }}</td>
         <td>{{ '✓' if u.has_podcast_access else '—' }}</td>
-        <td class="small">${{ '%.2f' % (u.balance_cents / 100) }}</td>
         <td class="text-nowrap">
           {% if not u.is_admin %}
           <form method="post" action="{{ url_for('admin.user_approve', user_id=u.id) }}" class="d-inline">
@@ -146,44 +145,12 @@
             <button class="btn btn-sm btn-outline-secondary">{{ 'Revoke podcast' if u.podcast_enabled else 'Allow podcast' }}</button>
           </form>
           {% endif %}
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal"
-                  data-bs-target="#adjust-balance-{{ u.id }}">Adjust balance</button>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
-
-{% for u in users %}
-<div class="modal fade" id="adjust-balance-{{ u.id }}" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form method="post" action="{{ url_for('admin.user_adjust_balance', user_id=u.id) }}">
-        <div class="modal-header">
-          <h5 class="modal-title">Adjust {{ u.username }}'s balance</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="text-body-secondary small">Current balance: ${{ '%.2f' % (u.balance_cents / 100) }}</p>
-          <div class="mb-3">
-            <label class="form-label small">Amount (USD, negative to debit)</label>
-            <input type="number" step="0.01" name="amount_dollars" class="form-control" required>
-          </div>
-          <div class="mb-2">
-            <label class="form-label small">Reason</label>
-            <input type="text" name="reason" class="form-control" placeholder="e.g. support refund">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button class="btn btn-primary">Apply adjustment</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-{% endfor %}
 
 <h2 class="h5 mt-4" id="invites" style="scroll-margin-top:5rem">Invites</h2>
 <p class="text-body-secondary small mb-2">
@@ -237,63 +204,6 @@
       </tr>
     {% else %}
       <tr><td colspan="6" class="text-body-secondary">No invites created yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<h2 class="h5 mt-4" id="lemonsqueezy" style="scroll-margin-top:5rem">Payment products</h2>
-<p class="text-body-secondary small mb-2">
-  Maps a Lemon Squeezy variant to the USD amount credited to a user's balance on purchase.
-  Price the variant itself higher in the Lemon Squeezy dashboard to cover their processing fee —
-  this app just trusts the credited amount below, it doesn't compute fee math.
-</p>
-<form method="post" action="{{ url_for('admin.lemonsqueezy_product_new') }}" class="row g-2 align-items-end mb-3">
-  <div class="col-auto">
-    <label class="form-label small mb-1" for="variant_id">Lemon Squeezy variant ID</label>
-    <input type="text" name="variant_id" id="variant_id" class="form-control form-control-sm" required>
-  </div>
-  <div class="col-auto">
-    <label class="form-label small mb-1" for="ls-label">Label</label>
-    <input type="text" name="label" id="ls-label" class="form-control form-control-sm"
-           placeholder="e.g. $5 top-up" required>
-  </div>
-  <div class="col-auto">
-    <label class="form-label small mb-1" for="credited_amount_dollars">Credited amount (USD)</label>
-    <input type="number" step="0.01" min="0.01" name="credited_amount_dollars"
-           id="credited_amount_dollars" class="form-control form-control-sm" style="width: 120px" required>
-  </div>
-  <div class="col-auto">
-    <button class="btn btn-sm btn-primary">Add product</button>
-  </div>
-</form>
-<div class="table-responsive shadow-sm mb-4">
-  <table class="table bg-white align-middle mb-0">
-    <thead><tr><th>Variant ID</th><th>Label</th><th>Credited</th><th>Status</th><th></th></tr></thead>
-    <tbody>
-    {% for p in lemonsqueezy_products %}
-      <tr>
-        <td class="small font-monospace">{{ p.variant_id }}</td>
-        <td class="small">{{ p.label }}</td>
-        <td class="small">${{ '%.2f' % (p.credited_amount_cents / 100) }}</td>
-        <td class="small">
-          {% if p.active %}
-            <span class="badge text-bg-success">active</span>
-          {% else %}
-            <span class="badge text-bg-secondary">inactive</span>
-          {% endif %}
-        </td>
-        <td class="text-nowrap">
-          <form method="post" action="{{ url_for('admin.lemonsqueezy_product_toggle', product_id=p.id) }}" class="d-inline">
-            <button class="btn btn-sm btn-outline-secondary">{{ 'Deactivate' if p.active else 'Activate' }}</button>
-          </form>
-          <form method="post" action="{{ url_for('admin.lemonsqueezy_product_delete', product_id=p.id) }}" class="d-inline">
-            <button class="btn btn-sm btn-outline-danger">Delete</button>
-          </form>
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="5" class="text-body-secondary">No top-up products configured yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
