@@ -10,6 +10,15 @@
 </div>
 {% endif %}
 
+<style>
+  .read-toggle {
+    border-radius: 50%;
+    padding: .3rem !important;
+    transition: background-color .15s ease, transform .15s ease;
+  }
+  .read-toggle:hover { background-color: var(--ag-blue-tint); transform: scale(1.1); }
+</style>
+
 <div class="d-flex align-items-center gap-3 mb-3">
   <div class="flex-grow-1">
     <h1 class="h3 mb-0">
@@ -21,9 +30,9 @@
       <span class="pill pill-slate align-middle">rev {{ run.revision }}</span>
       {% endif %}
       {% if not is_shared_view %}
-      <button id="read-toggle" class="btn btn-link p-0 ms-2 border-0 align-baseline"
+      <button id="read-toggle" class="btn btn-link read-toggle ms-2 border-0 align-baseline"
               style="font-size:inherit;line-height:inherit"
-              title="{{ 'Read' if run.read_at else 'Unread' }}">
+              title="{{ 'Mark as unread' if run.read_at else 'Mark as read' }}">
         <i id="read-icon" class="{{ 'fa-regular fa-envelope-open text-body-secondary' if run.read_at else 'fa-solid fa-envelope text-primary' }}"></i>
       </button>
       {% endif %}
@@ -289,7 +298,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     icon.className = read
       ? 'fa-regular fa-envelope-open text-body-secondary'
       : 'fa-solid fa-envelope text-primary';
-    btn.title = read ? 'Read' : 'Unread';
+    btn.title = read ? 'Mark as unread' : 'Mark as read';
   }
 
   if (!isRead) {

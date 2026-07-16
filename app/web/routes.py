@@ -172,6 +172,11 @@ def dashboard():
         s for s in my_summaries if not featured_summary or s.id != featured_summary.id
     ]
 
+    featured_coverage = None
+    if featured_run and featured_run.document:
+        from ..services.coverage import edition_coverage
+        featured_coverage = edition_coverage(featured_run)
+
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
         # A top-level imap_newsletter source is the mailbox connection itself,
@@ -195,6 +200,7 @@ def dashboard():
         latest_editions=latest_editions,
         featured_summary=featured_summary,
         featured_run=featured_run,
+        featured_coverage=featured_coverage,
         other_summaries=other_summaries,
         source_badges=source_badges,
         has_api_key=has_api_key,

@@ -66,7 +66,14 @@
       </h1>
       <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
         <span class="pill pill-teal">{{ featured_run.generated_at | natural_dt }}</span>
+        {% if featured_coverage %}
+        <span class="pill pill-blue">{{ featured_coverage.included_count }}/{{ featured_coverage.scope_count }} stories covered</span>
+        {% else %}
         <span class="pill pill-blue">{{ featured_run.item_count }} item{{ 's' if featured_run.item_count != 1 else '' }}</span>
+        {% endif %}
+        {% if featured_run.agent_cost is not none %}
+        <span class="pill pill-amber" title="Generation cost">${{ '%.4f' % featured_run.agent_cost }}</span>
+        {% endif %}
         <span title="Channels">{{ channel_icons(featured_run) }}</span>
       </div>
       <a href="{{ url_for('web.edition_view', summary_id=featured_summary.id, run_id=featured_run.id) }}"
