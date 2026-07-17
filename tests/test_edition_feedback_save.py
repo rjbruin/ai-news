@@ -11,7 +11,7 @@ from conftest import give_edition_key
 
 @pytest.fixture
 def keyed_summary(db, user):
-    give_edition_key(db, user, "sk-or-test", "test/model")
+    give_edition_key(db, user, "sk-or-test")
     s = Summary(
         user_id=user.id, name="Daily", type_key="agentic_page",
         scope_mode="fixed_period", period="day",

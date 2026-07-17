@@ -470,11 +470,10 @@ def api_keys():
 def api_key_new():
     label = (request.form.get("label") or "").strip()
     secret = (request.form.get("secret") or "").strip()
-    model = (request.form.get("model") or "").strip() or None
     if not label or not secret:
         flash("A label and an API key are both required.", "danger")
         return redirect(url_for("web.api_keys"))
-    key = ApiKey(owner_user_id=current_user.id, label=label, provider="openrouter", model=model)
+    key = ApiKey(owner_user_id=current_user.id, label=label, provider="openrouter")
     key.set_key(secret)
     db.session.add(key)
     db.session.commit()

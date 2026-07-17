@@ -221,7 +221,6 @@ class ApiKey(db.Model):
     label = db.Column(db.String(120), nullable=False)
     provider = db.Column(db.String(30), default="openrouter", nullable=False)
     key_enc = db.Column(db.Text, nullable=True)  # NULL for the global key (read from env)
-    model = db.Column(db.String(120), nullable=True)  # optional per-key model override
     is_global = db.Column(db.Boolean, default=False, nullable=False)
     revoked_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
@@ -251,11 +250,6 @@ class ApiKey(db.Model):
         from .crypto import decrypt
 
         return decrypt(self.key_enc) if self.key_enc else None
-
-    def resolved_model(self) -> str | None:
-        from flask import current_app
-
-        return self.model or current_app.config.get("OPENROUTER_MODEL")
 
     def can_manage(self, user: "User") -> bool:
         if self.is_global:
