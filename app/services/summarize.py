@@ -494,6 +494,13 @@ def edition_heads(summary: Summary):
 
 # ─────────────────────────── scheduled edition cutting ────────────────────────────
 
+# Bound how hard the scheduler hammers a persistently-failing summary (e.g. an
+# out-of-credits API key): at most this many attempts per period, spaced at
+# least this far apart, instead of retrying every single tick forever.
+MAX_FAILED_ATTEMPTS_PER_PERIOD = 3
+FAILURE_BACKOFF = timedelta(minutes=15)
+
+
 def cut_due_editions(force: bool = False) -> int:
     """Cut new editions for all fixed_period summaries whose release time has arrived.
 
@@ -528,6 +535,26 @@ def cut_due_editions(force: bool = False) -> int:
                 # Only cut if the cutoff time has actually passed (skipped when force=True)
                 if not force and now.replace(tzinfo=None) < expected_naive:
                     continue
+
+                # Guard against retry storms: a persistent failure (e.g. an
+                # out-of-credits API key) would otherwise retrigger generation
+                # every scheduler tick forever, since failed runs are excluded
+                # from `latest` above. Cap attempts per period and back off
+                # between them instead.
+                if not force:
+                    failed_this_period = (
+                        SummaryRun.query
+                        .filter_by(summary_id=summary.id, status="failed")
+                        .filter(SummaryRun.range_end == expected_naive)
+                        .order_by(SummaryRun.generated_at.desc())
+                        .all()
+                    )
+                    if failed_this_period:
+                        if len(failed_this_period) >= MAX_FAILED_ATTEMPTS_PER_PERIOD:
+                            continue  # already alerted; wait for the next period or a manual retry
+                        last_failure_at = _aware(failed_this_period[0].generated_at)
+                        if now - last_failure_at < FAILURE_BACKOFF:
+                            continue
 
                 artifact, items, run = build_summary(summary, record_run=True)
                 cut += 1
