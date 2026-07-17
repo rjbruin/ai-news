@@ -6,7 +6,7 @@
 {% if not keys %}
 <div class="alert alert-warning">
   You don't have any active API keys yet.
-  <a href="{{ url_for('web.api_keys') }}" class="alert-link">Add one</a> before creating a source —
+  <a href="{{ url_for('web.settings') }}#sec-api-keys" class="alert-link">Add one</a> before creating a source —
   it pays for fetching and tagging this source's news items.
 </div>
 {% else %}
@@ -51,7 +51,7 @@
         <option value="{{ k.id }}">{{ k.label }}{{ ' (shared, global)' if k.is_global else '' }}</option>
         {% endfor %}
       </select>
-      <div class="form-text">Pays for fetching and tagging this source's items. Manage your keys on the <a href="{{ url_for('web.api_keys') }}">API Keys</a> page.</div>
+      <div class="form-text">Pays for fetching and tagging this source's items. Manage your keys in the <a href="{{ url_for('web.settings') }}#sec-api-keys">API Keys section</a> of Settings.</div>
     </div>
 
     <div class="mb-3 cfg-group cfg-not-imap_newsletter" style="display:none">

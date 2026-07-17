@@ -226,11 +226,11 @@ def test_approved_user_can_add_and_revoke_key(auth_client, db, user):
     assert not source.enabled  # dependent source auto-disabled
 
 
-def test_api_keys_page_shows_hero_and_explainer_modal(auth_client, db, user):
+def test_settings_shows_api_keys_hero_and_explainer_modal(auth_client, db, user):
     user.approved = True
     db.session.commit()
 
-    resp = auth_client.get("/keys")
+    resp = auth_client.get("/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
     assert "API Keys" in html
@@ -238,7 +238,27 @@ def test_api_keys_page_shows_hero_and_explainer_modal(auth_client, db, user):
     assert "More about API keys" in html
     assert "openrouter.ai" in html
     assert "id=\"api-key-explainer\"" in html
-    assert "a few cents" in html  # cost expectation blurb in "Add a key"
+    assert "$0.50 per edition" in html  # cost expectation blurb in "Add a key"
+
+
+def test_api_keys_redirects_to_settings(auth_client, db, user):
+    user.approved = True
+    db.session.commit()
+
+    resp = auth_client.get("/keys")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/settings#sec-api-keys")
+
+
+def test_non_approved_user_does_not_see_api_keys_section(auth_client, db, user):
+    user.approved = False
+    db.session.commit()
+
+    resp = auth_client.get("/settings")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "id=\"sec-api-keys\"" not in html
+    assert "id=\"api-key-explainer\"" not in html
 
 
 def test_owner_can_retract_own_source_but_not_others(auth_client, db, user):

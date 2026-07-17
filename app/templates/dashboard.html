@@ -170,7 +170,7 @@
         Add your own OpenRouter API key to pay for the sources and editions you create.
       </p>
     </div>
-    <a href="{{ url_for('web.api_keys') }}" class="btn btn-warning flex-shrink-0">Add an API key</a>
+    <a href="{{ url_for('web.settings') }}#sec-api-keys" class="btn btn-warning flex-shrink-0">Add an API key</a>
   </div>
 </div>
 {% endif %}
@@ -200,12 +200,12 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     steps.forEach((el, idx) => el.classList.toggle('d-none', idx !== i));
     dots.forEach((el, idx) => el.classList.toggle('active', idx === i));
     backBtn.classList.toggle('invisible', i === 0);
-    nextBtn.textContent = i === steps.length - 1 ? 'Set up payment' : 'Next';
+    nextBtn.textContent = i === steps.length - 1 ? 'Set up API key' : 'Next';
   }
   backBtn.addEventListener('click', () => { i = Math.max(0, i - 1); render(); });
   nextBtn.addEventListener('click', () => {
     if (i === steps.length - 1) {
-      window.location.href = "{{ url_for('web.api_keys') }}";
+      window.location.href = "{{ url_for('web.settings') }}#sec-api-keys";
       return;
     }
     i = Math.min(steps.length - 1, i + 1);
