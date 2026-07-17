@@ -412,6 +412,8 @@ def settings():
 
     recipients = current_user.edition_recipients.order_by(EditionRecipient.created_at).all()
 
+    keys = ApiKey.manageable_by(current_user) if current_user.is_approved else []
+
     available_topics = (
         Tag.query.filter(
             Tag.archived_at.is_(None),
@@ -441,6 +443,7 @@ def settings():
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
         podcast_feed_url=podcast_feed_url,
         recipients=recipients,
+        keys=keys,
         available_topics=available_topics,
         tier_complete=tier_complete,
         tier_highlights=tier_highlights,
@@ -458,11 +461,17 @@ def regenerate_podcast_feed_token():
 
 
 # ───────────────────────── API keys ─────────────────────────
+# API key management now lives on the Settings page (#sec-api-keys) rather
+# than its own page — these routes are the form actions it posts to.
+def _keys_redirect():
+    return redirect(url_for("web.settings") + "#sec-api-keys")
+
+
 @bp.route("/keys")
-@approved_required
+@login_required
 def api_keys():
-    keys = ApiKey.manageable_by(current_user)
-    return render_template("keys.html", keys=keys)
+    """Old standalone page — kept as a redirect for any existing bookmarks/links."""
+    return _keys_redirect()
 
 
 @bp.route("/keys/new", methods=["POST"])
@@ -472,13 +481,13 @@ def api_key_new():
     secret = (request.form.get("secret") or "").strip()
     if not label or not secret:
         flash("A label and an API key are both required.", "danger")
-        return redirect(url_for("web.api_keys"))
+        return _keys_redirect()
     key = ApiKey(owner_user_id=current_user.id, label=label, provider="openrouter")
     key.set_key(secret)
     db.session.add(key)
     db.session.commit()
     flash(f'API key "{label}" added.', "success")
-    return redirect(url_for("web.api_keys"))
+    return _keys_redirect()
 
 
 @bp.route("/keys/<int:key_id>/revoke", methods=["POST"])
@@ -497,7 +506,7 @@ def api_key_revoke(key_id: int):
         names = ", ".join(s.name for s in affected)
         msg += f" Disabled {len(affected)} source(s) that used it: {names}."
     flash(msg, "warning" if affected else "info")
-    return redirect(url_for("web.api_keys"))
+    return _keys_redirect()
 
 
 @bp.route("/keys/<int:key_id>/reactivate", methods=["POST"])
@@ -509,7 +518,7 @@ def api_key_reactivate(key_id: int):
     key.revoked_at = None
     db.session.commit()
     flash(f'API key "{key.label}" reactivated. Re-enable any sources that need it.', "success")
-    return redirect(url_for("web.api_keys"))
+    return _keys_redirect()
 
 
 @bp.route("/keys/<int:key_id>/delete", methods=["POST"])
@@ -520,16 +529,16 @@ def api_key_delete(key_id: int):
         abort(403)
     if key.is_global:
         flash("The global key can't be deleted.", "danger")
-        return redirect(url_for("web.api_keys"))
+        return _keys_redirect()
     if key.sources.count():
         flash("Revoke or reassign this key's sources before deleting it.", "danger")
-        return redirect(url_for("web.api_keys"))
+        return _keys_redirect()
     if current_user.edition_api_key_id == key.id:
         current_user.edition_api_key_id = None
     db.session.delete(key)
     db.session.commit()
     flash("API key deleted.", "info")
-    return redirect(url_for("web.api_keys"))
+    return _keys_redirect()
 
 
 @bp.route("/keys/<int:key_id>/use-for-editions", methods=["POST"])
@@ -541,11 +550,11 @@ def api_key_use_for_editions(key_id: int):
     key = db.session.get(ApiKey, key_id) or abort(404)
     if key.is_global or key.owner_user_id != current_user.id:
         flash("Only your own keys can be used for editions.", "danger")
-        return redirect(url_for("web.api_keys"))
+        return _keys_redirect()
     current_user.edition_api_key_id = key.id
     db.session.commit()
     flash(f'"{key.label}" will now be used for creating editions.', "success")
-    return redirect(url_for("web.api_keys"))
+    return _keys_redirect()
 
 
 # ───────────────────────── Sources ─────────────────────────
