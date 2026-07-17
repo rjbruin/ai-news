@@ -158,6 +158,84 @@ def test_cut_due_editions_does_not_skip_when_latest_run_failed(app, db):
     assert SummaryRun.query.filter_by(summary_id=summary.id, status="ok").count() == 1
 
 
+def test_cut_due_editions_backs_off_after_recent_failure(app, db):
+    from app.services.summarize import cut_due_editions
+    from app.models import SummaryRun, utcnow
+
+    summary = Summary(
+        user_id=1, name="Daily", type_key="app_page",
+        scope_mode="fixed_period", period="day", params={"group_by_tag": False},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    _, expected_end = summarize.resolve_range(summary)
+    failed = SummaryRun(
+        summary_id=summary.id, status="failed", error_message="boom",
+        range_end=expected_end.replace(tzinfo=None),
+        generated_at=utcnow().replace(tzinfo=None),
+    )
+    db.session.add(failed)
+    db.session.commit()
+
+    # A failure moments ago is within the backoff window — must not retry yet.
+    cut = cut_due_editions()
+    assert cut == 0
+    assert SummaryRun.query.filter_by(summary_id=summary.id).count() == 1
+
+
+def test_cut_due_editions_retries_after_backoff_elapses(app, db):
+    from app.services.summarize import cut_due_editions, FAILURE_BACKOFF
+    from app.models import SummaryRun, utcnow
+
+    summary = Summary(
+        user_id=1, name="Daily", type_key="app_page",
+        scope_mode="fixed_period", period="day", params={"group_by_tag": False},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    _, expected_end = summarize.resolve_range(summary)
+    failed = SummaryRun(
+        summary_id=summary.id, status="failed", error_message="boom",
+        range_end=expected_end.replace(tzinfo=None),
+        generated_at=(utcnow() - FAILURE_BACKOFF - timedelta(minutes=1)).replace(tzinfo=None),
+    )
+    db.session.add(failed)
+    db.session.commit()
+
+    cut = cut_due_editions()
+    assert cut == 1
+    assert SummaryRun.query.filter_by(summary_id=summary.id, status="ok").count() == 1
+
+
+def test_cut_due_editions_stops_after_max_attempts_per_period(app, db):
+    from app.services.summarize import cut_due_editions, FAILURE_BACKOFF, MAX_FAILED_ATTEMPTS_PER_PERIOD
+    from app.models import SummaryRun, utcnow
+
+    summary = Summary(
+        user_id=1, name="Daily", type_key="app_page",
+        scope_mode="fixed_period", period="day", params={"group_by_tag": False},
+    )
+    db.session.add(summary)
+    db.session.commit()
+
+    _, expected_end = summarize.resolve_range(summary)
+    # Each failure is well past the backoff window, but there are already
+    # MAX_FAILED_ATTEMPTS_PER_PERIOD of them for this exact period.
+    for i in range(MAX_FAILED_ATTEMPTS_PER_PERIOD):
+        db.session.add(SummaryRun(
+            summary_id=summary.id, status="failed", error_message="boom",
+            range_end=expected_end.replace(tzinfo=None),
+            generated_at=(utcnow() - FAILURE_BACKOFF * (i + 2)).replace(tzinfo=None),
+        ))
+    db.session.commit()
+
+    cut = cut_due_editions()
+    assert cut == 0
+    assert SummaryRun.query.filter_by(summary_id=summary.id).count() == MAX_FAILED_ATTEMPTS_PER_PERIOD
+
+
 def test_build_summary_records_run(app, db, sample_items):
     summary = Summary(
         user_id=1, name="Daily", type_key="app_page",
