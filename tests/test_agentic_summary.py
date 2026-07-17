@@ -25,7 +25,7 @@ def keyed_user(db):
     u.set_password("pw")
     db.session.add(u)
     db.session.commit()
-    give_edition_key(db, u, "sk-or-test", "test/model")
+    give_edition_key(db, u, "sk-or-test")
     return u
 
 

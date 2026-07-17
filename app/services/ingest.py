@@ -86,14 +86,19 @@ def default_newsletter_mailbox() -> Source | None:
 
 def _resolve_credentials(source: Source):
     """Returns (api_key_row, secret, model, error_message). error_message is
-    None on success; on failure the other three are None."""
+    None on success; on failure the other three are None. The model is
+    always the system default — see app/config.py's OPENROUTER_MODEL — since
+    per-key model overrides were removed (Settings' "Model" field is the
+    only place model choice lives now, and that's specific to editions)."""
+    from flask import current_app
+
     api_key_row = source.api_key
     if api_key_row is None or not api_key_row.active:
         return None, None, None, "error: no active API key assigned to this source"
     secret = api_key_row.get_key()
     if not secret:
         return None, None, None, "error: assigned API key has no usable credential"
-    return api_key_row, secret, api_key_row.resolved_model(), None
+    return api_key_row, secret, current_app.config.get("OPENROUTER_MODEL"), None
 
 
 def _ingest_plain_source(source: Source) -> dict:
@@ -798,11 +803,13 @@ def reindex_newsletter_mailbox(mailbox: Source) -> dict:
         if len(info["subjects"]) < _REINDEX_EXAMPLE_SUBJECTS:
             info["subjects"].append((subject or "").strip()[:140])
 
+    from flask import current_app
+
     global_key = ApiKey.get_or_create_global()
     secret = global_key.get_key()
     if not secret:
         raise ValueError("The global API key has no usable credential (set OPENROUTER_API_KEY).")
-    model = global_key.resolved_model()
+    model = current_app.config.get("OPENROUTER_MODEL")
 
     usage_totals = {"tokens": 0, "cost": 0.0}
 

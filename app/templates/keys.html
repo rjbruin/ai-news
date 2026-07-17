@@ -26,7 +26,7 @@
 
 <div class="table-responsive shadow-sm mb-4">
   <table class="table bg-white align-middle mb-0">
-    <thead><tr><th>Label</th><th>Model</th><th>Sources</th><th>Usage</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Label</th><th>Sources</th><th>Usage</th><th>Last used</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for k in keys %}
       <tr>
@@ -37,7 +37,6 @@
             <span class="badge text-bg-info">used for editions</span>
           {% endif %}
         </td>
-        <td class="small">{{ k.model or 'system default' }}</td>
         <td class="small">{{ k.sources.count() }}</td>
         <td class="small">{{ k.total_requests }} call(s) · {{ k.total_tokens }} tok · ${{ '%.4f' % k.total_cost }}</td>
         <td class="small">{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else '—' }}</td>
@@ -69,7 +68,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="text-body-secondary">No API keys yet.</td></tr>
+      <tr><td colspan="6" class="text-body-secondary">No API keys yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -81,8 +80,9 @@
     <p class="text-body-secondary small">
       Rough idea of cost with the default model: writing one edition is typically a few cents;
       polling one news source for new items is usually a fraction of a cent. Actual cost depends
-      on the model you pick and how much content there is to process — check OpenRouter's own
-      usage dashboard for exact numbers once you're using a key.
+      on the model set on the <a href="{{ url_for('web.settings') }}">Settings</a> page and how
+      much content there is to process — check OpenRouter's own usage dashboard for exact numbers
+      once you're using a key.
     </p>
     <form method="post" action="{{ url_for('web.api_key_new') }}">
       <div class="mb-3">
@@ -92,11 +92,6 @@
       <div class="mb-3">
         <label class="form-label">OpenRouter API key</label>
         <input type="password" name="secret" class="form-control" autocomplete="off" placeholder="sk-or-..." required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Model override <span class="text-body-secondary small">(optional)</span></label>
-        <input name="model" class="form-control" placeholder="anthropic/claude-haiku-4.5">
-        <div class="form-text">Leave blank to use the system default model.</div>
       </div>
       <button class="btn btn-primary">Add key</button>
     </form>
