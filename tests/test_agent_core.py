@@ -70,6 +70,25 @@ def test_headlines_recent_and_prune(db, agent_user, agent_summary):
     assert memory.prune_headlines(days=7) == 1
 
 
+def test_quick_hits_recent_and_prune(db, agent_user, agent_summary):
+    from datetime import timedelta
+    from app.models import utcnow
+    now = utcnow().replace(tzinfo=None)
+    memory.write_quick_hits(agent_user, agent_summary, now, [{"item_id": 1, "headline": "today's hit"}])
+    memory.write_quick_hits(agent_user, agent_summary, now - timedelta(days=10), [{"item_id": 2, "headline": "old hit"}])
+    recent = memory.recent_quick_hits(agent_user, agent_summary, days=7)
+    assert [r["headline"] for r in recent] == ["today's hit"]
+    assert recent[0]["item_id"] == 1
+    assert memory.prune_quick_hits(days=7) == 1
+
+
+def test_write_quick_hits_noop_when_empty(db, agent_user, agent_summary):
+    from app.models import utcnow
+    row = memory.write_quick_hits(agent_user, agent_summary, utcnow().replace(tzinfo=None), [])
+    assert row is None
+    assert memory.recent_quick_hits(agent_user, agent_summary, days=7) == []
+
+
 def test_reconcile_content_config_rewrites_legacy_types():
     text = (
         "Merge near-duplicates into a single `cluster`. "
@@ -168,10 +187,10 @@ def test_add_block_overrides_sources_from_item_id(session, sample_items):
 def test_add_block_keeps_manual_sources_without_item_id(session, sample_items):
     r = json.loads(tools.dispatch("add_block", {"block": {
         "type": "item", "headline": "h", "subheader": "s", "summary": "x",
-        "sources": ["https://multi-source-story.example"],
+        "sources": ["https://multi-source-story.example/article"],
     }}, session))
     assert r["ok"]
-    assert session.document[0]["sources"][0]["url"] == "https://multi-source-story.example"
+    assert session.document[0]["sources"][0]["url"] == "https://multi-source-story.example/article"
 
 
 def test_update_block_overrides_sources_from_item_id(session, sample_items):
@@ -204,10 +223,29 @@ def test_set_document_overrides_sources_from_item_id(session, sample_items):
 def test_add_block_unresolvable_item_id_keeps_manual_sources(session, sample_items):
     r = json.loads(tools.dispatch("add_block", {"block": {
         "type": "item", "headline": "h", "subheader": "s", "summary": "x",
-        "item_id": 999999, "sources": ["https://fallback.example"],
+        "item_id": 999999, "sources": ["https://fallback.example/article"],
     }}, session))
     assert r["ok"]
-    assert session.document[0]["sources"][0]["url"] == "https://fallback.example"
+    assert session.document[0]["sources"][0]["url"] == "https://fallback.example/article"
+
+
+def test_add_block_more_news_overrides_url_from_item_id(session, sample_items):
+    item = sample_items[0]
+    r = json.loads(tools.dispatch("add_block", {"block": {
+        "type": "more_news",
+        "items": [{"headline": "h", "url": "https://model-typed-wrong-url.example", "item_id": item.id}],
+    }}, session))
+    assert r["ok"]
+    assert session.document[0]["items"][0]["url"] == item.url
+
+
+def test_add_block_more_news_keeps_manual_url_without_item_id(session, sample_items):
+    r = json.loads(tools.dispatch("add_block", {"block": {
+        "type": "more_news",
+        "items": [{"headline": "h", "url": "https://example.com/a-real-article"}],
+    }}, session))
+    assert r["ok"]
+    assert session.document[0]["items"][0]["url"] == "https://example.com/a-real-article"
 
 
 def test_data_tools_scope_and_item(session, sample_items):
@@ -305,6 +343,17 @@ def test_compose_system_prompt_includes_memory(session, agent_user, agent_summar
     assert "PRIOR-TREND-NOTE" in sp
     # defaults were seeded
     assert memory.read(agent_user, agent_summary, "interests")
+
+
+def test_compose_system_prompt_includes_recent_quick_hits(session, agent_user, agent_summary):
+    from app.models import utcnow
+    memory.write_quick_hits(
+        agent_user, agent_summary, utcnow().replace(tzinfo=None),
+        [{"item_id": 7, "headline": "SOME-QUICK-HIT-HEADLINE"}],
+    )
+    sp = prompt.compose_system_prompt(agent_user, agent_summary)
+    assert "RECENT QUICK HITS" in sp
+    assert "SOME-QUICK-HIT-HEADLINE" in sp
 
 
 def test_compose_system_prompt_self_heals_stale_content_config(db, agent_user, agent_summary):

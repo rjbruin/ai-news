@@ -715,6 +715,11 @@ class AgentMemory(db.Model):
       history         — per-summary; running notes for trend-spotting
       headlines       — per-summary, one row per edition (edition_ts set);
                         brief notes on items covered, to avoid duplicate reporting
+      quick_hits      — per-summary, one row per edition (edition_ts set);
+                        system-derived (not agent-written) JSON list of
+                        {item_id, headline} for more_news entries that cited
+                        an in-scope item — lets a later edition see a story
+                        as an escalation candidate (see app.agent.memory)
     """
 
     __tablename__ = "agent_memory"
@@ -724,8 +729,8 @@ class AgentMemory(db.Model):
     summary_id = db.Column(
         db.Integer, db.ForeignKey("summaries.id"), nullable=True, index=True
     )
-    kind = db.Column(db.String(32), nullable=False)  # interests|content_config|history|headlines
-    edition_ts = db.Column(db.DateTime, nullable=True)  # set only for headlines
+    kind = db.Column(db.String(32), nullable=False)  # interests|content_config|history|headlines|quick_hits
+    edition_ts = db.Column(db.DateTime, nullable=True)  # set only for headlines/quick_hits
     content = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)

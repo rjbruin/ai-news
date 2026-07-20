@@ -57,6 +57,9 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
                 pruned = agent_memory.prune_headlines(days=days)
                 if pruned:
                     logger.info("Pruned %d old headline file(s)", pruned)
+                pruned_qh = agent_memory.prune_quick_hits(days=days)
+                if pruned_qh:
+                    logger.info("Pruned %d old quick-hit file(s)", pruned_qh)
                 max_chars = app.config.get("AGENT_HISTORY_MAX_CHARS", 6000)
                 trimmed = agent_memory.prune_history(max_chars=max_chars)
                 if trimmed:

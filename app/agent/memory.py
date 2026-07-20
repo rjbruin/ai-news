@@ -6,6 +6,7 @@ history) have one row per scope; headlines have one row per edition.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import timedelta
 
@@ -122,6 +123,70 @@ def prune_headlines(*, days: int) -> int:
     floor = utcnow().replace(tzinfo=None) - timedelta(days=days)
     n = (
         AgentMemory.query.filter_by(kind="headlines")
+        .filter(AgentMemory.edition_ts < floor)
+        .delete(synchronize_session=False)
+    )
+    if n:
+        db.session.commit()
+    return n
+
+
+# ── Quick hits (one row per edition, system-derived) ───────────────────────
+#
+# Unlike `headlines` (freeform prose the agent writes itself), this is
+# computed by the system from the actual document: every more_news entry
+# that cites an in-scope item_id. It exists so a later edition can be told
+# "this item ran as a quick hit, not a full item" and choose to escalate it
+# — tracking that reliably from the agent's own prose isn't possible, since
+# nothing requires it to mention which items were quick vs. featured.
+
+def write_quick_hits(user, summary, edition_ts, items: list[dict]) -> AgentMemory | None:
+    """Store the QUICK_HITS record for one edition. No-op if there were none."""
+    if not items:
+        return None
+    row = AgentMemory(
+        user_id=user.id,
+        summary_id=summary.id,
+        kind="quick_hits",
+        edition_ts=edition_ts,
+        content=json.dumps(items),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def recent_quick_hits(user, summary, *, days: int) -> list[dict]:
+    """Return quick-hit records from the last ``days`` days, newest first.
+
+    Each record is {item_id, headline, edition_ts}.
+    """
+    floor = utcnow().replace(tzinfo=None) - timedelta(days=days)
+    rows = (
+        AgentMemory.query.filter_by(
+            user_id=user.id, summary_id=summary.id, kind="quick_hits"
+        )
+        .filter(AgentMemory.edition_ts >= floor)
+        .order_by(AgentMemory.edition_ts.desc())
+        .all()
+    )
+    out: list[dict] = []
+    for row in rows:
+        try:
+            items = json.loads(row.content or "[]")
+        except (TypeError, ValueError):
+            continue
+        for it in items:
+            if isinstance(it, dict) and it.get("item_id") is not None:
+                out.append({**it, "edition_ts": row.edition_ts})
+    return out
+
+
+def prune_quick_hits(*, days: int) -> int:
+    """Delete quick_hits rows older than ``days`` days. Returns count removed."""
+    floor = utcnow().replace(tzinfo=None) - timedelta(days=days)
+    n = (
+        AgentMemory.query.filter_by(kind="quick_hits")
         .filter(AgentMemory.edition_ts < floor)
         .delete(synchronize_session=False)
     )
