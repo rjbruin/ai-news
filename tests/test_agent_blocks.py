@@ -59,6 +59,50 @@ def test_bad_enum_rejected():
         validate_document([{"type": "story", "headline": "h", "emphasis": "huge"}])
 
 
+def test_item_sources_drops_bare_homepage_url():
+    """A source URL with no path (e.g. the site's homepage) is almost never
+    the actual article — the agent sometimes guesses it when it doesn't
+    have the real link. Drop it rather than citing something misleading."""
+    doc = validate_document([{
+        "type": "item", "headline": "h", "subheader": "s", "summary": "body",
+        "sources": ["https://theverge.com/", "https://theverge.com", "https://example.com/2026/07/20/real-article"],
+    }])
+    urls = [s["url"] for s in doc[0]["sources"]]
+    assert urls == ["https://example.com/2026/07/20/real-article"]
+
+
+def test_more_news_item_url_drops_bare_homepage():
+    doc = validate_document([{
+        "type": "more_news",
+        "items": [{"headline": "Some update", "url": "https://theverge.com/"}],
+    }])
+    assert doc[0]["items"][0]["url"] == ""
+
+
+def test_more_news_item_carries_item_id():
+    doc = validate_document([{
+        "type": "more_news",
+        "items": [
+            {"headline": "Plain string hit"},
+            {"headline": "Tagged hit", "item_id": 42},
+        ],
+    }])
+    items = doc[0]["items"]
+    assert items[0]["item_id"] is None
+    assert items[1]["item_id"] == 42
+
+
+def test_item_escalated_from_quick_hit_flag():
+    doc = validate_document([{
+        "type": "item", "headline": "h", "subheader": "s", "summary": "body",
+        "escalated_from_quick_hit": True,
+    }])
+    assert doc[0]["escalated_from_quick_hit"] is True
+    # Defaults to False when omitted.
+    doc2 = validate_document([{"type": "item", "headline": "h", "subheader": "s", "summary": "body"}])
+    assert doc2[0]["escalated_from_quick_hit"] is False
+
+
 def test_find_block():
     doc = validate_document([{"type": "divider", "id": "d1"}, {"type": "divider", "id": "d2"}])
     assert find_block(doc, "d2") == 1
@@ -76,12 +120,14 @@ def test_render_html_produces_expected_markup(app):
     assert "<strong>Claude 4</strong>" in html or "<b>Claude 4</b>" in html
 
 
-def test_more_news_headline_is_html_escaped(app):
+def test_more_news_headline_strips_disallowed_markup(app):
     """Regression test: more_news headlines come from agent-generated text,
     which is ultimately derived from attacker-reachable ingested news
     content (see the prompt-injection hardening in app/llm/prompt_safety.py).
-    A headline must never be able to inject markup — it previously bypassed
-    escaping entirely via a stray `| safe` filter."""
+    A headline must never be able to inject a live element or leak an
+    event-handler attribute — disallowed tags are stripped outright (not
+    merely escaped to visible text, and not kept with only some attributes
+    dropped, which `md`/`mdinline` would do since they allow <img>)."""
     doc = validate_document([
         {"type": "more_news", "items": [
             {"headline": "<img src=x onerror=alert(1)>", "url": "https://example.com/x"},
@@ -89,8 +135,23 @@ def test_more_news_headline_is_html_escaped(app):
     ])
     with app.app_context():
         html = render.render_html(doc)
-    assert "<img src=x onerror=alert(1)>" not in html
-    assert "&lt;img src=x onerror=alert(1)&gt;" in html
+    assert "<img" not in html
+    assert "onerror" not in html
+
+
+def test_more_news_headline_renders_emphasis(app):
+    """The bug this guards against: more_news headlines are documented to
+    allow <em>/<strong> for emphasis, but the field had no rendering filter
+    at all, so Jinja's default autoescaping showed the literal tag text
+    instead of bold/italic."""
+    doc = validate_document([
+        {"type": "more_news", "items": [
+            {"headline": "OpenAI ships <strong>GPT-6</strong> today."},
+        ]},
+    ])
+    with app.app_context():
+        html = render.render_html(doc)
+    assert "<strong>GPT-6</strong>" in html
 
 
 def test_quick_hits_renders_inline_html_formatting(app):

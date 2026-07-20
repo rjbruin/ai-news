@@ -42,16 +42,28 @@ channels are handled by the system, not here.
 - Prefer signal over completeness — it is fine to omit low-value items.
 
 ## Citations
-- Set `item.item_id` to the id of the news item you're citing — the system
-  fills in `sources` with that item's real URL automatically. Don't type
-  `sources` by hand for a single-item story; the system's URL always wins
-  over anything typed there.
-- Only set `sources` yourself for a story spanning multiple items with no
+- Set `item.item_id` (or a `more_news` entry's `item_id`) to the id of the
+  news item you're citing — the system fills in the real article URL
+  automatically. Don't type a URL by hand for a single-item story; the
+  system's URL always wins over anything typed there.
+- Only type a URL yourself for a story spanning multiple items with no
   single `item_id` to point at — a list of article URLs, e.g.
   `"sources": ["url1", "url2", …]`. Use `[]` if no URL is available.
+- Always link the actual article, never the site's homepage. If you don't
+  have the specific article URL, leave the URL empty rather than guessing
+  the domain root — a bare homepage link is worse than no link, and the
+  system drops it anyway.
 - For links inside `summary` or `trend.text`, use inline HTML:
   `<a href="https://...">anchor text</a>`.
 - Never use an ingestion mailbox or feed name as a source attribution.
+
+## Quick hits and escalation
+- Tag any `more_news` entry that's about a specific in-scope item with its
+  `item_id`. This gets it a real article link and lets a later edition see
+  it as a quick hit worth watching.
+- Before writing, check RECENT QUICK HITS (below) — if a story has
+  developed further since it last ran as a quick hit, give it a full
+  `item` this time and set `escalated_from_quick_hit: true`.
 """
 
 # ── Static role instructions ────────────────────────────────────────────────
@@ -78,7 +90,7 @@ Structural:
 - divider {}
 
 Content:
-- item { headline, subheader, summary, item_id?, sources?: ["url1","url2",…] }
+- item { headline, subheader, summary, item_id?, sources?: ["url1","url2",…], escalated_from_quick_hit? }
     # headline: plain text — no HTML tags.
     # subheader: plain text — no HTML tags. A short kicker/deck line.
     # summary: HTML allowed for inline formatting (<strong>, <em>) and links
@@ -90,13 +102,26 @@ Content:
     #          fill sources by hand for a multi-item story with no single
     #          item_id — a list of article URLs, each becoming a domain chip
     #          after the headline.
+    # escalated_from_quick_hit: set true only when this item previously ran
+    #          as a more_news entry (see RECENT QUICK HITS below) and you're
+    #          now giving it a full writeup because it grew into something
+    #          more — e.g. more details broke, it turned out to matter more
+    #          than it looked. Leave false/omitted otherwise.
 - trend { headline, text }
     # headline: plain text — no HTML tags.
     # text: HTML allowed for inline formatting and links. No block-level HTML.
-- more_news { items: [ {headline, url?} ] }
+- more_news { items: [ {headline, url?, item_id?} ] }
     # "More news" header is fixed — do not add a title field.
     # headline: HTML allowed for emphasis (<em>, <strong>) only — no links.
-    # url: article URL — the domain appears as a chip automatically.
+    # item_id: set this when the entry is about an in-scope item — the
+    #          system fills in the real article url automatically (same as
+    #          item.item_id) and it lets a future edition recognise this
+    #          topic as a candidate to escalate into a full item.
+    # url: only needed when there's no item_id (e.g. a note that isn't
+    #      about one specific in-scope item). Must be the actual article
+    #      URL, not the site's homepage — a bare domain link (e.g.
+    #      "https://example.com/") gets silently dropped by the system, so
+    #      leave url unset rather than guessing one.
 
 Within HTML-allowed fields use tags, not Markdown syntax:
   bold → <strong>text</strong>   italic → <em>text</em>
@@ -198,6 +223,12 @@ def compose_system_prompt(user, summary) -> str:
         for r in headline_rows
     )
 
+    quick_hits = memory.recent_quick_hits(user, summary, days=retention)
+    quick_hits_text = "\n".join(
+        f"- [{qh['edition_ts']:%Y-%m-%d}] {qh['headline']}" if qh.get("edition_ts") else f"- {qh['headline']}"
+        for qh in quick_hits
+    )
+
     parts = [
         _ROLE,
         _section("READER INTERESTS (INTERESTS.md)", interests),
@@ -215,6 +246,11 @@ def compose_system_prompt(user, summary) -> str:
         _section(
             f"RECENT HEADLINES (last {retention} days — do not re-report)",
             headlines_text,
+        ),
+        _section(
+            f"RECENT QUICK HITS (last {retention} days — ran as more_news, not a "
+            "full item; escalate one today if it's developed further, per Citations above)",
+            quick_hits_text,
         ),
     ]
     return "".join(p for p in parts if p)

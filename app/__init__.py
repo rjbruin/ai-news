@@ -167,6 +167,11 @@ def _prune_agent_headlines(app: Flask) -> None:
             logging.getLogger(__name__).info(
                 "Startup: pruned %d old headline file(s)", pruned
             )
+        pruned_qh = agent_memory.prune_quick_hits(days=days)
+        if pruned_qh:
+            logging.getLogger(__name__).info(
+                "Startup: pruned %d old quick-hit file(s)", pruned_qh
+            )
     except Exception:
         from .extensions import db
         db.session.rollback()
@@ -276,3 +281,19 @@ def register_template_helpers(app: Flask) -> None:
         """Like ``md``, but strips the single wrapping <p> so the result is
         safe to nest inside an inline element (<li>, <a>)."""
         return _render_markdown(text, inline=True)
+
+    @app.template_filter("emphasis_html")
+    def emphasis_html_filter(text):
+        """Sanitize agent-authored text allowing only <em>/<strong> (plus the
+        <b>/<i> aliases) — for fields documented to allow emphasis only, no
+        links or images (e.g. more_news headlines). Unlike ``md``/``mdinline``,
+        this never runs Markdown parsing and never allows <img>, so an
+        injected tag is stripped outright rather than surviving as a live
+        element with its (non-allow-listed) attributes merely dropped."""
+        import bleach
+        from markupsafe import Markup
+
+        if not text:
+            return ""
+        clean = bleach.clean(str(text), tags=["em", "strong", "b", "i"], attributes={}, strip=True)
+        return Markup(clean)

@@ -44,7 +44,7 @@ BLOCK_SCHEMA: dict[str, dict] = {
     # ── Content blocks (current generation — agent uses these) ─────────────
     "item": {
         "required": ["headline", "subheader", "summary"],
-        "optional": {"item_id": None, "sources": []},
+        "optional": {"item_id": None, "sources": [], "escalated_from_quick_hit": False},
         "plain_text": ["headline", "subheader"],
     },
     "trend": {
@@ -124,6 +124,22 @@ def url_domain(url: str | None) -> str:
     return host
 
 
+def _looks_like_article_url(url: str) -> bool:
+    """True for a URL that plausibly points at a specific article rather than
+    a bare homepage (e.g. 'https://theverge.com/' or 'https://theverge.com').
+
+    The agent sometimes hand-types a source it doesn't actually have the
+    article link for, guessing the site's root domain instead — that's
+    misleading (the reader clicks through to the homepage, not the story).
+    Reject anything without a real path so those get dropped rather than
+    rendered as if they were a real citation.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return False
+    return parsed.path not in ("", "/")
+
+
 def _validate_block(block: dict, index: int) -> dict:
     if not isinstance(block, dict):
         raise BlockValidationError(f"Block {index} is not an object.")
@@ -175,9 +191,10 @@ def _validate_block(block: dict, index: int) -> dict:
         normalized: list[dict] = []
         for u in raw:
             if isinstance(u, str) and u.strip():
-                d = url_domain(u.strip())
-                if d and d not in seen_d:
-                    normalized.append({"url": u.strip(), "domain": d})
+                u = u.strip()
+                d = url_domain(u)
+                if d and d not in seen_d and _looks_like_article_url(u):
+                    normalized.append({"url": u, "domain": d})
                     seen_d.add(d)
         clean["sources"] = normalized
 
@@ -194,21 +211,28 @@ def _validate_block(block: dict, index: int) -> dict:
         sources: list[dict] = []
         for u in url_list:
             d = url_domain(u)
-            if d and d not in seen_domains:
+            if d and d not in seen_domains and _looks_like_article_url(u):
                 sources.append({"url": u, "domain": d})
                 seen_domains.add(d)
         clean["sources"] = sources
         clean["url"] = sources[0]["url"] if sources else ""
         clean["source"] = sources[0]["domain"] if sources else ""
 
-    # more_news.items: list of {headline, url?}
+    # more_news.items: list of {headline, url?, item_id?}
     if btype == "more_news":
         norm = []
         for it in clean.get("items") or []:
             if isinstance(it, str):
-                norm.append({"headline": it, "url": ""})
+                norm.append({"headline": it, "url": "", "item_id": None})
             elif isinstance(it, dict) and it.get("headline"):
-                norm.append({"headline": it["headline"], "url": it.get("url", "")})
+                url = it.get("url", "")
+                if url and not _looks_like_article_url(url):
+                    url = ""  # bare homepage guess, not a real article link
+                norm.append({
+                    "headline": it["headline"],
+                    "url": url,
+                    "item_id": it.get("item_id"),
+                })
         if not norm:
             raise BlockValidationError(
                 f"Block {index} (more_news) needs a non-empty items list."

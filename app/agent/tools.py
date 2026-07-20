@@ -133,16 +133,36 @@ def _apply_item_sources(session: AgentSession, block: dict) -> dict:
     already sees each item's real url via list_scope_items/get_item; this
     removes any need (and cost/risk of a typo or hallucinated link) for it
     to retype the URL by hand. Blocks with no item_id (e.g. a story
-    spanning multiple sources) keep whatever sources the model supplied."""
+    spanning multiple sources) keep whatever sources the model supplied.
+
+    Also covers more_news: any entry tagged with item_id gets its url
+    forced the same way, so a quick hit citing a real in-scope item never
+    ends up linking to a guessed homepage instead of the article."""
     _require_dict(block, "block")
-    if block.get("type") != "item":
+    if block.get("type") == "item":
+        item_id = block.get("item_id")
+        if item_id is None:
+            return block
+        item = session.item_by_id(item_id)
+        if item is not None and item.url:
+            block = {**block, "sources": [item.url]}
         return block
-    item_id = block.get("item_id")
-    if item_id is None:
+    if block.get("type") == "more_news":
+        items = block.get("items")
+        if not isinstance(items, list):
+            return block
+        new_items = []
+        changed = False
+        for it in items:
+            if isinstance(it, dict) and it.get("item_id") is not None:
+                item = session.item_by_id(it["item_id"])
+                if item is not None and item.url and it.get("url") != item.url:
+                    it = {**it, "url": item.url}
+                    changed = True
+            new_items.append(it)
+        if changed:
+            block = {**block, "items": new_items}
         return block
-    item = session.item_by_id(item_id)
-    if item is not None and item.url:
-        block = {**block, "sources": [item.url]}
     return block
 
 

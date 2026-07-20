@@ -37,6 +37,7 @@
   <article class="agentic-item mb-3">
     <h3 class="an-h3 mb-0">
       {{ block.headline }}
+      {%- if block.escalated_from_quick_hit %}<span class="badge text-bg-light border text-body-secondary ms-1" title="Previously covered as a quick hit">↑ escalated</span>{% endif -%}
       {%- for src in (block.sources or []) %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
     </h3>
     <p class="agentic-item__subheader mb-1">{{ block.subheader }}</p>
@@ -55,7 +56,7 @@
     <ul>
       {% for it in block['items'] %}
       <li>
-        <span>{{ it.headline }}</span>
+        <span>{{ it.headline | emphasis_html }}</span>
         {%- if it.url %}<a href="{{ it.url }}" class="story-source" target="_blank" rel="noopener">{{ it.url | url_domain }}</a>{% endif %}
       </li>
       {% endfor %}

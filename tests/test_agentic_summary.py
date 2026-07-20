@@ -53,7 +53,7 @@ def _scripted_chat():
                     {"type": "edition_header", "title": "AI Daily", "date": "Monday June 29"},
                     {"type": "intro", "markdown": "A busy day in AI."},
                     {"type": "story", "headline": "Big release", "dek": "It shipped.",
-                     "emphasis": "lead", "url": "https://x.test"},
+                     "emphasis": "lead", "url": "https://x.test/article"},
                 ]})},
             }], "_usage": {"total_tokens": 200, "cost": 0.001}}
         if state["n"] == 2:
@@ -83,7 +83,7 @@ def test_build_agentic_summary_end_to_end(monkeypatch, db, keyed_user, agentic_s
     assert run.document is not None
     assert any(b["type"] == "edition_header" for b in run.document)
     assert "AI Daily" in run.content
-    assert 'href="https://x.test"' in run.content
+    assert 'href="https://x.test/article"' in run.content
     assert run.revision == 1
     assert run.parent_run_id is None
 
@@ -143,6 +143,47 @@ def test_build_agentic_summary_wires_item_topics_into_agent_session(
     summarize.build_summary(agentic_summary, record_run=True)
 
     assert captured["item_tags"].get(item.id) == ["Robotics"]
+
+
+def test_build_agentic_summary_persists_quick_hits(monkeypatch, db, keyed_user, agentic_summary):
+    """Quick hits (more_news entries tagged with an item_id) are recorded as
+    their own memory record after the edition is saved, distinct from the
+    freeform `headlines` notes the agent writes itself — this is what lets a
+    later edition see "this ran as a quick hit, not a full item" and decide
+    whether to escalate it."""
+    from datetime import timedelta
+    from app.models import NewsItem, utcnow
+
+    now = utcnow()
+    agentic_summary.params = {
+        **(agentic_summary.params or {}),
+        "range_start": (now - timedelta(days=1)).isoformat(),
+        "range_end": (now + timedelta(days=1)).isoformat(),
+    }
+    db.session.commit()
+
+    item = NewsItem(
+        dedup_hash=NewsItem.make_hash("Minor update", "http://x/minor"),
+        title="Minor update", url="http://x/minor", summary_text="Small news.",
+    )
+    db.session.add(item)
+    db.session.commit()
+
+    document = [
+        {"type": "edition_header", "title": "AI Daily"},
+        {"type": "more_news", "items": [
+            {"headline": "Minor update", "item_id": item.id},
+            {"headline": "No item behind this one"},
+        ]},
+    ]
+    monkeypatch.setattr("app.agent.runner.run_agent", lambda session, **kw: document)
+
+    summarize.build_summary(agentic_summary, record_run=True)
+
+    rows = memory.recent_quick_hits(keyed_user, agentic_summary, days=7)
+    assert len(rows) == 1
+    assert rows[0]["item_id"] == item.id
+    assert rows[0]["headline"] == "Minor update"
 
 
 def test_build_agentic_without_key_raises(monkeypatch, db, agentic_summary):

@@ -260,6 +260,16 @@ def build_summary(
                 summary.user, summary, run.generated_at, pending_headlines
             )
 
+        if document:
+            from ..agent import memory as agent_memory
+            quick_hits = [
+                {"item_id": it["item_id"], "headline": it["headline"]}
+                for block in document if block.get("type") == "more_news"
+                for it in (block.get("items") or [])
+                if isinstance(it, dict) and it.get("item_id") is not None
+            ]
+            agent_memory.write_quick_hits(summary.user, summary, run.generated_at, quick_hits)
+
     if mark_consumed:
         summary.last_consumed_at = utcnow()
     db.session.commit()
