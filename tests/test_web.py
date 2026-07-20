@@ -26,9 +26,11 @@ def test_index_sources_header_links_to_register(client):
     assert "Sources already being tracked" in html
 
 
-def test_index_shows_admin_shared_edition_demo(client, db, admin):
+def test_index_shows_rjbruin_shared_edition_demo(client, db, admin):
     from app.models import Summary, SummaryRun
 
+    admin.username = "rjbruin"
+    db.session.commit()
     summary = Summary(
         user_id=admin.id, name="Admin Daily", type_key="agentic_page",
         scope_mode="fixed_period", period="day", params={},
@@ -49,18 +51,45 @@ def test_index_shows_admin_shared_edition_demo(client, db, admin):
     assert b"Create" not in resp.data  # no podcast/PDF create dropdown leaking in
 
 
-def test_index_does_not_show_non_admin_shared_edition(client, db, user):
+def test_index_does_not_show_non_rjbruin_shared_edition(client, db, user, admin):
+    """Only rjbruin's shared editions may feature on the homepage — not just
+    any admin's, and not any other user's."""
     from app.models import Summary, SummaryRun
 
+    for owner in (user, admin):
+        summary = Summary(
+            user_id=owner.id, name=f"{owner.username} Daily", type_key="agentic_page",
+            scope_mode="fixed_period", period="day", params={},
+        )
+        db.session.add(summary)
+        db.session.commit()
+        run = SummaryRun(
+            summary_id=summary.id, document=[{"type": "intro", "markdown": "Hi."}],
+            share_token=f"{owner.username}-token",
+        )
+        db.session.add(run)
+        db.session.commit()
+
+    resp = client.get("/")
+    assert b"A recent edition" not in resp.data
+
+
+def test_index_does_not_show_rjbruin_unshared_edition(client, db, admin):
+    """share_token stays a required, explicit opt-in — being rjbruin isn't
+    enough on its own; the edition must have actually been shared."""
+    from app.models import Summary, SummaryRun
+
+    admin.username = "rjbruin"
+    db.session.commit()
     summary = Summary(
-        user_id=user.id, name="User Daily", type_key="agentic_page",
+        user_id=admin.id, name="Admin Daily", type_key="agentic_page",
         scope_mode="fixed_period", period="day", params={},
     )
     db.session.add(summary)
     db.session.commit()
     run = SummaryRun(
         summary_id=summary.id, document=[{"type": "intro", "markdown": "Hi."}],
-        share_token="user-token-456",
+        share_token=None,
     )
     db.session.add(run)
     db.session.commit()

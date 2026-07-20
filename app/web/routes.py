@@ -116,17 +116,14 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for("web.dashboard"))
 
-    admin_emails = current_app.config.get("ADMIN_EMAILS", [])
-    demo_run = None
-    if admin_emails:
-        demo_run = (
-            SummaryRun.query
-            .join(Summary, SummaryRun.summary_id == Summary.id)
-            .join(User, Summary.user_id == User.id)
-            .filter(SummaryRun.share_token.isnot(None), User.email.in_(admin_emails))
-            .order_by(SummaryRun.generated_at.desc())
-            .first()
-        )
+    demo_run = (
+        SummaryRun.query
+        .join(Summary, SummaryRun.summary_id == Summary.id)
+        .join(User, Summary.user_id == User.id)
+        .filter(SummaryRun.share_token.isnot(None), User.username == "rjbruin")
+        .order_by(SummaryRun.generated_at.desc())
+        .first()
+    )
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
