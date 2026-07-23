@@ -11,35 +11,10 @@
   </div>
 </form>
 
-{% if not my_summaries %}
+{% if not subscribed_summary %}
 <div class="card shadow-sm">
   <div class="card-body text-center py-5">
-    <p class="text-body-secondary mb-0">No edition configuration found. Ask an admin to set one up.</p>
-  </div>
-</div>
-
-{% elif not featured_summary %}
-<div class="card shadow-sm mb-4">
-  <div class="card-body">
-    <h2 class="h5">Choose an edition type to feature</h2>
-    <p class="text-body-secondary small mb-3">
-      Pick the edition type to show prominently on this dashboard.
-    </p>
-    <div class="row g-3">
-      {% for s in my_summaries %}
-      <div class="col-sm-6 col-lg-4">
-        <form method="post" action="{{ url_for('web.dashboard_feature') }}">
-          <input type="hidden" name="summary_id" value="{{ s.id }}">
-          <div class="card h-100">
-            <div class="card-body d-flex flex-column">
-              <span class="fw-semibold">{{ s.name }}</span>
-              <button class="btn btn-sm btn-primary mt-auto">Feature this</button>
-            </div>
-          </div>
-        </form>
-      </div>
-      {% endfor %}
-    </div>
+    <p class="text-body-secondary mb-0">No Dispatch configured yet. Ask an admin to set up the System Dispatch.</p>
   </div>
 </div>
 
@@ -49,40 +24,61 @@
     <div class="d-flex justify-content-between align-items-start mb-2">
       <span class="text-body-secondary small fw-semibold d-flex align-items-center gap-2">
         <span style="width:8px;height:8px;border-radius:2px;background:var(--ag-teal);display:inline-block"></span>
-        Your most recent edition
+        {% if is_own %}Your Dispatch{% elif subscribed_summary.is_system_dispatch %}Reading: System Dispatch{% else %}Reading: {{ subscribed_summary.user.username }}'s Dispatch{% endif %}
       </span>
       {% if my_summaries|length > 1 %}
       <a href="#choose-featured" class="small" data-bs-toggle="collapse">Change</a>
       {% endif %}
     </div>
-    {% if featured_run %}
+    {% if subscribed_run %}
       <h1 class="h3 mb-1">
-        {{ featured_run.label or featured_run.generated_at.strftime('%Y-%m-%d %H:%M') }}
-        {% if featured_run.read_at %}
+        {{ subscribed_run.label or subscribed_run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if subscribed_run.read_at %}
         <i class="fa-regular fa-envelope-open text-body-secondary ms-2" title="Read"></i>
         {% else %}
         <i class="fa-solid fa-envelope text-primary ms-2" title="Unread"></i>
         {% endif %}
       </h1>
       <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
-        <span class="pill pill-teal">{{ featured_run.generated_at | natural_dt }}</span>
-        {% if featured_coverage %}
-        <span class="pill pill-blue">{{ featured_coverage.included_count }}/{{ featured_coverage.scope_count }} stories covered</span>
+        <span class="pill pill-teal">{{ subscribed_run.generated_at | natural_dt }}</span>
+        {% if subscribed_coverage %}
+        <span class="pill pill-blue">{{ subscribed_coverage.included_count }}/{{ subscribed_coverage.scope_count }} stories covered</span>
         {% else %}
-        <span class="pill pill-blue">{{ featured_run.item_count }} item{{ 's' if featured_run.item_count != 1 else '' }}</span>
+        <span class="pill pill-blue">{{ subscribed_run.item_count }} item{{ 's' if subscribed_run.item_count != 1 else '' }}</span>
         {% endif %}
-        {% if featured_run.agent_cost is not none %}
-        <span class="pill pill-amber" title="Generation cost">${{ '%.4f' % featured_run.agent_cost }}</span>
+        {% if is_own and subscribed_run.agent_cost is not none %}
+        <span class="pill pill-amber" title="Generation cost">${{ '%.4f' % subscribed_run.agent_cost }}</span>
         {% endif %}
-        <span title="Channels">{{ channel_icons(featured_run) }}</span>
+        <span title="Channels">{{ channel_icons(subscribed_run) }}</span>
       </div>
-      <a href="{{ url_for('web.edition_view', summary_id=featured_summary.id, run_id=featured_run.id) }}"
+      <a href="{{ url_for('web.edition_view', summary_id=subscribed_summary.id, run_id=subscribed_run.id) }}"
          class="btn btn-primary">Open</a>
+    {% elif is_own %}
+      <p class="text-body-secondary fst-italic mb-3">No editions generated yet.</p>
+      <a href="{{ url_for('web.generate_debug', summary_id=subscribed_summary.id) }}"
+         class="btn btn-primary">Generate first edition</a>
     {% else %}
       <p class="text-body-secondary fst-italic mb-3">No editions generated yet.</p>
-      <a href="{{ url_for('web.generate_debug', summary_id=featured_summary.id) }}"
-         class="btn btn-primary">Generate first edition</a>
     {% endif %}
+
+    <div class="mt-3 pt-3 border-top d-flex flex-wrap gap-2">
+      {% if system_dispatch and subscribed_summary.id != system_dispatch.id %}
+      <form method="post" action="{{ url_for('web.dispatch_subscribe') }}">
+        <input type="hidden" name="summary_id" value="{{ system_dispatch.id }}">
+        <button class="btn btn-sm btn-outline-secondary">Switch to System Dispatch</button>
+      </form>
+      {% endif %}
+      {% if own_summary and subscribed_summary.id != own_summary.id %}
+      <form method="post" action="{{ url_for('web.dispatch_subscribe') }}">
+        <input type="hidden" name="summary_id" value="{{ own_summary.id }}">
+        <button class="btn btn-sm btn-outline-secondary">Switch to my Dispatch</button>
+      </form>
+      {% elif not own_summary %}
+      <form method="post" action="{{ url_for('web.dispatch_own') }}">
+        <button class="btn btn-sm btn-outline-primary">Set up my own Dispatch</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 </div>
 
@@ -90,18 +86,18 @@
 <div class="collapse mb-4" id="choose-featured">
   <div class="card shadow-sm">
     <div class="card-body">
-      <h2 class="h6">Feature a different edition type</h2>
+      <h2 class="h6">Feature one of your own Dispatches</h2>
       <div class="row g-3">
         {% for s in my_summaries %}
         <div class="col-sm-6 col-lg-4">
-          <form method="post" action="{{ url_for('web.dashboard_feature') }}">
+          <form method="post" action="{{ url_for('web.dispatch_subscribe') }}">
             <input type="hidden" name="summary_id" value="{{ s.id }}">
-            <div class="card h-100 {{ 'border-primary' if s.id == featured_summary.id else '' }}">
+            <div class="card h-100 {{ 'border-primary' if s.id == subscribed_summary.id else '' }}">
               <div class="card-body d-flex flex-column">
                 <span class="fw-semibold">{{ s.name }}</span>
                 <button class="btn btn-sm btn-outline-primary mt-auto"
-                        {{ 'disabled' if s.id == featured_summary.id else '' }}>
-                  {{ 'Featured' if s.id == featured_summary.id else 'Feature this' }}
+                        {{ 'disabled' if s.id == subscribed_summary.id else '' }}>
+                  {{ 'Current' if s.id == subscribed_summary.id else 'Switch to this' }}
                 </button>
               </div>
             </div>

@@ -14,7 +14,7 @@ from flask import (
 from flask_login import current_user, login_user, logout_user
 
 from ..extensions import db
-from ..models import AdminSettings, EditionRecipient, Invite, User, utcnow
+from ..models import AdminSettings, EditionRecipient, Invite, Summary, User, utcnow
 from . import tokens
 from .email_utils import send_email
 from .forms import LoginForm, MagicLinkForm, RegisterForm
@@ -85,9 +85,11 @@ def register():
 
             # New signups skip the changelog for the version they just joined
             # on — onboarding already covers "what's new to you".
+            system_dispatch = Summary.get_system_dispatch()
             user = User(
                 username=form.username.data.strip(), email=email,
                 last_seen_version=get_version(),
+                subscribed_summary_id=system_dispatch.id if system_dispatch else None,
             )
             if form.password.data:
                 user.set_password(form.password.data)

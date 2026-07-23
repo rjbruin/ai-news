@@ -87,6 +87,8 @@ def index():
         cost_summary=costs.cost_summary(),
         invites=Invite.query.order_by(Invite.created_at.desc()).all(),
         retag_state=retag_registry.snapshot(),
+        dispatches=Summary.query.filter_by(type_key="agentic_page")
+        .order_by(Summary.created_at).all(),
     )
 
 
@@ -542,6 +544,21 @@ def user_podcast_access(user_id: int):
         "success",
     )
     return redirect(url_for("admin.index"))
+
+
+@bp.route("/dispatches/<int:summary_id>/make-system", methods=["POST"])
+@admin_required
+def dispatch_make_system(summary_id: int):
+    """Mark a Summary as the System Dispatch every new user is subscribed to
+    by default. At most one at a time — unsets any previous holder."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.type_key != "agentic_page":
+        abort(404)
+    Summary.query.filter_by(is_system_dispatch=True).update({"is_system_dispatch": False})
+    summary.is_system_dispatch = True
+    db.session.commit()
+    flash(f'"{summary.name}" ({summary.user.username}) is now the System Dispatch.', "success")
+    return redirect(url_for("admin.index") + "#users")
 
 
 @bp.route("/settings", methods=["POST"])

@@ -16,6 +16,7 @@
   this page.
 </p>
 
+{% if is_own %}
 <div class="form-check form-switch mb-4">
   <input class="form-check-input" type="checkbox" role="switch" id="auto-toggle"
          {{ 'checked' if auto_generate_on_release else '' }}>
@@ -23,9 +24,14 @@
     Auto-generate the podcast whenever a new edition is released
   </label>
 </div>
+{% endif %}
 
 <div id="phase-start" class="d-none">
+  {% if is_own %}
   <button id="btn-generate-script" class="btn btn-primary">Generate podcast script</button>
+  {% else %}
+  <p class="text-body-secondary small mb-0">No podcast has been generated for this edition yet.</p>
+  {% endif %}
 </div>
 
 <div id="phase-generating" class="d-none">
@@ -45,6 +51,7 @@
   </div>
 </div>
 
+{% if is_own %}
 <div id="phase-review" class="d-none">
   <p class="text-body-secondary small mb-2">
     Review and edit the script before generating audio.
@@ -75,13 +82,16 @@
     <button id="btn-revise" class="btn btn-outline-secondary">Revise script</button>
   </div>
 </div>
+{% endif %}
 
 <div id="phase-audio" class="d-none">
   <audio controls class="w-100 mb-3" id="audio-player"></audio>
   <div class="d-flex gap-2 flex-wrap">
     <a id="download-link" class="btn btn-outline-secondary" download>Download MP3</a>
+    {% if is_own %}
     <button class="btn btn-outline-secondary" id="btn-back-to-review">Edit script</button>
     <button class="btn btn-outline-secondary" id="btn-regenerate-audio">Regenerate audio</button>
+    {% endif %}
   </div>
 </div>
 
@@ -100,6 +110,7 @@ const SET_AUTO_URL    = {{ url_for('web.edition_podcast_set_auto', summary_id=su
 const SAVED_SCRIPT    = {{ saved_script | tojson }};
 const SAVED_AUDIO_URL = {{ saved_audio_url | tojson }};
 const ACTIVE_KIND     = {{ active_kind | tojson }};
+const IS_OWN          = {{ is_own | tojson }};
 
 const phaseStart      = document.getElementById('phase-start');
 const phaseGenerating = document.getElementById('phase-generating');
@@ -227,7 +238,9 @@ function restoreFromSaved() {
   if (SAVED_AUDIO_URL) {
     fullScript = SAVED_SCRIPT; scriptText.value = SAVED_SCRIPT;
     showAudio(SAVED_AUDIO_URL);
-  } else if (SAVED_SCRIPT) {
+  } else if (SAVED_SCRIPT && IS_OWN) {
+    // A subscriber (read-only) can't act on an in-progress script with no
+    // audio yet, so treat it the same as "nothing generated" for them.
     fullScript = SAVED_SCRIPT; scriptText.value = SAVED_SCRIPT;
     showReview();
   } else {
@@ -244,39 +257,43 @@ if (ACTIVE_KIND) {
   restoreFromSaved();
 }
 
-document.getElementById('btn-generate-script').addEventListener('click', function() {
-  startJob('script', null);
-});
+// Every control below is a generate/edit action, absent from the DOM for a
+// read-only (subscribed, non-owner) viewer — see the is_own template gates.
+if (IS_OWN) {
+  document.getElementById('btn-generate-script').addEventListener('click', function() {
+    startJob('script', null);
+  });
 
-document.getElementById('btn-generate').addEventListener('click', function() {
-  const script = scriptText.value.trim();
-  if (!script) return;
-  saveScript(script).then(() => startJob('audio', null));
-});
+  document.getElementById('btn-generate').addEventListener('click', function() {
+    const script = scriptText.value.trim();
+    if (!script) return;
+    saveScript(script).then(() => startJob('audio', null));
+  });
 
-document.getElementById('btn-back-to-review').addEventListener('click', showReview);
+  document.getElementById('btn-back-to-review').addEventListener('click', showReview);
 
-document.getElementById('btn-regenerate-audio').addEventListener('click', function() {
-  const script = scriptText.value.trim() || fullScript;
-  if (!script) return;
-  saveScript(script).then(() => startJob('audio', null));
-});
+  document.getElementById('btn-regenerate-audio').addEventListener('click', function() {
+    const script = scriptText.value.trim() || fullScript;
+    if (!script) return;
+    saveScript(script).then(() => startJob('audio', null));
+  });
 
-document.getElementById('btn-revise').addEventListener('click', function() {
-  const feedback = document.getElementById('feedback-text').value.trim();
-  if (!feedback) return;
-  const script = scriptText.value.trim();
-  saveScript(script).then(() => startJob('revise', feedback));
-});
+  document.getElementById('btn-revise').addEventListener('click', function() {
+    const feedback = document.getElementById('feedback-text').value.trim();
+    if (!feedback) return;
+    const script = scriptText.value.trim();
+    saveScript(script).then(() => startJob('revise', feedback));
+  });
+
+  document.getElementById('auto-toggle').addEventListener('change', function() {
+    fetch(SET_AUTO_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: this.checked}),
+    }).catch(() => {});
+  });
+}
 
 document.getElementById('btn-retry').addEventListener('click', restoreFromSaved);
-
-document.getElementById('auto-toggle').addEventListener('change', function() {
-  fetch(SET_AUTO_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({enabled: this.checked}),
-  }).catch(() => {});
-});
 </script>
 {% endblock %}

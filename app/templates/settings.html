@@ -7,6 +7,7 @@
 
 <div class="col-lg-3 d-none d-lg-block">
   <nav id="settings-nav" class="nav flex-column position-sticky" style="top:5rem">
+    <a class="nav-link px-2 py-1" href="#sec-dispatch">Dispatch</a>
     {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
     {% endif %}
@@ -30,6 +31,56 @@
 
 <div class="col-lg-9">
 <form method="post">
+
+<div class="card shadow-sm mb-4" id="sec-dispatch" style="scroll-margin-top:5rem">
+  <div class="card-header fw-semibold">Dispatch</div>
+  <div class="card-body">
+    <p class="text-body-secondary small">
+      Your Dispatch is the recurring AI-written edition you read — each generated
+      issue is an edition. Read the <strong>System Dispatch</strong>, curated and
+      paid for by the admin, or bring your own OpenRouter API key to run a
+      <strong>custom Dispatch</strong> of your own, tuned to your interests.
+    </p>
+    <p class="mb-3">
+      Currently reading:
+      <strong>
+        {%- if not subscribed_summary %} nothing yet
+        {%- elif subscribed_summary.user_id == current_user.id %} your own Dispatch
+        {%- elif subscribed_summary.is_system_dispatch %} the System Dispatch
+        {%- else %} {{ subscribed_summary.user.username }}'s Dispatch
+        {%- endif %}
+      </strong>
+    </p>
+    {% if not summary %}
+    <button type="submit" form="dispatch-own-form" class="btn btn-primary btn-sm mb-3">Set up my own Dispatch</button>
+    {% endif %}
+    <div class="table-responsive">
+      <table class="table bg-white align-middle mb-0">
+        <thead><tr><th>Dispatch</th><th>Owner</th><th></th></tr></thead>
+        <tbody>
+        {% for d in dispatches %}
+          <tr>
+            <td>{{ d.name }}</td>
+            <td class="small">
+              {{ d.user.username }}
+              {%- if d.is_system_dispatch %} <span class="badge text-bg-secondary">System</span>{% endif %}
+            </td>
+            <td class="text-nowrap">
+              {% if subscribed_summary and d.id == subscribed_summary.id %}
+              <button class="btn btn-sm btn-outline-secondary" disabled>Current</button>
+              {% else %}
+              <button class="btn btn-sm btn-outline-primary" form="dispatch-sub-form-{{ d.id }}">Subscribe</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3" class="text-body-secondary">No Dispatches available yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
 {% if summary %}
   {% set cur_cls = types.get(summary.type_key) %}
@@ -344,6 +395,12 @@
 
 </form>
 
+<form id="dispatch-own-form" method="post" action="{{ url_for('web.dispatch_own') }}"></form>
+{% for d in dispatches %}
+<form id="dispatch-sub-form-{{ d.id }}" method="post" action="{{ url_for('web.dispatch_subscribe') }}">
+  <input type="hidden" name="summary_id" value="{{ d.id }}">
+</form>
+{% endfor %}
 <form id="regen-feed-form" method="post"
       action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
 <form id="api-key-new-form" method="post" action="{{ url_for('web.api_key_new') }}"></form>

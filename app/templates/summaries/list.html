@@ -4,8 +4,40 @@
 {% block content %}
 <h1 class="h3 mb-4">Editions</h1>
 
-{% if not summaries %}
+{% if not summaries and not subscribed_editions %}
 <p class="text-body-secondary">No edition configuration found.</p>
+{% endif %}
+
+{% if subscribed_summary and subscribed_editions is not none %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header">
+    <span class="fw-semibold">{{ subscribed_summary.user.username }}'s Dispatch</span>
+    <span class="text-body-secondary small">— read only</span>
+  </div>
+  {% if subscribed_editions %}
+  <div class="list-group list-group-flush">
+    {% for run in subscribed_editions %}
+    <div class="list-group-item hover-lift d-flex align-items-center gap-2 py-2">
+      {% if not run.read_at %}
+      <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
+      {% endif %}
+      <a href="{{ url_for('web.edition_view', summary_id=subscribed_summary.id, run_id=run.id) }}"
+         class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</a>
+      {% if run.status == 'failed' %}
+      <span class="pill pill-coral">Failed</span>
+      {% else %}
+      <span class="pill pill-blue">{{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}</span>
+      {% endif %}
+      <span class="small">{{ channel_icons(run) }}</span>
+      <a href="{{ url_for('web.edition_view', summary_id=subscribed_summary.id, run_id=run.id) }}"
+         class="btn btn-sm btn-outline-primary">Open</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card-body text-body-secondary small fst-italic">No editions yet.</div>
+  {% endif %}
+</div>
 {% endif %}
 
 {% for s in summaries %}
