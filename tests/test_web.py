@@ -26,14 +26,12 @@ def test_index_sources_header_links_to_register(client):
     assert "Sources already being tracked" in html
 
 
-def test_index_shows_rjbruin_shared_edition_demo(client, db, admin):
+def test_index_shows_system_dispatch_shared_edition_demo(client, db, admin):
     from app.models import Summary, SummaryRun
 
-    admin.username = "rjbruin"
-    db.session.commit()
     summary = Summary(
         user_id=admin.id, name="Admin Daily", type_key="agentic_page",
-        scope_mode="fixed_period", period="day", params={},
+        scope_mode="fixed_period", period="day", params={}, is_system_dispatch=True,
     )
     db.session.add(summary)
     db.session.commit()
@@ -51,9 +49,9 @@ def test_index_shows_rjbruin_shared_edition_demo(client, db, admin):
     assert b"Create" not in resp.data  # no podcast/PDF create dropdown leaking in
 
 
-def test_index_does_not_show_non_rjbruin_shared_edition(client, db, user, admin):
-    """Only rjbruin's shared editions may feature on the homepage — not just
-    any admin's, and not any other user's."""
+def test_index_does_not_show_non_system_dispatch_shared_edition(client, db, user, admin):
+    """Only the system dispatch's shared editions may feature on the homepage
+    — not just any admin's, and not any other user's."""
     from app.models import Summary, SummaryRun
 
     for owner in (user, admin):
@@ -74,16 +72,14 @@ def test_index_does_not_show_non_rjbruin_shared_edition(client, db, user, admin)
     assert b"A recent edition" not in resp.data
 
 
-def test_index_does_not_show_rjbruin_unshared_edition(client, db, admin):
-    """share_token stays a required, explicit opt-in — being rjbruin isn't
-    enough on its own; the edition must have actually been shared."""
+def test_index_does_not_show_system_dispatch_unshared_edition(client, db, admin):
+    """share_token stays a required, explicit opt-in — being the system
+    dispatch isn't enough on its own; the edition must have actually been shared."""
     from app.models import Summary, SummaryRun
 
-    admin.username = "rjbruin"
-    db.session.commit()
     summary = Summary(
         user_id=admin.id, name="Admin Daily", type_key="agentic_page",
-        scope_mode="fixed_period", period="day", params={},
+        scope_mode="fixed_period", period="day", params={}, is_system_dispatch=True,
     )
     db.session.add(summary)
     db.session.commit()
@@ -441,7 +437,7 @@ def test_dashboard_shows_coverage_and_cost_badges_for_featured_run(
     _, _, run = summarize.build_summary(summary, record_run=True)
     assert run is not None
 
-    user.featured_summary_id = summary.id
+    user.subscribed_summary_id = summary.id
     db.session.commit()
 
     resp = auth_client.get("/dashboard")

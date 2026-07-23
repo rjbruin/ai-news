@@ -116,14 +116,16 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for("web.dashboard"))
 
-    demo_run = (
-        SummaryRun.query
-        .join(Summary, SummaryRun.summary_id == Summary.id)
-        .join(User, Summary.user_id == User.id)
-        .filter(SummaryRun.share_token.isnot(None), User.username == "rjbruin")
-        .order_by(SummaryRun.generated_at.desc())
-        .first()
-    )
+    demo_run = None
+    system_dispatch = Summary.get_system_dispatch()
+    if system_dispatch:
+        demo_run = (
+            SummaryRun.query
+            .filter_by(summary_id=system_dispatch.id)
+            .filter(SummaryRun.share_token.isnot(None))
+            .order_by(SummaryRun.generated_at.desc())
+            .first()
+        )
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
@@ -161,18 +163,35 @@ def dashboard():
         for s in my_summaries
     }
 
-    featured_summary = current_user.featured_summary
-    if featured_summary and featured_summary.user_id != current_user.id:
-        featured_summary = None
-    featured_run = latest_editions.get(featured_summary.id) if featured_summary else None
+    # Lazily self-heal a missing subscription (e.g. an existing account from
+    # before this feature, or the system dispatch having just been set up)
+    # onto the system dispatch, rather than a one-off data migration guessing.
+    system_dispatch = Summary.get_system_dispatch()
+    if not current_user.subscribed_summary_id and system_dispatch:
+        current_user.subscribed_summary_id = system_dispatch.id
+        db.session.commit()
+
+    subscribed_summary = current_user.subscribed_summary
+    is_own = bool(subscribed_summary and subscribed_summary.user_id == current_user.id)
+    if subscribed_summary and subscribed_summary.id in latest_editions:
+        subscribed_run = latest_editions[subscribed_summary.id]
+    elif subscribed_summary:
+        subscribed_run = (
+            SummaryRun.query
+            .filter_by(summary_id=subscribed_summary.id)
+            .order_by(SummaryRun.generated_at.desc())
+            .first()
+        )
+    else:
+        subscribed_run = None
     other_summaries = [
-        s for s in my_summaries if not featured_summary or s.id != featured_summary.id
+        s for s in my_summaries if not subscribed_summary or s.id != subscribed_summary.id
     ]
 
-    featured_coverage = None
-    if featured_run and featured_run.document:
+    subscribed_coverage = None
+    if subscribed_run and subscribed_run.document:
         from ..services.coverage import edition_coverage
-        featured_coverage = edition_coverage(featured_run)
+        subscribed_coverage = edition_coverage(subscribed_run)
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
@@ -195,9 +214,12 @@ def dashboard():
         "dashboard.html",
         my_summaries=my_summaries,
         latest_editions=latest_editions,
-        featured_summary=featured_summary,
-        featured_run=featured_run,
-        featured_coverage=featured_coverage,
+        subscribed_summary=subscribed_summary,
+        subscribed_run=subscribed_run,
+        subscribed_coverage=subscribed_coverage,
+        is_own=is_own,
+        system_dispatch=system_dispatch,
+        own_summary=next((s for s in my_summaries if s.type_key == "agentic_page"), None),
         other_summaries=other_summaries,
         source_badges=source_badges,
         has_api_key=has_api_key,
@@ -215,16 +237,72 @@ def _source_badge_label(source: Source) -> str:
     return source.name
 
 
-@bp.route("/dashboard/feature", methods=["POST"])
+@bp.route("/dispatch/subscribe", methods=["POST"])
 @login_required
-def dashboard_feature():
+def dispatch_subscribe():
+    """Subscribe to any enabled Dispatch (own or someone else's) — it becomes
+    the one Summary driving this user's dashboard. Read-only unless it's
+    their own (enforced by the unchanged owner-only checks on every mutating
+    route elsewhere in this file)."""
     summary_id = request.form.get("summary_id", type=int)
     summary = db.session.get(Summary, summary_id) if summary_id else None
-    if not summary or summary.user_id != current_user.id:
+    if not summary or summary.type_key != "agentic_page" or not summary.enabled:
         abort(404)
-    current_user.featured_summary_id = summary.id
+    current_user.subscribed_summary_id = summary.id
     db.session.commit()
     return redirect(url_for("web.dashboard"))
+
+
+@bp.route("/dispatch/own", methods=["POST"])
+@login_required
+def dispatch_own():
+    """Set up (the first time) and subscribe to the user's own Dispatch.
+
+    Cloned from the system dispatch's content_config (per-summary) and
+    interests (per-user, only if the user doesn't already have their own) so
+    it starts tuned rather than blank. Reused by the Settings Dispatch card,
+    the onboarding CTA, and the read-only feedback-box replacement on
+    someone else's edition — all three just POST here.
+    """
+    from ..agent import memory as agent_memory
+
+    own = Summary.query.filter_by(user_id=current_user.id, type_key="agentic_page").first()
+    just_created = own is None
+    if just_created:
+        system_dispatch = Summary.get_system_dispatch()
+        params = dict(system_dispatch.params or {}) if system_dispatch else {}
+        params.pop("model", None)  # fall back to the system default, not the admin's own override
+        own = Summary(
+            user_id=current_user.id, name=f"{current_user.username}'s Dispatch",
+            type_key="agentic_page", scope_mode="fixed_period",
+            period=system_dispatch.period if system_dispatch else "day",
+            params=params, enabled=True,
+        )
+        db.session.add(own)
+        db.session.commit()
+
+        if system_dispatch:
+            content_config = agent_memory.read(
+                system_dispatch.user, system_dispatch, "content_config"
+            )
+            if content_config:
+                agent_memory.write(current_user, own, "content_config", content_config)
+            if not agent_memory.read(current_user, own, "interests"):
+                interests = agent_memory.read(system_dispatch.user, system_dispatch, "interests")
+                if interests:
+                    agent_memory.write(current_user, own, "interests", interests)
+
+    current_user.subscribed_summary_id = own.id
+    db.session.commit()
+    if just_created:
+        flash(
+            "You're now on your own Dispatch, cloned from the System Dispatch's settings. "
+            "Add your own API key below to start generating editions.",
+            "success",
+        )
+    else:
+        flash("Switched to your own Dispatch.", "success")
+    return redirect(url_for("web.settings"))
 
 
 # ───────────────────────── Search ─────────────────────────
@@ -358,6 +436,15 @@ def settings():
     )
     types = summary_registry.all_types()
 
+    # Dispatch subscription context — always shown, unlike the Schedule/
+    # Content/Interests cards below which stay gated on owning a Summary.
+    subscribed_summary = current_user.subscribed_summary
+    system_dispatch = Summary.get_system_dispatch()
+    dispatches = (
+        Summary.query.filter_by(type_key="agentic_page", enabled=True)
+        .order_by(Summary.created_at).all()
+    )
+
     if request.method == "POST":
         if current_user.has_podcast_access:
             current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
@@ -435,6 +522,8 @@ def settings():
     return render_template(
         "settings.html",
         summary=summary, types=types,
+        subscribed_summary=subscribed_summary, system_dispatch=system_dispatch,
+        dispatches=dispatches,
         files=files, headlines=headlines, retention=retention,
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
@@ -914,12 +1003,22 @@ def summaries():
     active_generations = {
         s.id: generation_registry.get(s.id) for s in mine if generation_registry.get(s.id)
     }
+
+    # A subscribed-but-not-owned Dispatch gets a separate, read-only list —
+    # no generate/retry/delete controls, unlike the owned cards above.
+    subscribed_summary = current_user.subscribed_summary
+    subscribed_editions = None
+    if subscribed_summary and subscribed_summary.user_id != current_user.id:
+        subscribed_editions = summarize.edition_heads(subscribed_summary)[:20]
+
     return render_template(
         "summaries/list.html",
         summaries=mine,
         editions=editions,
         types=summary_registry.all_types(),
         active_generations=active_generations,
+        subscribed_summary=subscribed_summary,
+        subscribed_editions=subscribed_editions,
     )
 
 
@@ -1081,6 +1180,12 @@ def _stream_handle(handle) -> Response:
     )
 
 
+def _can_read(summary: Summary) -> bool:
+    """Owner, or currently subscribed to this Dispatch — read-only access to
+    already-generated content. Every mutating route stays owner-only."""
+    return summary.user_id == current_user.id or summary.id == current_user.subscribed_summary_id
+
+
 def _chain_costs(chain: list) -> tuple[float, float]:
     """Sum agent/podcast cost across every revision in an edition's chain,
     so the cost box reflects the true total spend regardless of which
@@ -1094,8 +1199,9 @@ def _chain_costs(chain: list) -> tuple[float, float]:
 @login_required
 def edition_view(summary_id: int, run_id: int):
     summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
+    if not _can_read(summary):
         abort(403)
+    is_own = summary.user_id == current_user.id
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
@@ -1112,7 +1218,7 @@ def edition_view(summary_id: int, run_id: int):
     return render_template(
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
-        is_shared_view=False, coverage=coverage,
+        is_shared_view=False, is_own=is_own, coverage=coverage,
         total_agent_cost=total_agent_cost, total_podcast_cost=total_podcast_cost,
     )
 
@@ -1127,7 +1233,7 @@ def edition_shared(token: str):
     return render_template(
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
-        is_shared_view=True,
+        is_shared_view=True, is_own=False,
     )
 
 
@@ -1239,7 +1345,7 @@ def serve_edition_pdf(summary_id: int, run_id: int):
     from flask import send_from_directory
 
     summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
+    if not _can_read(summary):
         abort(403)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id or not run.pdf_file:
@@ -1457,8 +1563,9 @@ def edition_podcast(summary_id: int, run_id: int):
     if not current_user.has_podcast_access:
         abort(403)
     summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
+    if not _can_read(summary):
         abort(403)
+    is_own = summary.user_id == current_user.id
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
@@ -1474,7 +1581,7 @@ def edition_podcast(summary_id: int, run_id: int):
     active_job = podcast_registry.get(run.id)
     return render_template(
         "summaries/podcast.html",
-        summary=summary, run=run,
+        summary=summary, run=run, is_own=is_own,
         auto_generate_on_release=current_user.podcast_auto_generate,
         saved_script=saved_script,
         saved_audio_url=saved_audio_url,

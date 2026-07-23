@@ -152,6 +152,34 @@
   </table>
 </div>
 
+<h2 class="h5" id="dispatches" style="scroll-margin-top:5rem">Dispatches</h2>
+<p class="text-body-secondary small mb-2">
+  The System Dispatch is the default every new user is subscribed to. At most one at a time.
+</p>
+<div class="table-responsive shadow-sm mb-4">
+  <table class="table bg-white align-middle mb-0">
+    <thead><tr><th>Name</th><th>Owner</th><th>System Dispatch</th><th></th></tr></thead>
+    <tbody>
+    {% for d in dispatches %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td>{{ d.user.username }}</td>
+        <td>{{ '✓' if d.is_system_dispatch else '—' }}</td>
+        <td class="text-nowrap">
+          {% if not d.is_system_dispatch %}
+          <form method="post" action="{{ url_for('admin.dispatch_make_system', summary_id=d.id) }}" class="d-inline">
+            <button class="btn btn-sm btn-outline-secondary">Make System Dispatch</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="text-body-secondary">No Dispatches yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 <h2 class="h5 mt-4" id="invites" style="scroll-margin-top:5rem">Invites</h2>
 <p class="text-body-secondary small mb-2">
   Registration is currently

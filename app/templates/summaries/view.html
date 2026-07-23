@@ -29,7 +29,7 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="pill pill-slate align-middle">rev {{ run.revision }}</span>
       {% endif %}
-      {% if not is_shared_view %}
+      {% if not is_shared_view and is_own %}
       <button id="read-toggle" class="btn btn-link read-toggle ms-2 border-0 align-baseline"
               style="font-size:inherit;line-height:inherit"
               title="{{ 'Mark as unread' if run.read_at else 'Mark as read' }}">
@@ -37,13 +37,13 @@
       </button>
       {% endif %}
     </h1>
-    {% if not is_shared_view %}
+    {% if not is_shared_view and is_own %}
     <div class="d-flex align-items-center gap-2 mt-1">
       <span title="Channels">{{ channel_icons(run) }}</span>
     </div>
     {% endif %}
   </div>
-  {% if not is_shared_view %}
+  {% if not is_shared_view and is_own %}
   <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
     {% if run.status != 'failed' %}
     <div class="dropdown">
@@ -92,10 +92,15 @@
       <button class="btn btn-sm btn-outline-danger">Delete edition</button>
     </form>
   </div>
+  {% elif not is_shared_view and run.news_podcast_audio %}
+  <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
+    <a href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-sm btn-outline-secondary">Listen to podcast</a>
+  </div>
   {% endif %}
 </div>
 
-{% if is_agentic and not is_shared_view and revisions and revisions|length > 1 %}
+{% if is_agentic and not is_shared_view and is_own and revisions and revisions|length > 1 %}
 <div class="mb-3 d-print-none">
   <span class="small text-body-secondary me-2">Revisions:</span>
   {% for r in revisions %}
@@ -107,7 +112,7 @@
 </div>
 {% endif %}
 
-{% if not is_shared_view %}
+{% if not is_shared_view and is_own %}
 {{ channel_hero(run) }}
 {% endif %}
 
@@ -142,7 +147,7 @@
   <p class="text-body-secondary">This edition has no stored content.</p>
 {% endif %}
 
-{% if not is_shared_view and (total_agent_cost or total_podcast_cost) %}
+{% if not is_shared_view and is_own and (total_agent_cost or total_podcast_cost) %}
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
     <div class="fw-semibold text-body mb-2">
@@ -231,7 +236,7 @@
 </div>
 {% endif %}
 
-{% if is_agentic and not is_shared_view and run.status != 'failed' %}
+{% if is_agentic and not is_shared_view and is_own and run.status != 'failed' %}
 <style>
   .coverage-chevron { transition: transform .15s ease; }
   .coverage-toggle[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
@@ -270,6 +275,20 @@
     </div>
   </div>
 </div>
+{% elif is_agentic and not is_shared_view and not is_own and run.status != 'failed' %}
+<div class="card shadow-sm mt-4 d-print-none">
+  <div class="card-body">
+    <span class="fw-semibold text-body">This is {{ summary.user.username }}'s Dispatch</span>
+    <p class="small text-body-secondary mb-2">
+      You're reading it read-only — no feedback, no edits. Set up your own Dispatch to
+      leave feedback and shape your own interests; it starts as a copy of the System
+      Dispatch's settings, tuned to yours from there.
+    </p>
+    <form method="post" action="{{ url_for('web.dispatch_own') }}">
+      <button type="submit" class="btn btn-primary btn-sm">Set up my own Dispatch</button>
+    </form>
+  </div>
+</div>
 {% endif %}
 {% endblock %}
 {% block scripts %}
@@ -285,7 +304,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
   }
 });
 
-{% if not is_shared_view %}
+{% if not is_shared_view and is_own %}
 (function () {
   var readUrl = "{{ url_for('web.edition_mark_read', summary_id=summary.id, run_id=run.id) }}";
   var unreadUrl = "{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}";

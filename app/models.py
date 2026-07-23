@@ -62,7 +62,10 @@ class User(UserMixin, db.Model):
     # apps (which can't do session login) can fetch the feed and its MP3s.
     podcast_feed_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
-    featured_summary_id = db.Column(
+    # The one Summary ("Dispatch") whose editions populate this user's
+    # dashboard — may be their own, or one they're reading read-only (e.g.
+    # the system dispatch). Exactly one at a time, like a subscription.
+    subscribed_summary_id = db.Column(
         db.Integer, db.ForeignKey("summaries.id"), nullable=True
     )
 
@@ -91,7 +94,7 @@ class User(UserMixin, db.Model):
         "EditionRecipient", back_populates="user", lazy="dynamic",
         cascade="all, delete-orphan",
     )
-    featured_summary = db.relationship("Summary", foreign_keys=[featured_summary_id])
+    subscribed_summary = db.relationship("Summary", foreign_keys=[subscribed_summary_id])
     edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
 
     def set_password(self, password: str) -> None:
@@ -600,6 +603,11 @@ class Summary(db.Model):
     enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
+    # At most one Summary system-wide should ever have this set — it's the
+    # default "System Dispatch" every new user is subscribed to. Enforced in
+    # application code (see web.admin's toggle route), not a DB constraint.
+    is_system_dispatch = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+
     user = db.relationship(
         "User", back_populates="summaries", foreign_keys=[user_id]
     )
@@ -607,6 +615,10 @@ class Summary(db.Model):
         "SummaryRun", back_populates="summary", lazy="dynamic",
         cascade="all, delete-orphan",
     )
+
+    @classmethod
+    def get_system_dispatch(cls) -> "Summary | None":
+        return cls.query.filter_by(is_system_dispatch=True).first()
 
 
 class SummaryRun(db.Model):
