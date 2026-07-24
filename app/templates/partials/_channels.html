@@ -15,7 +15,7 @@
   {% if run.news_podcast_audio and current_user.has_podcast_access %}
   <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
      class="channel-icon channel-icon--podcast"
-     title="Podcast{% if run.podcast_cost is not none %} · ${{ '%.4f'|format(run.podcast_cost) }}{% endif %}">
+     title="Podcast{% if show_podcast_cost and run.podcast_cost is not none %} · ${{ '%.4f'|format(run.podcast_cost) }}{% endif %}">
     <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>
     {% if show_podcast_cost and run.podcast_cost is not none %}
     <span class="badge text-bg-light border text-body-secondary ms-1">${{ '%.4f'|format(run.podcast_cost) }}</span>

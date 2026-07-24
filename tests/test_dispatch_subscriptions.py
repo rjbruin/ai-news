@@ -1,7 +1,7 @@
 import pytest
 
 from app.agent import memory as agent_memory
-from app.models import Summary, SummaryRun, User
+from app.models import EditionRead, Summary, SummaryRun, User
 
 
 @pytest.fixture
@@ -444,3 +444,110 @@ def test_admin_can_change_system_dispatch(admin_client, db, admin, user):
     db.session.refresh(s2)
     assert s1.is_system_dispatch is False
     assert s2.is_system_dispatch is True
+
+
+# ── Dashboard "Add a source" link gating ────────────────────────────────────
+
+def test_dashboard_add_source_link_hidden_for_non_dispatch_user(auth_client, db, user):
+    html = auth_client.get("/dashboard").data.decode()
+    assert "Add a source" not in html
+
+
+def test_dashboard_add_source_link_shown_for_dispatch_owner(auth_client, db, user):
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
+    html = auth_client.get("/dashboard").data.decode()
+    assert "Add a source" in html
+
+
+# ── Dashboard nav item removed; logo goes to dashboard when authenticated ──
+
+def test_dashboard_nav_item_removed(auth_client):
+    html = auth_client.get("/dashboard").data.decode()
+    assert ">Dashboard<" not in html
+
+
+def test_logo_links_to_dashboard_when_authenticated(auth_client):
+    html = auth_client.get("/dashboard").data.decode()
+    assert f'href="{"/dashboard"}"' in html or 'navbar-brand' in html
+    # The logo always points at "/", which redirects authenticated users on.
+    resp = auth_client.get("/", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/dashboard")
+
+
+# ── Per-user read status ────────────────────────────────────────────────────
+
+def test_mark_read_is_per_user_not_shared(auth_client, db, user, admin, system_dispatch, system_run):
+    """Two followers of the same Dispatch each get their own read marker —
+    one marking read must not affect the other."""
+    other = User(username="other_reader", email="other_reader@example.com", email_verified=True)
+    other.set_password("password123")
+    db.session.add(other)
+    db.session.commit()
+    user.follow(system_dispatch)
+    other.follow(system_dispatch)
+    db.session.commit()
+
+    auth_client.post(f"/summaries/{system_dispatch.id}/editions/{system_run.id}/read")
+
+    assert system_run.is_read_by(user)
+    assert not system_run.is_read_by(other)
+
+
+def test_mark_unread_only_clears_current_users_marker(auth_client, db, user, system_dispatch, system_run):
+    user.follow(system_dispatch)
+    db.session.add(EditionRead(user_id=user.id, run_id=system_run.id))
+    db.session.commit()
+
+    auth_client.post(f"/summaries/{system_dispatch.id}/editions/{system_run.id}/unread")
+    assert not system_run.is_read_by(user)
+
+
+def test_follower_can_mark_own_read_status(auth_client, db, user, system_dispatch, system_run):
+    """Read state is now the viewer's own — a follower (not the owner) may
+    toggle it, unlike every other mutating action which stays owner-only."""
+    user.follow(system_dispatch)
+    db.session.commit()
+    resp = auth_client.post(f"/summaries/{system_dispatch.id}/editions/{system_run.id}/read")
+    assert resp.status_code == 200
+    assert system_run.is_read_by(user)
+
+
+def test_non_follower_cannot_mark_read(auth_client, db, system_dispatch, system_run):
+    resp = auth_client.post(f"/summaries/{system_dispatch.id}/editions/{system_run.id}/read")
+    assert resp.status_code == 403
+
+
+def test_owner_read_marker_independent_of_followers(admin_client, db, admin, user, system_dispatch, system_run):
+    user.follow(system_dispatch)
+    db.session.commit()
+    admin_client.post(f"/summaries/{system_dispatch.id}/editions/{system_run.id}/read")
+    assert system_run.is_read_by(admin)
+    assert not system_run.is_read_by(user)
+
+
+# ── Cost hidden from non-owning followers ──────────────────────────────────
+
+def test_podcast_cost_hidden_from_follower_in_channel_icon_tooltip(
+    auth_client, db, user, admin, system_dispatch, system_run,
+):
+    admin.podcast_enabled = True
+    user.podcast_enabled = True
+    user.follow(system_dispatch)
+    system_run.news_podcast_audio = "podcast_1.mp3"
+    system_run.podcast_cost = 0.4242
+    db.session.commit()
+
+    html = auth_client.get("/summaries").data.decode()
+    assert "0.4242" not in html
+
+
+def test_podcast_cost_shown_to_owner_in_channel_icon_tooltip(admin_client, db, admin, system_dispatch, system_run):
+    admin.podcast_enabled = True
+    system_run.news_podcast_audio = "podcast_1.mp3"
+    system_run.podcast_cost = 0.4242
+    db.session.commit()
+
+    html = admin_client.get(f"/summaries/{system_dispatch.id}/editions/{system_run.id}").data.decode()
+    assert "0.4242" in html

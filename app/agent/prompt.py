@@ -29,7 +29,11 @@ Describes the *content and structure* of this summary. Time scope and delivery
 channels are handled by the system, not here.
 
 ## Structure
-1. `edition_header` with the date.
+1. `edition_header` with the date. Its `title` is the edition's actual
+   headline — a specific, newsworthy summary of the day's top story (e.g.
+   "OpenAI ships GPT-6 with native tool use"), not the edition's name or
+   generic branding. It's stored and shown on its own (e.g. on the
+   homepage), so it must stand alone without the rest of the edition.
 2. A short `intro` (2–3 sentences) framing the day.
 3. 2–4 thematic `section`s. Within each, use `item` blocks to feature stories —
    one `item` per news story or cluster of related sources.
@@ -80,7 +84,11 @@ types and their fields:
 
 Structural:
 - edition_header { title, subtitle?, date? }
-    # title and subtitle are plain text — no HTML.
+    # title: the edition's actual headline — a specific, newsworthy summary
+    #        of the day's top story, not the edition's name/branding. Plain
+    #        text, no HTML. Stored and shown on its own elsewhere, so it
+    #        must make sense out of context.
+    # subtitle: plain text — no HTML.
 - intro { markdown }
     # 2–3 sentences. markdown field allows inline HTML for styling.
 - section { title, description? }

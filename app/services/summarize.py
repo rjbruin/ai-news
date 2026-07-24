@@ -110,6 +110,17 @@ def _edition_label(summary: Summary, range_start: datetime | None, range_end: da
     return range_end.strftime("%A %B %-d")
 
 
+def _extract_headline(document: list | None) -> str | None:
+    """Pull the agent-written headline out of the document's edition_header
+    block, if any — stored as its own SummaryRun field so callers (e.g. the
+    homepage) don't need to render/parse the whole document just to show it."""
+    for block in document or []:
+        if block.get("type") == "edition_header":
+            title = (block.get("title") or "").strip()
+            return title or None
+    return None
+
+
 # ─────────────────────────── item scoping ────────────────────────────
 
 def items_in_window(
@@ -242,6 +253,7 @@ def build_summary(
             range_end=end.replace(tzinfo=None),
             item_count=len(items),
             label=label,
+            headline=_extract_headline(document),
             content=artifact.html,
             artifact_ref=artifact.file_path,
             document=document,
@@ -443,6 +455,7 @@ def revise_edition(
         range_end=parent_run.range_end,
         item_count=len(items),
         label=parent_run.label,
+        headline=_extract_headline(document),
         content=artifact.html,
         document=document,
         agent_log=agent_log or None,
