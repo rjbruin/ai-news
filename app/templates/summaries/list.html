@@ -1,185 +1,55 @@
 {% extends "base.html" %}
-{% from "partials/_channels.html" import channel_icons with context %}
+{% from "partials/_edition_row.html" import edition_row with context %}
 {% block title %}Editions · Dispatch{% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">Editions</h1>
+<p class="text-body-secondary small">
+  Every edition from every Dispatch you follow, newest first. Manage which
+  Dispatches you follow on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page.
+</p>
 
-{% if not summaries and not subscribed_editions %}
-<p class="text-body-secondary">No edition configuration found.</p>
-{% endif %}
-
-{% if subscribed_summary and subscribed_editions is not none %}
+{% if active_generations %}
 <div class="card shadow-sm mb-4">
-  <div class="card-header">
-    <span class="fw-semibold">{{ subscribed_summary.user.username }}'s Dispatch</span>
-    <span class="text-body-secondary small">— read only</span>
-  </div>
-  {% if subscribed_editions %}
   <div class="list-group list-group-flush">
-    {% for run in subscribed_editions %}
-    <div class="list-group-item hover-lift d-flex align-items-center gap-2 py-2">
-      {% if not run.read_at %}
-      <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
-      {% endif %}
-      <a href="{{ url_for('web.edition_view', summary_id=subscribed_summary.id, run_id=run.id) }}"
-         class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</a>
-      {% if run.status == 'failed' %}
-      <span class="pill pill-coral">Failed</span>
-      {% else %}
-      <span class="pill pill-blue">{{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}</span>
-      {% endif %}
-      <span class="small">{{ channel_icons(run) }}</span>
-      <a href="{{ url_for('web.edition_view', summary_id=subscribed_summary.id, run_id=run.id) }}"
-         class="btn btn-sm btn-outline-primary">Open</a>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="card-body text-body-secondary small fst-italic">No editions yet.</div>
-  {% endif %}
-</div>
-{% endif %}
-
-{% for s in summaries %}
-{% set runs = editions[s.id] %}
-{% set gen = active_generations.get(s.id) %}
-<div class="card shadow-sm mb-4">
-  <div class="card-header d-flex align-items-center gap-2">
-    <span class="fw-semibold flex-grow-1">All editions</span>
-    <div class="d-flex gap-2 flex-shrink-0">
-      {% if gen %}
-        <span class="btn btn-sm btn-primary disabled">
-          <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-          {{ 'Revising…' if gen.kind == 'revise' else 'Generating…' }}
-        </span>
-      {% else %}
-        <button type="button" class="btn btn-sm btn-primary"
-                data-bs-toggle="modal" data-bs-target="#modal-new-edition-{{ s.id }}">
-          New custom edition
-        </button>
-      {% endif %}
-    </div>
-  </div>
-
-  {% if runs or gen %}
-  <div class="list-group list-group-flush">
-    {% if gen %}
+    {% for sid, gen in active_generations.items() %}
     <div class="list-group-item d-flex align-items-center gap-2 py-2 bg-body-tertiary">
       <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
       <span class="flex-grow-1 fw-semibold">
         {{ 'Revising edition…' if gen.kind == 'revise' else 'Generating edition…' }}
       </span>
       {% if gen.kind == 'revise' %}
-        <a href="{{ url_for('web.edition_feedback_debug', summary_id=s.id, run_id=gen.parent_run_id) }}"
+        <a href="{{ url_for('web.edition_feedback_debug', summary_id=sid, run_id=gen.parent_run_id) }}"
            class="btn btn-sm btn-outline-secondary">Logs</a>
       {% else %}
-        <a href="{{ url_for('web.generate_debug', summary_id=s.id) }}"
+        <a href="{{ url_for('web.generate_debug', summary_id=sid) }}"
            class="btn btn-sm btn-outline-secondary">Logs</a>
       {% endif %}
-      <form method="post" action="{{ url_for('web.generate_cancel', summary_id=s.id) }}" class="d-inline">
+      <form method="post" action="{{ url_for('web.generate_cancel', summary_id=sid) }}" class="d-inline">
         <button class="btn btn-sm btn-outline-danger">Cancel</button>
-      </form>
-    </div>
-    {% endif %}
-    {% for run in runs %}
-    <div class="list-group-item hover-lift d-flex align-items-center gap-2 py-2">
-      {% if not run.read_at %}
-      <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
-      {% endif %}
-      <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
-         class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">{{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}</a>
-      {% if run.status == 'failed' %}
-      <span class="pill pill-coral">Failed</span>
-      {% else %}
-      <span class="pill pill-blue">
-        {{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}
-      </span>
-      {% if run.agent_cost is not none %}
-      <span class="pill pill-amber" title="Generation cost">
-        ${{ '%.4f'|format(run.agent_cost) }}
-      </span>
-      {% endif %}
-      {% endif %}
-      <span class="small">{{ channel_icons(run, show_podcast_cost=True) }}</span>
-      <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
-         class="btn btn-sm btn-outline-primary">Open</a>
-      {% if run.agent_log %}
-      <a href="{{ url_for('web.edition_logs', summary_id=s.id, run_id=run.id) }}"
-         class="btn btn-sm btn-outline-secondary">Logs</a>
-      {% endif %}
-      {% if run.status == 'failed' %}
-      <form method="post"
-            action="{{ url_for('web.edition_retry', summary_id=s.id, run_id=run.id) }}"
-            class="d-inline">
-        <button class="btn btn-sm btn-outline-danger">Retry</button>
-      </form>
-      {% endif %}
-      <form method="post"
-            action="{{ url_for('web.edition_delete', summary_id=s.id, run_id=run.id) }}"
-            class="d-inline">
-        <button class="btn btn-sm btn-outline-danger">Delete</button>
       </form>
     </div>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="card-body text-body-secondary small fst-italic">
-    No editions yet — click "Generate" to run the agent.
-  </div>
-  {% endif %}
-</div>
-{% if not gen %}
-<div class="modal fade" id="modal-new-edition-{{ s.id }}" tabindex="-1"
-     aria-labelledby="modal-label-{{ s.id }}" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modal-label-{{ s.id }}">New custom edition</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <form method="post" action="{{ url_for('web.generate_custom', summary_id=s.id) }}">
-        <div class="modal-body">
-          <p class="text-body-secondary small mb-3">
-            Choose the news window for this edition. Items fetched within this
-            range will be passed to the agent.
-          </p>
-          <div class="mb-3">
-            <label class="form-label">Start (UTC)</label>
-            <input type="datetime-local" name="range_start" class="form-control" required>
-          </div>
-          <div class="mb-0">
-            <label class="form-label">End (UTC)</label>
-            <input type="datetime-local" name="range_end" class="form-control" required>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Generate</button>
-        </div>
-      </form>
-    </div>
-  </div>
 </div>
 {% endif %}
 
-{% endfor %}
-{% endblock %}
-{% block scripts %}
-<script>
-document.querySelectorAll('.btn-generate').forEach(function(btn) {
-  const form = btn.closest('form');
-  const SPINNER = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating…';
-  if (form) {
-    form.addEventListener('submit', function() {
-      btn.disabled = true;
-      btn.innerHTML = SPINNER;
-    });
-  } else {
-    btn.addEventListener('click', function() {
-      btn.classList.add('disabled');
-      btn.innerHTML = SPINNER;
-    });
-  }
-});
-</script>
+{% if feed %}
+<div class="card shadow-sm">
+  <div class="list-group list-group-flush">
+    {% for run, summary in feed %}
+    {{ edition_row(run, summary, is_own=(summary.id in own_ids), show_dispatch=True) }}
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card shadow-sm">
+  <div class="card-body text-center py-5">
+    <p class="text-body-secondary mb-1">No editions yet.</p>
+    <p class="text-body-secondary small mb-0">
+      Follow a Dispatch on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page,
+      or set up your own in <a href="{{ url_for('web.settings') }}#sec-dispatch">Settings</a>.
+    </p>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

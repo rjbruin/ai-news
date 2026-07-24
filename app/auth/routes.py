@@ -85,16 +85,21 @@ def register():
 
             # New signups skip the changelog for the version they just joined
             # on — onboarding already covers "what's new to you".
-            system_dispatch = Summary.get_system_dispatch()
             user = User(
                 username=form.username.data.strip(), email=email,
                 last_seen_version=get_version(),
-                subscribed_summary_id=system_dispatch.id if system_dispatch else None,
             )
             if form.password.data:
                 user.set_password(form.password.data)
             db.session.add(user)
             db.session.commit()
+
+            # Follow the System Dispatch by default (onboarding lets them add
+            # more or unfollow it). Kept as a safety net so nobody's feed is empty.
+            system_dispatch = Summary.get_system_dispatch()
+            if system_dispatch:
+                user.follow(system_dispatch)
+                db.session.commit()
 
             db.session.add(EditionRecipient(user_id=user.id, email=email, confirmed_at=utcnow()))
             if invite is not None:

@@ -244,8 +244,10 @@ def test_admin_pages_render(admin_client, sample_tags):
 
 
 def test_topics_page_lists_global_and_own_topics(auth_client, db, user, sample_tags):
-    from app.models import Tag
+    from app.models import Summary, Tag
 
+    # "Your topics" only shows for a user who runs their own Dispatch.
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
     mine = Tag(name="My Own Tag", scope="user", owner_user_id=user.id)
     db.session.add(mine)
     db.session.commit()
@@ -380,6 +382,8 @@ def test_editions_list_name_links_to_edition(auth_client, db, user, sample_items
     )
     db.session.add(summary)
     db.session.commit()
+    user.follow(summary)
+    db.session.commit()
     _, _, run = summarize.build_summary(summary, record_run=True)
     assert run is not None
 
@@ -437,7 +441,7 @@ def test_dashboard_shows_coverage_and_cost_badges_for_featured_run(
     _, _, run = summarize.build_summary(summary, record_run=True)
     assert run is not None
 
-    user.subscribed_summary_id = summary.id
+    user.follow(summary)
     db.session.commit()
 
     resp = auth_client.get("/dashboard")
@@ -488,6 +492,8 @@ def test_editions_list_shows_failed_pill_and_retry(auth_client, db, user):
         scope_mode="fixed_period", period="day", params={},
     )
     db.session.add(summary)
+    db.session.commit()
+    user.follow(summary)
     db.session.commit()
     run = _make_failed_run(db, summary)
 

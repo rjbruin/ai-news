@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Dispatches · Dispatch{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Dispatches</h1>
+<p class="text-body-secondary small">
+  A Dispatch is an AI-written publication — each issue is an edition. Follow any
+  number of them; their editions appear together on your
+  <a href="{{ url_for('web.summaries') }}">Editions</a> page. Bring your own
+  OpenRouter key to run and publish your own from
+  <a href="{{ url_for('web.settings') }}#sec-dispatch">Settings</a>.
+</p>
+
+<div class="table-responsive shadow-sm">
+  <table class="table table-hover bg-white align-middle mb-0">
+    <thead><tr><th>Dispatch</th><th>By</th><th></th></tr></thead>
+    <tbody>
+    {% for d in dispatches %}
+      <tr>
+        <td>
+          <a href="{{ url_for('web.dispatch_detail', summary_id=d.id) }}"
+             class="text-body fw-semibold text-decoration-none">{{ d.display_name }}</a>
+          {% if own and d.id == own.id %}<span class="badge text-bg-info">yours</span>{% endif %}
+          {% if own and d.id == own.id and not d.is_published %}
+          <span class="badge text-bg-light border text-body-secondary">unpublished</span>{% endif %}
+        </td>
+        <td class="small">{{ d.user.username }}</td>
+        <td class="text-nowrap">
+          <a href="{{ url_for('web.dispatch_detail', summary_id=d.id) }}"
+             class="btn btn-sm btn-outline-primary">Open</a>
+          {% if own and d.id == own.id %}
+            {# You always "follow" your own; no unfollow toggle needed here. #}
+          {% elif d.id in following_ids %}
+          <form method="post" action="{{ url_for('web.dispatch_unfollow') }}" class="d-inline">
+            <input type="hidden" name="summary_id" value="{{ d.id }}">
+            <button class="btn btn-sm btn-outline-secondary">Following ✓</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('web.dispatch_follow') }}" class="d-inline">
+            <input type="hidden" name="summary_id" value="{{ d.id }}">
+            <button class="btn btn-sm btn-primary">Follow</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="text-body-secondary">No published Dispatches yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

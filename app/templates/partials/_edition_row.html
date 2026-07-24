@@ -1,0 +1,40 @@
+{# One edition row in a list. `run` is a SummaryRun, `summary` its Dispatch,
+   `is_own` whether the current user owns that Dispatch (gates the mutating
+   controls), `show_dispatch` whether to label which Dispatch it came from
+   (used in the merged Editions feed across multiple follows). #}
+{% macro edition_row(run, summary, is_own=False, show_dispatch=False) %}
+{% from "partials/_channels.html" import channel_icons with context %}
+<div class="list-group-item hover-lift d-flex align-items-center gap-2 py-2">
+  {% if not run.read_at %}
+  <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
+  {% endif %}
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+     class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">
+    {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+    {% if show_dispatch %}<span class="text-body-secondary small ms-1">· {{ summary.display_name }}</span>{% endif %}
+  </a>
+  {% if run.status == 'failed' %}
+  <span class="pill pill-coral">Failed</span>
+  {% else %}
+  <span class="pill pill-blue">{{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}</span>
+  {% if is_own and run.agent_cost is not none %}
+  <span class="pill pill-amber" title="Generation cost">${{ '%.4f'|format(run.agent_cost) }}</span>
+  {% endif %}
+  {% endif %}
+  <span class="small">{{ channel_icons(run, show_podcast_cost=is_own) }}</span>
+  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+     class="btn btn-sm btn-outline-primary">Open</a>
+  {% if is_own %}
+  {% if run.agent_log %}
+  <a href="{{ url_for('web.edition_logs', summary_id=summary.id, run_id=run.id) }}"
+     class="btn btn-sm btn-outline-secondary">Logs</a>
+  {% endif %}
+  {% if run.status == 'failed' %}
+  <form method="post" action="{{ url_for('web.edition_retry', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
+    <button class="btn btn-sm btn-outline-danger">Retry</button></form>
+  {% endif %}
+  <form method="post" action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
+    <button class="btn btn-sm btn-outline-danger">Delete</button></form>
+  {% endif %}
+</div>
+{% endmacro %}

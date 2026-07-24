@@ -163,6 +163,8 @@ def test_editions_list_shows_podcast_cost_badge_on_icon(auth_client, db, user):
     )
     db.session.add(summary)
     db.session.commit()
+    user.follow(summary)
+    db.session.commit()
     run = SummaryRun(
         summary_id=summary.id, news_podcast_audio="podcast_1.mp3", podcast_cost=0.0099,
     )

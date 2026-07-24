@@ -70,9 +70,11 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Topics</h1>
+  {% if current_user.own_dispatch or current_user.is_admin %}
   <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#topic-create-modal">
     Add a topic
   </button>
+  {% endif %}
 </div>
 <p class="text-body-secondary">
   Topics are applied to news items automatically as they're ingested. Global topics apply to everyone;
@@ -86,11 +88,13 @@
   {% else %}<div class="list-group-item text-body-secondary">No global topics yet.</div>{% endfor %}
 </div>
 
+{% if current_user.own_dispatch or current_user.is_admin %}
 <h2 class="h5">Your topics</h2>
 <div class="list-group shadow-sm{{ ' mb-4' if archived_tags }}">
   {% for tag in my_tags %}{{ topic_row(tag, True) }}
   {% else %}<div class="list-group-item text-body-secondary">You don't have any personal topics.</div>{% endfor %}
 </div>
+{% endif %}
 
 {% if archived_tags %}
 <h2 class="h5 mt-4">Archived</h2>
@@ -100,6 +104,7 @@
 </div>
 {% endif %}
 
+{% if current_user.own_dispatch or current_user.is_admin %}
 <div class="modal fade" id="topic-create-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -134,4 +139,5 @@
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}
