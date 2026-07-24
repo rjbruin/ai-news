@@ -49,6 +49,29 @@ def test_index_shows_system_dispatch_shared_edition_demo(client, db, admin):
     assert b"Create" not in resp.data  # no podcast/PDF create dropdown leaking in
 
 
+def test_index_shows_headline_as_heading_and_date_as_badge(client, db, admin):
+    from app.models import Summary, SummaryRun
+
+    summary = Summary(
+        user_id=admin.id, name="Admin Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={}, is_system_dispatch=True,
+    )
+    db.session.add(summary)
+    db.session.commit()
+    run = SummaryRun(
+        summary_id=summary.id, label="Monday July 20",
+        headline="OpenAI ships GPT-6 with native tool use",
+        document=[{"type": "intro", "markdown": "A busy day."}],
+        share_token="demo-token-456",
+    )
+    db.session.add(run)
+    db.session.commit()
+
+    html = client.get("/").data.decode()
+    assert "OpenAI ships GPT-6 with native tool use" in html
+    assert "pill" in html and "Monday July 20" in html
+
+
 def test_index_does_not_show_non_system_dispatch_shared_edition(client, db, user, admin):
     """Only the system dispatch's shared editions may feature on the homepage
     — not just any admin's, and not any other user's."""
@@ -227,7 +250,10 @@ def test_non_admin_cannot_access_admin(auth_client):
     assert resp.status_code == 403
 
 
-def test_authenticated_pages_render(auth_client, sample_tags, sample_items):
+def test_authenticated_pages_render(auth_client, db, user, sample_tags, sample_items):
+    from app.models import Summary
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
     for path in ["/dashboard", "/news", "/summaries", "/topics"]:
         assert auth_client.get(path).status_code == 200
 
@@ -278,7 +304,14 @@ def test_nav_order_editions_before_news_and_admin_on_right(admin_client):
     assert html.index(">Settings<") < html.index(">Admin<") < html.index(">Sign out<")
 
 
-def test_topics_nav_link_shown_for_non_admin(auth_client):
+def test_topics_nav_link_hidden_for_non_dispatch_non_admin(auth_client):
+    assert b">Topics<" not in auth_client.get("/dashboard").data
+
+
+def test_topics_nav_link_shown_for_dispatch_owner(auth_client, db, user):
+    from app.models import Summary
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
     assert b">Topics<" in auth_client.get("/dashboard").data
 
 

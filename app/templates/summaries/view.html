@@ -29,17 +29,17 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="pill pill-slate align-middle">rev {{ run.revision }}</span>
       {% endif %}
-      {% if not is_shared_view and is_own %}
+      {% if not is_shared_view %}
       <button id="read-toggle" class="btn btn-link read-toggle ms-2 border-0 align-baseline"
               style="font-size:inherit;line-height:inherit"
-              title="{{ 'Mark as unread' if run.read_at else 'Mark as read' }}">
-        <i id="read-icon" class="{{ 'fa-regular fa-envelope-open text-body-secondary' if run.read_at else 'fa-solid fa-envelope text-primary' }}"></i>
+              title="{{ 'Mark as unread' if is_read else 'Mark as read' }}">
+        <i id="read-icon" class="{{ 'fa-regular fa-envelope-open text-body-secondary' if is_read else 'fa-solid fa-envelope text-primary' }}"></i>
       </button>
       {% endif %}
     </h1>
     {% if not is_shared_view and is_own %}
     <div class="d-flex align-items-center gap-2 mt-1">
-      <span title="Channels">{{ channel_icons(run) }}</span>
+      <span title="Channels">{{ channel_icons(run, show_podcast_cost=True) }}</span>
     </div>
     {% endif %}
   </div>
@@ -313,11 +313,11 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
   }
 });
 
-{% if not is_shared_view and is_own %}
+{% if not is_shared_view %}
 (function () {
   var readUrl = "{{ url_for('web.edition_mark_read', summary_id=summary.id, run_id=run.id) }}";
   var unreadUrl = "{{ url_for('web.edition_mark_unread', summary_id=summary.id, run_id=run.id) }}";
-  var isRead = {{ 'true' if run.read_at else 'false' }};
+  var isRead = {{ 'true' if is_read else 'false' }};
   var icon = document.getElementById('read-icon');
   var btn = document.getElementById('read-toggle');
 

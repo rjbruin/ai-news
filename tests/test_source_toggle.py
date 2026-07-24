@@ -81,7 +81,8 @@ def test_sources_page_shows_toggle_and_state(auth_client, db, user):
     assert b"Off for me" in resp.data
 
 
-def test_sources_page_hides_toggle_for_mailbox_itself(auth_client, db):
+def test_sources_page_hides_toggle_for_mailbox_itself(auth_client, db, user):
+    _give_dispatch(db, user)
     mailbox = Source(type_key="imap_newsletter", name="Mailbox", config={}, enabled=True)
     db.session.add(mailbox)
     db.session.commit()

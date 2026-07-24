@@ -4,12 +4,13 @@
    (used in the merged Editions feed across multiple follows). #}
 {% macro edition_row(run, summary, is_own=False, show_dispatch=False) %}
 {% from "partials/_channels.html" import channel_icons with context %}
+{% set is_read = run.is_read_by(current_user) %}
 <div class="list-group-item hover-lift d-flex align-items-center gap-2 py-2">
-  {% if not run.read_at %}
+  {% if not is_read %}
   <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
   {% endif %}
   <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
-     class="flex-grow-1 text-body text-decoration-none {{ '' if run.read_at else 'fw-semibold' }}">
+     class="flex-grow-1 text-body text-decoration-none {{ '' if is_read else 'fw-semibold' }}">
     {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
     {% if show_dispatch %}<span class="text-body-secondary small ms-1">· {{ summary.display_name }}</span>{% endif %}
   </a>

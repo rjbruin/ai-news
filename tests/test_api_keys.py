@@ -1,4 +1,11 @@
-from app.models import ApiKey, Source, User
+from app.models import ApiKey, Source, Summary, User
+
+
+def _give_dispatch(db, user):
+    """Sources/Topics pages and their mutation routes now require owning a
+    Dispatch (dispatch_required)."""
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
 
 
 def test_global_key_is_lazily_created_and_shared_by_admins(app, db):
@@ -108,6 +115,7 @@ def test_sources_page_hides_costs_except_own_key(auth_client, db, user):
 
     from app.models import ApiKeyUsage, utcnow
 
+    _give_dispatch(db, user)
     global_key = ApiKey.get_or_create_global()
     mine_key = ApiKey(owner_user_id=user.id, label="Mine")
     mine_key.set_key("sk-or-mine")
@@ -174,7 +182,7 @@ def test_source_new_requires_approval(auth_client, user):
 
 def test_approved_user_can_add_source(auth_client, db, user):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
     key = ApiKey(owner_user_id=user.id, label="Mine")
     key.set_key("sk-or-x")
     db.session.add(key)
@@ -263,7 +271,7 @@ def test_non_approved_user_does_not_see_api_keys_section(auth_client, db, user):
 
 def test_owner_can_retract_own_source_but_not_others(auth_client, db, user):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
     key = ApiKey(owner_user_id=user.id, label="Mine")
     key.set_key("sk-or-x")
     db.session.add(key)
@@ -341,6 +349,7 @@ def test_deleting_edition_key_clears_selection(auth_client, db, user):
 
 
 def test_sources_page_no_type_column_and_privacy(auth_client, db, user):
+    _give_dispatch(db, user)
     other = User(username="other4", email="other4@example.com", email_verified=True)
     db.session.add(other)
     db.session.commit()

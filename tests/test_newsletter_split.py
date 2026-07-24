@@ -1,6 +1,12 @@
 import pytest
 
-from app.models import Alert, ApiKey, IngestRun, NewsItem, Source, User
+from app.models import Alert, ApiKey, IngestRun, NewsItem, Source, Summary, User
+
+
+def _give_dispatch(db, user):
+    """Adding a source now requires owning a Dispatch (dispatch_required)."""
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
 from app.services import ingest
 from app.sources import registry as source_registry
 from app.sources.base import ExtractedItem, NewsSource, RawDocument
@@ -410,8 +416,9 @@ def test_subscribed_child_is_not_reevaluated(
 # ───────────────────────── web: self-service newsletter requests ─────────────────────────
 def test_seed_type_hidden_for_non_admin(auth_client, user, db):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
     resp = auth_client.get("/sources/new")
+    assert resp.status_code == 200
     assert b'value="seed"' not in resp.data
 
 
@@ -422,7 +429,7 @@ def test_seed_type_visible_for_admin(admin_client):
 
 def test_newsletter_request_creates_pending_subscription(auth_client, db, user, mailbox):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
     key = ApiKey(owner_user_id=user.id, label="Mine")
     key.set_key("sk-or-x")
     db.session.add(key)
@@ -450,7 +457,7 @@ def test_newsletter_request_creates_pending_subscription(auth_client, db, user, 
 
 def test_newsletter_request_without_mailbox_flashes_error(auth_client, db, user):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
     key = ApiKey(owner_user_id=user.id, label="Mine")
     key.set_key("sk-or-x")
     db.session.add(key)

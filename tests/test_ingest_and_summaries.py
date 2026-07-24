@@ -236,6 +236,24 @@ def test_cut_due_editions_stops_after_max_attempts_per_period(app, db):
     assert SummaryRun.query.filter_by(summary_id=summary.id).count() == MAX_FAILED_ATTEMPTS_PER_PERIOD
 
 
+def test_extract_headline_from_edition_header():
+    doc = [
+        {"type": "edition_header", "title": "OpenAI ships GPT-6", "date": "Monday July 20"},
+        {"type": "intro", "markdown": "x"},
+    ]
+    assert summarize._extract_headline(doc) == "OpenAI ships GPT-6"
+
+
+def test_extract_headline_missing_edition_header():
+    assert summarize._extract_headline([{"type": "intro", "markdown": "x"}]) is None
+    assert summarize._extract_headline([]) is None
+    assert summarize._extract_headline(None) is None
+
+
+def test_extract_headline_blank_title_returns_none():
+    assert summarize._extract_headline([{"type": "edition_header", "title": "  "}]) is None
+
+
 def test_build_summary_records_run(app, db, sample_items):
     summary = Summary(
         user_id=1, name="Daily", type_key="app_page",

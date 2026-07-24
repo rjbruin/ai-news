@@ -28,7 +28,7 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
-    ApiKey, Alert, EditionRecipient, NewsItem,
+    ApiKey, Alert, EditionRead, EditionRecipient, NewsItem,
     NewsItemTag, Source, Summary, SummaryRun, Tag, User, UserDisabledSource,
     dispatch_subscriptions, utcnow,
 )
@@ -711,7 +711,7 @@ def _mailbox_address(mailbox: Source) -> str:
 
 
 @bp.route("/sources")
-@login_required
+@dispatch_required
 def sources():
     top_level = (
         Source.query.filter_by(parent_source_id=None)
@@ -754,7 +754,7 @@ def source_toggle_mine(source_id: int):
 
 
 @bp.route("/sources/new", methods=["GET", "POST"])
-@approved_required
+@dispatch_required
 def source_new():
     types = {
         key: cls for key, cls in source_registry.all_types().items()
@@ -919,7 +919,7 @@ def tags_redirect():
 
 
 @bp.route("/topics")
-@login_required
+@dispatch_required
 def topics():
     from ..tagging.engine import topic_stats
 
@@ -1323,6 +1323,7 @@ def edition_view(summary_id: int, run_id: int):
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
         is_shared_view=False, is_own=is_own, coverage=coverage,
+        is_read=run.is_read_by(current_user),
         total_agent_cost=total_agent_cost, total_podcast_cost=total_podcast_cost,
     )
 
@@ -1633,30 +1634,33 @@ def edition_logs(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/read", methods=["POST"])
 @login_required
 def edition_mark_read(summary_id: int, run_id: int):
-    """Marks an edition read (idempotent). Called automatically after the
-    reader has spent a few seconds on the edition page."""
+    """Marks an edition read for the current viewer (idempotent). Called
+    automatically after the reader has spent a few seconds on the edition
+    page. Read state is per-user — a Dispatch can have multiple readers."""
     summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
+    if not _can_read(summary):
         abort(403)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    if run.read_at is None:
-        run.read_at = utcnow()
+    row = EditionRead.query.filter_by(user_id=current_user.id, run_id=run.id).first()
+    if row is None:
+        row = EditionRead(user_id=current_user.id, run_id=run.id, read_at=utcnow())
+        db.session.add(row)
         db.session.commit()
-    return jsonify({"read_at": run.read_at.isoformat()})
+    return jsonify({"read_at": row.read_at.isoformat()})
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/unread", methods=["POST"])
 @login_required
 def edition_mark_unread(summary_id: int, run_id: int):
     summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
+    if not _can_read(summary):
         abort(403)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    run.read_at = None
+    EditionRead.query.filter_by(user_id=current_user.id, run_id=run.id).delete()
     db.session.commit()
     return jsonify({"read_at": None})
 

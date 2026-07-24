@@ -674,6 +674,12 @@ class SummaryRun(db.Model):
     range_end = db.Column(db.DateTime, nullable=True)
     item_count = db.Column(db.Integer, default=0)
     label = db.Column(db.String(120), nullable=True)   # e.g. "Tuesday June 22"
+    # The edition's actual newsworthy headline (e.g. "OpenAI ships GPT-6 with
+    # native tool use") — extracted from the agent's edition_header block at
+    # build time, kept as its own field so surfaces like the homepage can
+    # show it without rendering/parsing the whole document. Distinct from
+    # `label`, which is just the date.
+    headline = db.Column(db.String(300), nullable=True)
     content = db.Column(db.Text, nullable=True)         # rendered HTML artifact
     artifact_ref = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default="ok")
@@ -708,7 +714,6 @@ class SummaryRun(db.Model):
     # "created" channel for this edition once it has been generated.
     pdf_file = db.Column(db.Text, nullable=True)
 
-    read_at = db.Column(db.DateTime, nullable=True)
     share_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
     summary = db.relationship("Summary", back_populates="runs")
@@ -717,6 +722,25 @@ class SummaryRun(db.Model):
         backref=db.backref("parent", remote_side=[id]),
         lazy="dynamic",
     )
+
+    def read_at_for(self, user) -> "datetime | None":
+        row = EditionRead.query.filter_by(user_id=user.id, run_id=self.id).first()
+        return row.read_at if row else None
+
+    def is_read_by(self, user) -> bool:
+        return self.read_at_for(user) is not None
+
+
+class EditionRead(db.Model):
+    """Per-user read state for an edition — a Dispatch can be followed by
+    multiple readers, each with their own read/unread marker (unlike
+    everything else about a SummaryRun, which is shared/owner-controlled)."""
+
+    __tablename__ = "edition_reads"
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    run_id = db.Column(db.Integer, db.ForeignKey("summary_runs.id"), primary_key=True)
+    read_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
 
 class Alert(db.Model):

@@ -54,7 +54,14 @@ def test_unapproved_user_cannot_create_topic(auth_client, db):
     assert resp.status_code == 403
 
 
-def test_unapproved_user_can_view_topics_list(auth_client):
+def test_non_dispatch_user_cannot_view_topics_list(auth_client):
+    """Viewing Topics now requires owning a Dispatch — approval alone isn't
+    enough, and neither is it required (dispatch ownership is the gate)."""
+    assert auth_client.get("/topics").status_code == 403
+
+
+def test_unapproved_dispatch_owner_can_view_topics_list(auth_client, db, user):
+    _give_dispatch(db, user)
     assert auth_client.get("/topics").status_code == 200
 
 

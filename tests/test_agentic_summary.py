@@ -82,6 +82,7 @@ def test_build_agentic_summary_end_to_end(monkeypatch, db, keyed_user, agentic_s
     # Document stored as IR + rendered HTML content.
     assert run.document is not None
     assert any(b["type"] == "edition_header" for b in run.document)
+    assert run.headline == "AI Daily"  # extracted from edition_header.title
     assert "AI Daily" in run.content
     assert 'href="https://x.test/article"' in run.content
     assert run.revision == 1

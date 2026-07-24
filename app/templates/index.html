@@ -37,7 +37,10 @@
     <a href="{{ url_for('web.edition_shared', token=demo_run.share_token) }}">Read the full edition →</a>
   </div>
   <div class="card-body">
-    <p class="text-body-secondary small mb-2">{{ demo_run.label or demo_run.generated_at.strftime('%Y-%m-%d') }}</p>
+    <span class="pill pill-teal mb-2 d-inline-block">{{ demo_run.label or demo_run.generated_at.strftime('%Y-%m-%d') }}</span>
+    {% if demo_run.headline %}
+    <h3 class="h4 mb-2">{{ demo_run.headline }}</h3>
+    {% endif %}
     <div class="demo-edition-excerpt">
       {% if demo_run.document %}
         {% from "summaries/partials/_blocks.html" import render_blocks %}
