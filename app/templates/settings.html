@@ -21,7 +21,9 @@
     <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
     <a class="nav-link px-2 py-1" href="#sec-headlines">Recent headlines</a>
     {% endif %}
+    {% if current_user.own_dispatch %}
     <a class="nav-link px-2 py-1" href="#sec-pdf">PDF export</a>
+    {% endif %}
     {% if current_user.has_podcast_access %}
     <a class="nav-link px-2 py-1" href="#sec-podcast-format">Podcast format</a>
     <a class="nav-link px-2 py-1" href="#sec-feed">Podcast feed</a>
@@ -36,49 +38,36 @@
   <div class="card-header fw-semibold">Dispatch</div>
   <div class="card-body">
     <p class="text-body-secondary small">
-      Your Dispatch is the recurring AI-written edition you read — each generated
-      issue is an edition. Read the <strong>System Dispatch</strong>, curated and
-      paid for by the admin, or bring your own OpenRouter API key to run a
-      <strong>custom Dispatch</strong> of your own, tuned to your interests.
-    </p>
-    <p class="mb-3">
-      Currently reading:
-      <strong>
-        {%- if not subscribed_summary %} nothing yet
-        {%- elif subscribed_summary.user_id == current_user.id %} your own Dispatch
-        {%- elif subscribed_summary.is_system_dispatch %} the System Dispatch
-        {%- else %} {{ subscribed_summary.user.username }}'s Dispatch
-        {%- endif %}
-      </strong>
+      A Dispatch is an AI-written publication — each issue is an edition. You're
+      following <strong>{{ follow_count }}</strong> Dispatch{{ 'es' if follow_count != 1 else '' }};
+      browse and follow more on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page.
+      Bring your own OpenRouter API key to run a <strong>custom Dispatch</strong> of your own,
+      tuned to your interests.
     </p>
     {% if not summary %}
-    <button type="submit" form="dispatch-own-form" class="btn btn-primary btn-sm mb-3">Set up my own Dispatch</button>
-    {% endif %}
-    <div class="table-responsive">
-      <table class="table bg-white align-middle mb-0">
-        <thead><tr><th>Dispatch</th><th>Owner</th><th></th></tr></thead>
-        <tbody>
-        {% for d in dispatches %}
-          <tr>
-            <td>{{ d.name }}</td>
-            <td class="small">
-              {{ d.user.username }}
-              {%- if d.is_system_dispatch %} <span class="badge text-bg-secondary">System</span>{% endif %}
-            </td>
-            <td class="text-nowrap">
-              {% if subscribed_summary and d.id == subscribed_summary.id %}
-              <button class="btn btn-sm btn-outline-secondary" disabled>Current</button>
-              {% else %}
-              <button class="btn btn-sm btn-outline-primary" form="dispatch-sub-form-{{ d.id }}">Subscribe</button>
-              {% endif %}
-            </td>
-          </tr>
-        {% else %}
-          <tr><td colspan="3" class="text-body-secondary">No Dispatches available yet.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
+    <button type="submit" form="dispatch-own-form" class="btn btn-primary btn-sm">Set up my own Dispatch</button>
+    {% else %}
+    <div class="border-top pt-3 mt-2">
+      <p class="fw-semibold mb-1">Publish my Dispatch</p>
+      <p class="text-body-secondary small mb-2">
+        Publishing lists your Dispatch on the Dispatches page so others can follow and
+        read it (read-only — they can't change your settings or generate editions).
+      </p>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="is_published" id="is_published"
+               form="dispatch-publish-form" {{ 'checked' if summary.is_published else '' }}>
+        <label class="form-check-label" for="is_published">Publish my Dispatch</label>
+      </div>
+      <div class="input-group" style="max-width: 360px">
+        <span class="input-group-text">Name</span>
+        <input type="text" name="published_name" class="form-control" maxlength="25"
+               form="dispatch-publish-form" placeholder="e.g. AI Tech Dispatch"
+               value="{{ summary.published_name or '' }}">
+        <button type="submit" form="dispatch-publish-form" class="btn btn-outline-primary">Save</button>
+      </div>
+      <div class="form-text">Up to 25 characters, unique across all Dispatches.</div>
     </div>
+    {% endif %}
   </div>
 </div>
 
@@ -327,6 +316,7 @@
 
 {% endif %}
 
+  {% if current_user.own_dispatch %}
   <div class="card shadow-sm mb-4" id="sec-pdf" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">PDF export</div>
     <div class="card-body">
@@ -340,6 +330,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   {% if current_user.has_podcast_access %}
   <div class="card shadow-sm mb-4" id="sec-podcast-format" style="scroll-margin-top:5rem">
@@ -396,11 +387,7 @@
 </form>
 
 <form id="dispatch-own-form" method="post" action="{{ url_for('web.dispatch_own') }}"></form>
-{% for d in dispatches %}
-<form id="dispatch-sub-form-{{ d.id }}" method="post" action="{{ url_for('web.dispatch_subscribe') }}">
-  <input type="hidden" name="summary_id" value="{{ d.id }}">
-</form>
-{% endfor %}
+<form id="dispatch-publish-form" method="post" action="{{ url_for('web.dispatch_publish') }}"></form>
 <form id="regen-feed-form" method="post"
       action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
 <form id="api-key-new-form" method="post" action="{{ url_for('web.api_key_new') }}"></form>

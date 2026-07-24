@@ -1,5 +1,11 @@
-from app.models import NewsItem, Source, UserDisabledSource
+from app.models import NewsItem, Source, Summary, UserDisabledSource
 from app.services.summarize import items_in_window
+
+
+def _give_dispatch(db, user):
+    """The per-user source toggle requires owning a Dispatch (dispatch_required)."""
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
 
 
 def _source(db, name="Feed A"):
@@ -51,6 +57,7 @@ def test_items_in_window_disabled_source_only_affects_that_user(db, user, admin)
 
 
 def test_source_toggle_mine_route_creates_and_removes_row(auth_client, db, user):
+    _give_dispatch(db, user)
     source = _source(db)
     assert UserDisabledSource.query.filter_by(user_id=user.id, source_id=source.id).first() is None
 
@@ -63,6 +70,7 @@ def test_source_toggle_mine_route_creates_and_removes_row(auth_client, db, user)
 
 
 def test_sources_page_shows_toggle_and_state(auth_client, db, user):
+    _give_dispatch(db, user)
     source = _source(db)
     resp = auth_client.get("/sources")
     assert b"On for me" in resp.data

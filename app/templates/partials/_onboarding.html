@@ -16,9 +16,29 @@
           <p>
             Dispatch watches the news sources you point it at — newsletters, RSS/Atom feeds —
             pulls out the individual stories, and tags each one against a shared topic taxonomy.
-            An AI agent then writes you an edition from whatever matches your interests, on
-            whatever schedule you set.
+            An AI agent then writes editions from whatever matches its interests, on a schedule.
           </p>
+        </div>
+
+        <div class="onboarding-step d-none">
+          <h6 class="fw-bold mb-2">Follow some Dispatches</h6>
+          <p class="mb-2">
+            A Dispatch is an AI-written publication; each issue is an edition. Follow any number —
+            their editions show up together on your Editions page. You can change these anytime
+            from the <strong>Dispatches</strong> page.
+          </p>
+          {% for d in published_dispatches %}
+          <div class="form-check">
+            <input class="form-check-input onboarding-follow-checkbox" type="checkbox"
+                   value="{{ d.id }}" id="follow-{{ d.id }}"
+                   {{ 'checked' if current_user.is_following(d) else '' }}>
+            <label class="form-check-label" for="follow-{{ d.id }}">
+              {{ d.display_name }} <span class="text-body-secondary small">· by {{ d.user.username }}</span>
+            </label>
+          </div>
+          {% else %}
+          <p class="text-body-secondary small mb-0">No published Dispatches to follow yet.</p>
+          {% endfor %}
         </div>
 
         <div class="onboarding-step d-none">
@@ -47,16 +67,15 @@
         </div>
 
         <div class="onboarding-step d-none">
-          <h6 class="fw-bold mb-2">You're reading the System Dispatch</h6>
+          <h6 class="fw-bold mb-2">Or run your own Dispatch</h6>
           <p>
-            A Dispatch is a magazine — its editions are the issues. You start out reading the
-            <strong>System Dispatch</strong>, curated and paid for by the admin, so there's
-            nothing to set up.
+            Following a Dispatch is free — someone else pays for generating it. Want one tuned
+            exactly to you instead? Bring your own OpenRouter API key and set up a
+            <strong>custom Dispatch</strong> of your own in <strong>Settings</strong>.
           </p>
           <p class="mb-0">
-            Want it tuned to you instead? Bring your own OpenRouter API key and set up a
-            <strong>custom Dispatch</strong> of your own in <strong>Settings</strong> — it starts
-            as a copy of the System Dispatch's settings, and you shape it from there.
+            It starts as a copy of the System Dispatch's settings, and you shape it from there —
+            then you can publish it for others to follow, too.
           </p>
         </div>
 
@@ -78,6 +97,7 @@
       <div class="modal-footer d-flex justify-content-between align-items-center">
         <div class="d-flex gap-1">
           <span class="onboarding-dot active"></span>
+          <span class="onboarding-dot"></span>
           <span class="onboarding-dot"></span>
           <span class="onboarding-dot"></span>
           <span class="onboarding-dot"></span>

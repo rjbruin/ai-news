@@ -11,133 +11,68 @@
   </div>
 </form>
 
-{% if not subscribed_summary %}
-<div class="card shadow-sm">
-  <div class="card-body text-center py-5">
-    <p class="text-body-secondary mb-0">No Dispatch configured yet. Ask an admin to set up the System Dispatch.</p>
-  </div>
-</div>
-
-{% else %}
+{% if hero_run %}
 <div class="card hover-lift shadow-sm mb-4">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start mb-2">
       <span class="text-body-secondary small fw-semibold d-flex align-items-center gap-2">
         <span style="width:8px;height:8px;border-radius:2px;background:var(--ag-teal);display:inline-block"></span>
-        {% if is_own %}Your Dispatch{% elif subscribed_summary.is_system_dispatch %}Reading: System Dispatch{% else %}Reading: {{ subscribed_summary.user.username }}'s Dispatch{% endif %}
+        Latest across your Dispatches
       </span>
-      {% if my_summaries|length > 1 %}
-      <a href="#choose-featured" class="small" data-bs-toggle="collapse">Change</a>
-      {% endif %}
+      <a href="{{ url_for('web.summaries') }}" class="small">All editions</a>
     </div>
-    {% if subscribed_run %}
-      <h1 class="h3 mb-1">
-        {{ subscribed_run.label or subscribed_run.generated_at.strftime('%Y-%m-%d %H:%M') }}
-        {% if subscribed_run.read_at %}
-        <i class="fa-regular fa-envelope-open text-body-secondary ms-2" title="Read"></i>
-        {% else %}
-        <i class="fa-solid fa-envelope text-primary ms-2" title="Unread"></i>
-        {% endif %}
-      </h1>
-      <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
-        <span class="pill pill-teal">{{ subscribed_run.generated_at | natural_dt }}</span>
-        {% if subscribed_coverage %}
-        <span class="pill pill-blue">{{ subscribed_coverage.included_count }}/{{ subscribed_coverage.scope_count }} stories covered</span>
-        {% else %}
-        <span class="pill pill-blue">{{ subscribed_run.item_count }} item{{ 's' if subscribed_run.item_count != 1 else '' }}</span>
-        {% endif %}
-        {% if is_own and subscribed_run.agent_cost is not none %}
-        <span class="pill pill-amber" title="Generation cost">${{ '%.4f' % subscribed_run.agent_cost }}</span>
-        {% endif %}
-        <span title="Channels">{{ channel_icons(subscribed_run) }}</span>
-      </div>
-      <a href="{{ url_for('web.edition_view', summary_id=subscribed_summary.id, run_id=subscribed_run.id) }}"
-         class="btn btn-primary">Open</a>
-    {% elif is_own %}
-      <p class="text-body-secondary fst-italic mb-3">No editions generated yet.</p>
-      <a href="{{ url_for('web.generate_debug', summary_id=subscribed_summary.id) }}"
-         class="btn btn-primary">Generate first edition</a>
-    {% else %}
-      <p class="text-body-secondary fst-italic mb-3">No editions generated yet.</p>
-    {% endif %}
-
-    <div class="mt-3 pt-3 border-top d-flex flex-wrap gap-2">
-      {% if system_dispatch and subscribed_summary.id != system_dispatch.id %}
-      <form method="post" action="{{ url_for('web.dispatch_subscribe') }}">
-        <input type="hidden" name="summary_id" value="{{ system_dispatch.id }}">
-        <button class="btn btn-sm btn-outline-secondary">Switch to System Dispatch</button>
-      </form>
-      {% endif %}
-      {% if own_summary and subscribed_summary.id != own_summary.id %}
-      <form method="post" action="{{ url_for('web.dispatch_subscribe') }}">
-        <input type="hidden" name="summary_id" value="{{ own_summary.id }}">
-        <button class="btn btn-sm btn-outline-secondary">Switch to my Dispatch</button>
-      </form>
-      {% elif not own_summary %}
-      <form method="post" action="{{ url_for('web.dispatch_own') }}">
-        <button class="btn btn-sm btn-outline-primary">Set up my own Dispatch</button>
-      </form>
-      {% endif %}
-    </div>
-  </div>
-</div>
-
-{% if my_summaries|length > 1 %}
-<div class="collapse mb-4" id="choose-featured">
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h2 class="h6">Feature one of your own Dispatches</h2>
-      <div class="row g-3">
-        {% for s in my_summaries %}
-        <div class="col-sm-6 col-lg-4">
-          <form method="post" action="{{ url_for('web.dispatch_subscribe') }}">
-            <input type="hidden" name="summary_id" value="{{ s.id }}">
-            <div class="card h-100 {{ 'border-primary' if s.id == subscribed_summary.id else '' }}">
-              <div class="card-body d-flex flex-column">
-                <span class="fw-semibold">{{ s.name }}</span>
-                <button class="btn btn-sm btn-outline-primary mt-auto"
-                        {{ 'disabled' if s.id == subscribed_summary.id else '' }}>
-                  {{ 'Current' if s.id == subscribed_summary.id else 'Switch to this' }}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-{% if other_summaries %}
-<div class="card shadow-sm">
-  <div class="card-header">
-    <span class="fw-semibold">Other recent editions</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for s in other_summaries %}
-    {% set run = latest_editions[s.id] %}
-    <div class="list-group-item d-flex align-items-center gap-2 py-2">
-      <span class="flex-shrink-0 small text-body-secondary" style="width:9rem">{{ s.name }}</span>
-      {% if run %}
-        <span class="flex-grow-1 {{ '' if run.read_at else 'fw-semibold' }}">
-          {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
-        </span>
-        {% if not run.read_at %}
-        <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
-        {% endif %}
-        <a href="{{ url_for('web.edition_view', summary_id=s.id, run_id=run.id) }}"
-           class="btn btn-sm btn-outline-primary">Open</a>
+    <h1 class="h3 mb-1">
+      {{ hero_run.label or hero_run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if hero_run.read_at %}
+      <i class="fa-regular fa-envelope-open text-body-secondary ms-2" title="Read"></i>
       {% else %}
-        <span class="flex-grow-1 text-body-secondary fst-italic small">No editions yet</span>
+      <i class="fa-solid fa-envelope text-primary ms-2" title="Unread"></i>
       {% endif %}
+    </h1>
+    <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+      <span class="pill pill-slate">{{ hero_run.summary.display_name }}</span>
+      <span class="pill pill-teal">{{ hero_run.generated_at | natural_dt }}</span>
+      {% if hero_coverage %}
+      <span class="pill pill-blue">{{ hero_coverage.included_count }}/{{ hero_coverage.scope_count }} stories covered</span>
+      {% else %}
+      <span class="pill pill-blue">{{ hero_run.item_count }} item{{ 's' if hero_run.item_count != 1 else '' }}</span>
+      {% endif %}
+      {% if hero_is_own and hero_run.agent_cost is not none %}
+      <span class="pill pill-amber" title="Generation cost">${{ '%.4f' % hero_run.agent_cost }}</span>
+      {% endif %}
+      <span title="Channels">{{ channel_icons(hero_run) }}</span>
     </div>
-    {% endfor %}
+    <a href="{{ url_for('web.edition_view', summary_id=hero_run.summary.id, run_id=hero_run.id) }}"
+       class="btn btn-primary">Open</a>
+  </div>
+</div>
+{% else %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body text-center py-5">
+    <p class="text-body-secondary mb-1">No editions yet.</p>
+    <p class="text-body-secondary small mb-0">
+      Follow a Dispatch on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page to start reading.
+    </p>
   </div>
 </div>
 {% endif %}
-{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <span class="fw-semibold">Following {{ followed|length }} Dispatch{{ 'es' if followed|length != 1 else '' }}</span>
+      <p class="text-body-secondary small mb-0">Browse the directory to follow more, or run your own.</p>
+    </div>
+    <div class="d-flex gap-2 flex-shrink-0">
+      <a href="{{ url_for('web.dispatches') }}" class="btn btn-sm btn-outline-primary">Browse Dispatches</a>
+      {% if not own_dispatch %}
+      <form method="post" action="{{ url_for('web.dispatch_own') }}">
+        <button class="btn btn-sm btn-outline-secondary">Set up my own</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
 
 <div class="card shadow-sm mt-4">
   <div class="card-header d-flex justify-content-between align-items-center">
@@ -190,7 +125,20 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
   const dots = Array.from(modalEl.querySelectorAll('.onboarding-dot'));
   const backBtn = modalEl.querySelector('.onboarding-back');
   const nextBtn = modalEl.querySelector('.onboarding-next');
+  const FOLLOW_URL = "{{ url_for('web.dispatch_follow_bulk') }}";
   let i = 0;
+  let followSaved = false;
+
+  // Persist the "which Dispatches to follow" picks (fire-and-forget). Safe to
+  // call more than once — the endpoint sets follows to exactly the checked set.
+  function saveFollows() {
+    const boxes = modalEl.querySelectorAll('.onboarding-follow-checkbox');
+    if (!boxes.length) return;
+    const data = new FormData();
+    boxes.forEach(b => { if (b.checked) data.append('summary_id', b.value); });
+    fetch(FOLLOW_URL, {method: 'POST', body: data, keepalive: true}).catch(() => {});
+    followSaved = true;
+  }
 
   function render() {
     steps.forEach((el, idx) => el.classList.toggle('d-none', idx !== i));
@@ -200,13 +148,18 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
   }
   backBtn.addEventListener('click', () => { i = Math.max(0, i - 1); render(); });
   nextBtn.addEventListener('click', () => {
+    // Leaving the follow step (or finishing) commits the picks.
+    if (steps[i].querySelector('.onboarding-follow-checkbox')) saveFollows();
     if (i === steps.length - 1) {
+      if (!followSaved) saveFollows();
       window.location.href = "{{ url_for('web.settings') }}#sec-api-keys";
       return;
     }
     i = Math.min(steps.length - 1, i + 1);
     render();
   });
+  // A user who skips after making picks should still keep them.
+  modalEl.addEventListener('hide.bs.modal', () => { if (!followSaved) saveFollows(); });
   render();
   new bootstrap.Modal(modalEl).show();
 })();

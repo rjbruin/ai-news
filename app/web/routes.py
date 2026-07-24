@@ -29,7 +29,8 @@ from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
     ApiKey, Alert, EditionRecipient, NewsItem,
-    NewsItemTag, Source, Summary, SummaryRun, Tag, User, UserDisabledSource, utcnow,
+    NewsItemTag, Source, Summary, SummaryRun, Tag, User, UserDisabledSource,
+    dispatch_subscriptions, utcnow,
 )
 from ..services import edition_mail, generation_registry, ingest, summarize
 from ..sources import registry as source_registry
@@ -49,6 +50,22 @@ def approved_required(view):
     @login_required
     def wrapped(*args, **kwargs):
         if not current_user.is_approved:
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def dispatch_required(view):
+    """Gate features that only make sense for a user who runs their own
+    Dispatch (topic management, the per-user source toggle): personal topics
+    and per-user source on/off only affect editions you generate yourself.
+    Admins pass too — they curate the shared topic taxonomy.
+    """
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not (current_user.own_dispatch or current_user.is_admin):
             abort(403)
         return view(*args, **kwargs)
 
@@ -148,50 +165,32 @@ def dismiss_alert(alert_id: int):
 @bp.route("/dashboard")
 @login_required
 def dashboard():
-    my_summaries = (
-        Summary.query.filter_by(user_id=current_user.id, type_key="agentic_page")
-        .order_by(Summary.created_at)
-        .all()
-    )
-    latest_editions = {
-        s.id: (
-            SummaryRun.query
-            .filter_by(summary_id=s.id)
-            .order_by(SummaryRun.generated_at.desc())
-            .first()
-        )
-        for s in my_summaries
-    }
-
-    # Lazily self-heal a missing subscription (e.g. an existing account from
-    # before this feature, or the system dispatch having just been set up)
-    # onto the system dispatch, rather than a one-off data migration guessing.
     system_dispatch = Summary.get_system_dispatch()
-    if not current_user.subscribed_summary_id and system_dispatch:
-        current_user.subscribed_summary_id = system_dispatch.id
+    # Lazily self-heal an empty follow list (e.g. an account from before this
+    # feature) onto the system dispatch, rather than a one-off data migration.
+    if system_dispatch and current_user.subscribed_dispatches.count() == 0:
+        current_user.follow(system_dispatch)
         db.session.commit()
 
-    subscribed_summary = current_user.subscribed_summary
-    is_own = bool(subscribed_summary and subscribed_summary.user_id == current_user.id)
-    if subscribed_summary and subscribed_summary.id in latest_editions:
-        subscribed_run = latest_editions[subscribed_summary.id]
-    elif subscribed_summary:
-        subscribed_run = (
+    followed = current_user.subscribed_dispatches.all()
+    followed_ids = [s.id for s in followed]
+    own_dispatch = current_user.own_dispatch
+
+    # Hero = the single most recent edition across everything the user follows.
+    hero_run = None
+    if followed_ids:
+        hero_run = (
             SummaryRun.query
-            .filter_by(summary_id=subscribed_summary.id)
+            .filter(SummaryRun.summary_id.in_(followed_ids))
             .order_by(SummaryRun.generated_at.desc())
             .first()
         )
-    else:
-        subscribed_run = None
-    other_summaries = [
-        s for s in my_summaries if not subscribed_summary or s.id != subscribed_summary.id
-    ]
+    hero_is_own = bool(hero_run and hero_run.summary.user_id == current_user.id)
 
-    subscribed_coverage = None
-    if subscribed_run and subscribed_run.document:
+    hero_coverage = None
+    if hero_run and hero_run.document:
         from ..services.coverage import edition_coverage
-        subscribed_coverage = edition_coverage(subscribed_run)
+        hero_coverage = edition_coverage(hero_run)
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
@@ -212,18 +211,16 @@ def dashboard():
 
     return render_template(
         "dashboard.html",
-        my_summaries=my_summaries,
-        latest_editions=latest_editions,
-        subscribed_summary=subscribed_summary,
-        subscribed_run=subscribed_run,
-        subscribed_coverage=subscribed_coverage,
-        is_own=is_own,
+        followed=followed,
+        hero_run=hero_run,
+        hero_is_own=hero_is_own,
+        hero_coverage=hero_coverage,
+        own_dispatch=own_dispatch,
         system_dispatch=system_dispatch,
-        own_summary=next((s for s in my_summaries if s.type_key == "agentic_page"), None),
-        other_summaries=other_summaries,
         source_badges=source_badges,
         has_api_key=has_api_key,
         show_onboarding=show_onboarding,
+        published_dispatches=Summary.published().all(),
     )
 
 
@@ -237,20 +234,90 @@ def _source_badge_label(source: Source) -> str:
     return source.name
 
 
-@bp.route("/dispatch/subscribe", methods=["POST"])
-@login_required
-def dispatch_subscribe():
-    """Subscribe to any enabled Dispatch (own or someone else's) — it becomes
-    the one Summary driving this user's dashboard. Read-only unless it's
-    their own (enforced by the unchanged owner-only checks on every mutating
-    route elsewhere in this file)."""
-    summary_id = request.form.get("summary_id", type=int)
-    summary = db.session.get(Summary, summary_id) if summary_id else None
+def _followable(summary) -> bool:
+    """A Dispatch a user may follow: enabled agentic_page, and either their
+    own or one that's been published."""
     if not summary or summary.type_key != "agentic_page" or not summary.enabled:
+        return False
+    return summary.user_id == current_user.id or summary.is_published
+
+
+@bp.route("/dispatch/follow", methods=["POST"])
+@login_required
+def dispatch_follow():
+    """Follow a published Dispatch (or your own) — its editions join your
+    Editions feed. Read-only unless it's your own (enforced by the unchanged
+    owner-only checks on every mutating route elsewhere in this file)."""
+    summary = db.session.get(Summary, request.form.get("summary_id", type=int) or 0)
+    if not _followable(summary):
         abort(404)
-    current_user.subscribed_summary_id = summary.id
+    current_user.follow(summary)
     db.session.commit()
-    return redirect(url_for("web.dashboard"))
+    return redirect(request.referrer or url_for("web.dispatches"))
+
+
+@bp.route("/dispatch/unfollow", methods=["POST"])
+@login_required
+def dispatch_unfollow():
+    """Stop following a Dispatch. You can unfollow your own too (it stays your
+    Dispatch, it just leaves your feed)."""
+    summary = db.session.get(Summary, request.form.get("summary_id", type=int) or 0)
+    if summary:
+        current_user.unfollow(summary)
+        db.session.commit()
+    return redirect(request.referrer or url_for("web.dispatches"))
+
+
+@bp.route("/dispatch/follow-bulk", methods=["POST"])
+@login_required
+def dispatch_follow_bulk():
+    """Set the user's follows to exactly the given set of published Dispatch
+    ids (used by the onboarding "pick some to follow" step). Ignores ids that
+    aren't followable; never touches a user's own Dispatch follow."""
+    wanted = set(request.form.getlist("summary_id", type=int))
+    own = current_user.own_dispatch
+    for summary in Summary.published().all():
+        if summary.id in wanted:
+            current_user.follow(summary)
+        elif not (own and summary.id == own.id):
+            current_user.unfollow(summary)
+    db.session.commit()
+    return ("", 204)
+
+
+@bp.route("/dispatch/publish", methods=["POST"])
+@login_required
+def dispatch_publish():
+    """Publish (or unpublish/rename) the user's own Dispatch so others can find
+    and follow it. published_name must be unique (case-insensitive) and ≤25 chars."""
+    own = current_user.own_dispatch
+    if own is None:
+        abort(404)
+    publish = bool(request.form.get("is_published"))
+    name = (request.form.get("published_name") or "").strip()
+    if publish:
+        if not name:
+            flash("Choose a name for your published Dispatch.", "danger")
+            return redirect(url_for("web.settings") + "#sec-dispatch")
+        if len(name) > 25:
+            flash("The published name must be 25 characters or fewer.", "danger")
+            return redirect(url_for("web.settings") + "#sec-dispatch")
+        clash = (
+            Summary.query
+            .filter(db.func.lower(Summary.published_name) == name.lower(), Summary.id != own.id)
+            .first()
+        )
+        if clash:
+            flash(f'The name "{name}" is already taken — pick another.', "danger")
+            return redirect(url_for("web.settings") + "#sec-dispatch")
+        own.is_published = True
+        own.published_name = name
+        flash(f'Your Dispatch is now published as "{name}".', "success")
+    else:
+        own.is_published = False
+        flash("Your Dispatch is no longer published.", "info")
+    db.session.commit()
+    return redirect(url_for("web.settings") + "#sec-dispatch")
 
 
 @bp.route("/dispatch/own", methods=["POST"])
@@ -292,7 +359,7 @@ def dispatch_own():
                 if interests:
                     agent_memory.write(current_user, own, "interests", interests)
 
-    current_user.subscribed_summary_id = own.id
+    current_user.follow(own)  # owning ⇒ following (own editions appear in your feed)
     db.session.commit()
     if just_created:
         flash(
@@ -301,7 +368,7 @@ def dispatch_own():
             "success",
         )
     else:
-        flash("Switched to your own Dispatch.", "success")
+        flash("You already have your own Dispatch.", "info")
     return redirect(url_for("web.settings"))
 
 
@@ -436,14 +503,9 @@ def settings():
     )
     types = summary_registry.all_types()
 
-    # Dispatch subscription context — always shown, unlike the Schedule/
-    # Content/Interests cards below which stay gated on owning a Summary.
-    subscribed_summary = current_user.subscribed_summary
-    system_dispatch = Summary.get_system_dispatch()
-    dispatches = (
-        Summary.query.filter_by(type_key="agentic_page", enabled=True)
-        .order_by(Summary.created_at).all()
-    )
+    # Dispatch context for the Settings Dispatch card — always shown, unlike
+    # the Schedule/Content/Interests cards below (gated on owning a Summary).
+    follow_count = current_user.subscribed_dispatches.count()
 
     if request.method == "POST":
         if current_user.has_podcast_access:
@@ -522,8 +584,7 @@ def settings():
     return render_template(
         "settings.html",
         summary=summary, types=types,
-        subscribed_summary=subscribed_summary, system_dispatch=system_dispatch,
-        dispatches=dispatches,
+        follow_count=follow_count,
         files=files, headlines=headlines, retention=retention,
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
@@ -674,10 +735,11 @@ def sources():
 
 
 @bp.route("/sources/<int:source_id>/toggle-mine", methods=["POST"])
-@login_required
+@dispatch_required
 def source_toggle_mine(source_id: int):
     """Turn a (shared) source on/off for just the current user's own
-    editions — independent of who owns/pays for the source."""
+    editions — independent of who owns/pays for the source. Only meaningful
+    for a user who runs their own Dispatch (hence dispatch_required)."""
     source = db.session.get(Source, source_id) or abort(404)
     row = UserDisabledSource.query.filter_by(
         user_id=current_user.id, source_id=source.id,
@@ -885,7 +947,7 @@ def topics():
 
 
 @bp.route("/topics/create", methods=["POST"])
-@approved_required
+@dispatch_required
 def topic_create():
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip()
@@ -912,7 +974,7 @@ def _can_manage_topic(tag: Tag) -> bool:
 
 
 @bp.route("/topics/<int:tag_id>/edit", methods=["POST"])
-@approved_required
+@dispatch_required
 def topic_edit(tag_id: int):
     tag = db.session.get(Tag, tag_id) or abort(404)
     if not _can_manage_topic(tag):
@@ -931,7 +993,7 @@ def topic_edit(tag_id: int):
 
 
 @bp.route("/topics/<int:tag_id>/archive", methods=["POST"])
-@approved_required
+@dispatch_required
 def topic_archive(tag_id: int):
     tag = db.session.get(Tag, tag_id) or abort(404)
     if not _can_manage_topic(tag):
@@ -943,7 +1005,7 @@ def topic_archive(tag_id: int):
 
 
 @bp.route("/topics/<int:tag_id>/restore", methods=["POST"])
-@approved_required
+@dispatch_required
 def topic_restore(tag_id: int):
     tag = db.session.get(Tag, tag_id) or abort(404)
     if not _can_manage_topic(tag):
@@ -990,35 +1052,71 @@ def news_read(item_id: int):
 
 
 # ───────────────────────── Editions ─────────────────────────
+def _merged_edition_feed(dispatches, *, cap=50):
+    """Latest revision of each edition chain across the given dispatches,
+    newest first. Each entry is (run, summary)."""
+    feed = []
+    for summary in dispatches:
+        for run in summarize.edition_heads(summary):
+            feed.append((run, summary))
+    feed.sort(key=lambda rs: rs[0].generated_at or utcnow(), reverse=True)
+    return feed[:cap]
+
+
 @bp.route("/summaries")
 @login_required
 def summaries():
-    mine = (
-        Summary.query.filter_by(user_id=current_user.id, type_key="agentic_page")
-        .order_by(Summary.created_at.desc())
-        .all()
-    )
-    # Show the latest revision of each edition chain (heads), newest first.
-    editions = {s.id: summarize.edition_heads(s)[:20] for s in mine}
+    """Editions feed — every edition of every Dispatch the user follows,
+    merged newest-first. Owner-only controls appear per row on the user's own."""
+    followed = current_user.subscribed_dispatches.all()
+    feed = _merged_edition_feed(followed)
+    own_ids = {s.id for s in followed if s.user_id == current_user.id}
     active_generations = {
-        s.id: generation_registry.get(s.id) for s in mine if generation_registry.get(s.id)
+        sid: generation_registry.get(sid)
+        for sid in own_ids if generation_registry.get(sid)
     }
-
-    # A subscribed-but-not-owned Dispatch gets a separate, read-only list —
-    # no generate/retry/delete controls, unlike the owned cards above.
-    subscribed_summary = current_user.subscribed_summary
-    subscribed_editions = None
-    if subscribed_summary and subscribed_summary.user_id != current_user.id:
-        subscribed_editions = summarize.edition_heads(subscribed_summary)[:20]
-
     return render_template(
         "summaries/list.html",
-        summaries=mine,
-        editions=editions,
-        types=summary_registry.all_types(),
+        feed=feed,
+        own_ids=own_ids,
         active_generations=active_generations,
-        subscribed_summary=subscribed_summary,
-        subscribed_editions=subscribed_editions,
+    )
+
+
+@bp.route("/dispatches")
+@login_required
+def dispatches():
+    """Directory of published Dispatches plus the user's own (even if
+    unpublished), each linking to its own page. Follow/unfollow inline."""
+    listed = Summary.published().order_by(Summary.published_name).all()
+    own = current_user.own_dispatch
+    if own and own not in listed:
+        listed = [own] + listed
+    following_ids = {s.id for s in current_user.subscribed_dispatches.all()}
+    return render_template(
+        "dispatches.html",
+        dispatches=listed, following_ids=following_ids, own=own,
+    )
+
+
+@bp.route("/dispatches/<int:summary_id>")
+@login_required
+def dispatch_detail(summary_id: int):
+    """A single Dispatch's page: its editions, newest-first. Readable if
+    published, owned, or already followed."""
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.type_key != "agentic_page":
+        abort(404)
+    is_own = summary.user_id == current_user.id
+    if not (is_own or summary.is_published or current_user.is_following(summary)):
+        abort(404)
+    feed = _merged_edition_feed([summary])
+    active = generation_registry.get(summary.id) if is_own else None
+    return render_template(
+        "summaries/dispatch_detail.html",
+        summary=summary, feed=feed, is_own=is_own,
+        is_following=current_user.is_following(summary),
+        active_generation=active,
     )
 
 
@@ -1057,6 +1155,12 @@ def summary_delete(summary_id: int):
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
+    # Association rows have no ORM cascade — clear followers before deleting.
+    db.session.execute(
+        dispatch_subscriptions.delete().where(
+            dispatch_subscriptions.c.summary_id == summary.id
+        )
+    )
     db.session.delete(summary)
     db.session.commit()
     flash("Summary deleted.", "info")
@@ -1181,9 +1285,9 @@ def _stream_handle(handle) -> Response:
 
 
 def _can_read(summary: Summary) -> bool:
-    """Owner, or currently subscribed to this Dispatch — read-only access to
-    already-generated content. Every mutating route stays owner-only."""
-    return summary.user_id == current_user.id or summary.id == current_user.subscribed_summary_id
+    """Owner, or following this Dispatch — read-only access to already-generated
+    content. Every mutating route stays owner-only."""
+    return summary.user_id == current_user.id or current_user.is_following(summary)
 
 
 def _chain_costs(chain: list) -> tuple[float, float]:

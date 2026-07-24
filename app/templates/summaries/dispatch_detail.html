@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "partials/_edition_row.html" import edition_row with context %}
+{% block title %}{{ summary.display_name }} · Dispatch{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1">{{ summary.display_name }}</h1>
+    <p class="text-body-secondary small mb-0">
+      {% if is_own %}Your Dispatch{% else %}by {{ summary.user.username }}{% endif %}
+      {% if summary.is_published %}· <span class="badge text-bg-light border text-body-secondary">published</span>{% endif %}
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    {% if is_own %}
+      {% if active_generation %}
+      <span class="btn btn-sm btn-primary disabled">
+        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        {{ 'Revising…' if active_generation.kind == 'revise' else 'Generating…' }}
+      </span>
+      {% else %}
+      <button type="button" class="btn btn-sm btn-primary"
+              data-bs-toggle="modal" data-bs-target="#modal-new-edition">New custom edition</button>
+      {% endif %}
+      <a href="{{ url_for('web.settings') }}#sec-dispatch" class="btn btn-sm btn-outline-secondary">Settings</a>
+    {% else %}
+      {% if is_following %}
+      <form method="post" action="{{ url_for('web.dispatch_unfollow') }}">
+        <input type="hidden" name="summary_id" value="{{ summary.id }}">
+        <button class="btn btn-sm btn-outline-secondary">Unfollow</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('web.dispatch_follow') }}">
+        <input type="hidden" name="summary_id" value="{{ summary.id }}">
+        <button class="btn btn-sm btn-primary">Follow</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if feed %}
+<div class="card shadow-sm">
+  <div class="list-group list-group-flush">
+    {% for run, s in feed %}
+    {{ edition_row(run, s, is_own=is_own) }}
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card shadow-sm">
+  <div class="card-body text-body-secondary small fst-italic">No editions yet.</div>
+</div>
+{% endif %}
+
+{% if is_own and not active_generation %}
+<div class="modal fade" id="modal-new-edition" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">New custom edition</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{{ url_for('web.generate_custom', summary_id=summary.id) }}">
+        <div class="modal-body">
+          <p class="text-body-secondary small mb-3">
+            Choose the news window for this edition. Items fetched within this
+            range will be passed to the agent.
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Start (UTC)</label>
+            <input type="datetime-local" name="range_start" class="form-control" required>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">End (UTC)</label>
+            <input type="datetime-local" name="range_end" class="form-control" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Generate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

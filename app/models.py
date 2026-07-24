@@ -34,6 +34,15 @@ class JSONEncodedDict(db.TypeDecorator):
         return json.loads(value) if value else None
 
 
+# Many-to-many: which Dispatches (Summary rows) a user follows. A user reads
+# every edition of every Dispatch they follow; they always follow their own.
+dispatch_subscriptions = db.Table(
+    "dispatch_subscriptions",
+    db.Column("user_id", db.Integer, db.ForeignKey("users.id"), primary_key=True),
+    db.Column("summary_id", db.Integer, db.ForeignKey("summaries.id"), primary_key=True),
+)
+
+
 # ─────────────────────────────── Users ───────────────────────────────
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -62,13 +71,6 @@ class User(UserMixin, db.Model):
     # apps (which can't do session login) can fetch the feed and its MP3s.
     podcast_feed_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
-    # The one Summary ("Dispatch") whose editions populate this user's
-    # dashboard — may be their own, or one they're reading read-only (e.g.
-    # the system dispatch). Exactly one at a time, like a subscription.
-    subscribed_summary_id = db.Column(
-        db.Integer, db.ForeignKey("summaries.id"), nullable=True
-    )
-
     # Gate for self-service source/API-key management. Admins are always
     # implicitly approved (see is_approved); this flag is for everyone else.
     approved = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
@@ -94,8 +96,33 @@ class User(UserMixin, db.Model):
         "EditionRecipient", back_populates="user", lazy="dynamic",
         cascade="all, delete-orphan",
     )
-    subscribed_summary = db.relationship("Summary", foreign_keys=[subscribed_summary_id])
+    # Dispatches this user follows (reads). Always includes their own, if any.
+    subscribed_dispatches = db.relationship(
+        "Summary", secondary=dispatch_subscriptions, lazy="dynamic",
+    )
     edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
+
+    def follow(self, summary: "Summary") -> None:
+        if not self.is_following(summary):
+            self.subscribed_dispatches.append(summary)
+
+    def unfollow(self, summary: "Summary") -> None:
+        if self.is_following(summary):
+            self.subscribed_dispatches.remove(summary)
+
+    def is_following(self, summary: "Summary") -> bool:
+        return self.subscribed_dispatches.filter(
+            dispatch_subscriptions.c.summary_id == summary.id
+        ).count() > 0
+
+    @property
+    def own_dispatch(self) -> "Summary | None":
+        """This user's own custom Dispatch (Summary), or None if they only
+        read others'. Truthy = "dispatch user" — gates topic management, the
+        per-user source toggle, PDF export, and publishing."""
+        return Summary.query.filter_by(
+            user_id=self.id, type_key="agentic_page"
+        ).first()
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
@@ -608,6 +635,12 @@ class Summary(db.Model):
     # application code (see web.admin's toggle route), not a DB constraint.
     is_system_dispatch = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
+    # Publishing: a published Dispatch appears in the /dispatches directory and
+    # can be followed by anyone. published_name is the short public title the
+    # owner chooses (unique across all Dispatches, ≤25 chars).
+    is_published = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+    published_name = db.Column(db.String(25), unique=True, nullable=True)
+
     user = db.relationship(
         "User", back_populates="summaries", foreign_keys=[user_id]
     )
@@ -619,6 +652,16 @@ class Summary(db.Model):
     @classmethod
     def get_system_dispatch(cls) -> "Summary | None":
         return cls.query.filter_by(is_system_dispatch=True).first()
+
+    @classmethod
+    def published(cls):
+        """Query of all published Dispatches (for the directory + onboarding)."""
+        return cls.query.filter_by(is_published=True, enabled=True)
+
+    @property
+    def display_name(self) -> str:
+        """Public title: the published name if set, else the owner's own name."""
+        return self.published_name or self.name
 
 
 class SummaryRun(db.Model):

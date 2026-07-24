@@ -1,4 +1,10 @@
-from app.models import NewsItem, NewsItemTag, Tag
+from app.models import NewsItem, NewsItemTag, Summary, Tag
+
+
+def _give_dispatch(db, user):
+    """Topic management now requires owning a Dispatch (dispatch_required)."""
+    db.session.add(Summary(user_id=user.id, name="D", type_key="agentic_page", params={}))
+    db.session.commit()
 
 
 def test_admin_can_create_global_topic(admin_client, db):
@@ -17,7 +23,7 @@ def test_admin_can_create_global_topic(admin_client, db):
 
 def test_approved_user_can_create_private_topic(auth_client, db, user):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
 
     resp = auth_client.post(
         "/topics/create",
@@ -32,7 +38,7 @@ def test_approved_user_can_create_private_topic(auth_client, db, user):
 
 def test_non_admin_is_global_flag_is_ignored(auth_client, db, user):
     user.approved = True
-    db.session.commit()
+    _give_dispatch(db, user)
 
     auth_client.post(
         "/topics/create",
@@ -91,6 +97,7 @@ def test_user_cannot_edit_another_users_private_topic(auth_client, db, admin):
 
 def test_user_cannot_edit_global_topic(auth_client, db, user):
     user.approved = True
+    _give_dispatch(db, user)
     global_tag = Tag(name="Global One", scope="global")
     db.session.add(global_tag)
     db.session.commit()
