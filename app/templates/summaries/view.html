@@ -279,6 +279,14 @@
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
     <span class="fw-semibold text-body">This is {{ summary.user.username }}'s Dispatch</span>
+    {% if current_user.own_dispatch %}
+    <p class="small text-body-secondary mb-2">
+      You're reading it read-only — no feedback, no edits. Leave feedback and shape
+      your interests on your own Dispatch instead.
+    </p>
+    <a href="{{ url_for('web.dispatch_detail', summary_id=current_user.own_dispatch.id) }}"
+       class="btn btn-primary btn-sm">Go to my Dispatch</a>
+    {% else %}
     <p class="small text-body-secondary mb-2">
       You're reading it read-only — no feedback, no edits. Set up your own Dispatch to
       leave feedback and shape your own interests; it starts as a copy of the System
@@ -287,6 +295,7 @@
     <form method="post" action="{{ url_for('web.dispatch_own') }}">
       <button type="submit" class="btn btn-primary btn-sm">Set up my own Dispatch</button>
     </form>
+    {% endif %}
   </div>
 </div>
 {% endif %}

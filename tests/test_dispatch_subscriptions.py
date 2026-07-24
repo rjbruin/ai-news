@@ -329,6 +329,23 @@ def test_view_shows_real_feedback_box_for_owner(admin_client, system_dispatch, s
     assert "Delete edition" in html
 
 
+def test_view_shows_go_to_my_dispatch_when_follower_already_has_own(
+    auth_client, db, user, system_dispatch, system_run,
+):
+    """A follower who already owns a Dispatch shouldn't be offered the
+    "set up my own" form again — it's a link to their existing one instead."""
+    own = Summary(user_id=user.id, name="Mine", type_key="agentic_page", params={})
+    db.session.add(own)
+    db.session.commit()
+    user.follow(system_dispatch)
+    db.session.commit()
+
+    html = auth_client.get(f"/summaries/{system_dispatch.id}/editions/{system_run.id}").data.decode()
+    assert "Set up my own Dispatch" not in html
+    assert "Go to my Dispatch" in html
+    assert f'href="/dispatches/{own.id}"' in html
+
+
 # ── Onboarding ──────────────────────────────────────────────────────────────
 
 def test_onboarding_modal_includes_follow_step(auth_client, db, user, system_dispatch):
