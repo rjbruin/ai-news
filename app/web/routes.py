@@ -28,9 +28,9 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
-    ApiKey, Alert, EditionRead, EditionRecipient, NewsItem,
+    ApiKey, Alert, EditionRead, NewsItem,
     NewsItemTag, Source, Summary, SummaryRun, Tag, User, UserDisabledSource,
-    dispatch_subscriptions, utcnow,
+    dispatch_email_subscriptions, dispatch_subscriptions, utcnow,
 )
 from ..services import edition_mail, generation_registry, ingest, summarize
 from ..sources import registry as source_registry
@@ -315,9 +315,59 @@ def dispatch_publish():
         flash(f'Your Dispatch is now published as "{name}".', "success")
     else:
         own.is_published = False
+        # Unpublishing drops it from the directory entirely — email
+        # subscribers would have no way to find/resubscribe, so clear them
+        # too (follows themselves are untouched).
+        db.session.execute(
+            dispatch_email_subscriptions.delete().where(
+                dispatch_email_subscriptions.c.summary_id == own.id
+            )
+        )
         flash("Your Dispatch is no longer published.", "info")
     db.session.commit()
     return redirect(url_for("web.settings") + "#sec-dispatch")
+
+
+def _apply_dispatch_config(
+    target: Summary | None, *, source: Summary, user: User, overwrite_memory: bool,
+) -> Summary:
+    """Clone ``source``'s period/params (minus ``model`` — always falls back to
+    the system default rather than inheriting someone else's override) and
+    description onto ``target``, creating it first if absent.
+
+    ``interests``/``content_config`` are copied from ``source``'s owner too.
+    When ``overwrite_memory`` is False (dispatch_own's "clone as a starting
+    point" use), existing values on ``target``/``user`` are left alone; when
+    True (an explicit "copy settings" action), they're always overwritten.
+    """
+    from ..agent import memory as agent_memory
+
+    params = dict(source.params or {})
+    params.pop("model", None)
+
+    if target is None:
+        target = Summary(
+            user_id=user.id, name=f"{user.username}'s Dispatch",
+            type_key="agentic_page", scope_mode="fixed_period",
+            period=source.period, params=params, enabled=True,
+            description=source.description,
+        )
+        db.session.add(target)
+        db.session.commit()
+    else:
+        target.period = source.period
+        target.params = params
+        target.description = source.description
+        db.session.commit()
+
+    content_config = agent_memory.read(source.user, source, "content_config")
+    if content_config and (overwrite_memory or not agent_memory.read(user, target, "content_config")):
+        agent_memory.write(user, target, "content_config", content_config)
+    interests = agent_memory.read(source.user, source, "interests")
+    if interests and (overwrite_memory or not agent_memory.read(user, target, "interests")):
+        agent_memory.write(user, target, "interests", interests)
+
+    return target
 
 
 @bp.route("/dispatch/own", methods=["POST"])
@@ -331,33 +381,21 @@ def dispatch_own():
     the onboarding CTA, and the read-only feedback-box replacement on
     someone else's edition — all three just POST here.
     """
-    from ..agent import memory as agent_memory
-
     own = Summary.query.filter_by(user_id=current_user.id, type_key="agentic_page").first()
     just_created = own is None
-    if just_created:
-        system_dispatch = Summary.get_system_dispatch()
-        params = dict(system_dispatch.params or {}) if system_dispatch else {}
-        params.pop("model", None)  # fall back to the system default, not the admin's own override
+    system_dispatch = Summary.get_system_dispatch()
+    if just_created and system_dispatch:
+        own = _apply_dispatch_config(
+            None, source=system_dispatch, user=current_user, overwrite_memory=False,
+        )
+    elif just_created:
         own = Summary(
             user_id=current_user.id, name=f"{current_user.username}'s Dispatch",
             type_key="agentic_page", scope_mode="fixed_period",
-            period=system_dispatch.period if system_dispatch else "day",
-            params=params, enabled=True,
+            period="day", params={}, enabled=True,
         )
         db.session.add(own)
         db.session.commit()
-
-        if system_dispatch:
-            content_config = agent_memory.read(
-                system_dispatch.user, system_dispatch, "content_config"
-            )
-            if content_config:
-                agent_memory.write(current_user, own, "content_config", content_config)
-            if not agent_memory.read(current_user, own, "interests"):
-                interests = agent_memory.read(system_dispatch.user, system_dispatch, "interests")
-                if interests:
-                    agent_memory.write(current_user, own, "interests", interests)
 
     current_user.follow(own)  # owning ⇒ following (own editions appear in your feed)
     db.session.commit()
@@ -401,92 +439,114 @@ def search():
     )
 
 
-# ───────────────────────── Edition recipients ─────────────────────────
-# The list starts seeded with just the account's own email — done once, at
-# registration time (app/auth/routes.py) and via a one-off migration backfill
-# for pre-existing accounts — never re-seeded lazily here, since a user who
-# deliberately empties the list (e.g. to stop all edition mail) shouldn't
-# have it silently repopulated the next time they open Settings.
-def _sync_send_email_toggle(user: User) -> None:
-    """Auto-check/uncheck "Send as email newsletter" based on whether the
-    user has any confirmed recipients left."""
-    summary = (
-        Summary.query.filter_by(user_id=user.id, type_key="agentic_page").first()
-    )
-    if summary is None:
-        return
-    has_confirmed = user.edition_recipients.filter(
-        EditionRecipient.confirmed_at.isnot(None)
-    ).count() > 0
-    params = dict(summary.params or {})
-    if params.get("send_email") != has_confirmed:
-        params["send_email"] = has_confirmed
-        summary.params = params
-        db.session.commit()
-
-
-@bp.route("/settings/recipients", methods=["POST"])
+# ───────────────────────── Newsletter email ─────────────────────────
+# Each user has a single email address for edition newsletters (seeded from
+# their account email at registration — app/auth/routes.py). Changing it
+# always requires a fresh confirmation. Any followed Dispatch can then be
+# individually opted into by email via dispatch_email_subscribe below.
+@bp.route("/settings/newsletter-email", methods=["POST"])
 @login_required
-def recipient_add():
-    email = (request.form.get("email") or "").strip().lower()
+def newsletter_email_set():
+    email = (request.form.get("newsletter_email") or "").strip().lower()
     if not email or "@" not in email:
         flash("Enter a valid email address.", "danger")
         return redirect(url_for("web.settings") + "#sec-recipients")
-    if current_user.edition_recipients.filter_by(email=email).first():
-        flash("That address is already on the list.", "danger")
-        return redirect(url_for("web.settings") + "#sec-recipients")
 
-    token = secrets.token_urlsafe(32)
-    recipient = EditionRecipient(user_id=current_user.id, email=email, confirm_token=token)
-    db.session.add(recipient)
+    current_user.newsletter_email = email
+    current_user.newsletter_email_confirmed_at = None
+    current_user.newsletter_email_confirm_token = secrets.token_urlsafe(32)
     db.session.commit()
 
-    confirm_url = url_for("web.recipient_confirm", token=token, _external=True)
+    confirm_url = url_for(
+        "web.newsletter_email_confirm", token=current_user.newsletter_email_confirm_token,
+        _external=True,
+    )
     edition_mail.send_via_newsletter_mailbox(
         email,
-        "Confirm this email for your Dispatch editions",
-        f"You've been added as a recipient of {current_user.username}'s Dispatch edition "
-        f"emails. Click to confirm:\n\n{confirm_url}\n\n"
+        "Confirm your Dispatch newsletter email",
+        f"Click to confirm this address for Dispatch edition emails:\n\n{confirm_url}\n\n"
         "If you didn't expect this, you can ignore this message.",
     )
     flash(f"Confirmation email sent to {email}.", "success")
     return redirect(url_for("web.settings") + "#sec-recipients")
 
 
-@bp.route("/recipients/confirm/<token>")
-def recipient_confirm(token: str):
-    recipient = EditionRecipient.query.filter_by(confirm_token=token).first()
-    if recipient is None:
+@bp.route("/newsletter-email/confirm/<token>")
+def newsletter_email_confirm(token: str):
+    user = User.query.filter_by(newsletter_email_confirm_token=token).first()
+    if user is None:
         flash("That confirmation link is invalid or has already been used.", "danger")
         return redirect(url_for("auth.login"))
-    recipient.confirmed_at = utcnow()
-    recipient.confirm_token = None
+    user.newsletter_email_confirmed_at = utcnow()
+    user.newsletter_email_confirm_token = None
     db.session.commit()
-    _sync_send_email_toggle(recipient.user)
-    flash(f"{recipient.email} will now receive Dispatch edition emails.", "success")
+    flash(f"{user.newsletter_email} confirmed — you can now subscribe Dispatches to email.", "success")
     return redirect(url_for("auth.login"))
 
 
-@bp.route("/settings/recipients/<int:recipient_id>/remove", methods=["POST"])
+@bp.route("/settings/newsletter-email/remove", methods=["POST"])
 @login_required
-def recipient_remove(recipient_id: int):
-    recipient = db.session.get(EditionRecipient, recipient_id) or abort(404)
-    if recipient.user_id != current_user.id:
-        abort(403)
-    email = recipient.email
-    was_confirmed = recipient.is_confirmed
-    db.session.delete(recipient)
-    db.session.commit()
-    _sync_send_email_toggle(current_user)
-    if was_confirmed:
-        edition_mail.send_via_newsletter_mailbox(
-            email,
-            "Removed from Dispatch edition emails",
-            f"{email} has been removed as a recipient of {current_user.username}'s "
-            "Dispatch edition emails. You will no longer receive them.",
+def newsletter_email_remove():
+    current_user.newsletter_email = None
+    current_user.newsletter_email_confirmed_at = None
+    current_user.newsletter_email_confirm_token = None
+    # Nothing left to send to — drop every per-dispatch email subscription.
+    db.session.execute(
+        dispatch_email_subscriptions.delete().where(
+            dispatch_email_subscriptions.c.user_id == current_user.id
         )
-    flash(f"Removed {email}.", "info")
+    )
+    db.session.commit()
+    flash("Newsletter email removed.", "info")
     return redirect(url_for("web.settings") + "#sec-recipients")
+
+
+@bp.route("/dispatch/email-subscribe", methods=["POST"])
+@login_required
+def dispatch_email_subscribe():
+    summary = db.session.get(Summary, request.form.get("summary_id", type=int) or 0)
+    if not summary or not current_user.is_following(summary):
+        abort(404)
+    if not current_user.newsletter_email_is_confirmed:
+        flash("Confirm your newsletter email in Settings first.", "danger")
+        return redirect(url_for("web.settings") + "#sec-recipients")
+    current_user.subscribe_email(summary)
+    db.session.commit()
+    return redirect(request.referrer or url_for("web.dispatches"))
+
+
+@bp.route("/dispatch/email-unsubscribe", methods=["POST"])
+@login_required
+def dispatch_email_unsubscribe():
+    summary = db.session.get(Summary, request.form.get("summary_id", type=int) or 0)
+    if summary:
+        current_user.unsubscribe_email(summary)
+        db.session.commit()
+    return redirect(request.referrer or url_for("web.dispatches"))
+
+
+def _topic_tiers_for(owner: User, summary: Summary | None) -> tuple[list, list, list]:
+    """Split ``owner``'s available topics into (complete, highlights, none)
+    per ``summary.params.topic_tiers``. "complete" is the implicit default —
+    a topic only shows up under highlights/none if explicitly moved there."""
+    available_topics = (
+        Tag.query.filter(
+            Tag.archived_at.is_(None),
+            db.or_(Tag.scope == "global", Tag.owner_user_id == owner.id),
+        ).order_by(Tag.name).all()
+    )
+    tiers = (summary.params or {}).get("topic_tiers") or {} if summary else {}
+    highlight_ids = set(tiers.get("highlights") or [])
+    none_ids = set(tiers.get("none") or [])
+    tier_complete, tier_highlights, tier_none = [], [], []
+    for t in available_topics:
+        if t.id in none_ids:
+            tier_none.append(t)
+        elif t.id in highlight_ids:
+            tier_highlights.append(t)
+        else:
+            tier_complete.append(t)
+    return tier_complete, tier_highlights, tier_none
 
 
 # ───────────────────────── Settings ─────────────────────────
@@ -525,6 +585,8 @@ def settings():
         if summary:
             summary.period = request.form.get("period", summary.period)
             summary.params = _collect_params(types[summary.type_key])
+            summary.description = (request.form.get("description") or "").strip() or None
+            summary.pdf_export_enabled = bool(request.form.get("pdf_export_enabled"))
             db.session.commit()
             for kind in ("interests", "content_config", "history"):
                 if f"mem_{kind}" in request.form:
@@ -556,30 +618,9 @@ def settings():
         feed_token = current_user.get_or_create_feed_token()
         podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
 
-    recipients = current_user.edition_recipients.order_by(EditionRecipient.created_at).all()
-
     keys = ApiKey.manageable_by(current_user) if current_user.is_approved else []
 
-    available_topics = (
-        Tag.query.filter(
-            Tag.archived_at.is_(None),
-            db.or_(Tag.scope == "global", Tag.owner_user_id == current_user.id),
-        ).order_by(Tag.name).all()
-    )
-    # "complete" is the implicit default tier — a topic only shows up under
-    # highlights/none if explicitly moved there, so a newly created topic
-    # (or one never configured at all) automatically lands in "complete".
-    tiers = (summary.params or {}).get("topic_tiers") or {} if summary else {}
-    highlight_ids = set(tiers.get("highlights") or [])
-    none_ids = set(tiers.get("none") or [])
-    tier_complete, tier_highlights, tier_none = [], [], []
-    for t in available_topics:
-        if t.id in none_ids:
-            tier_none.append(t)
-        elif t.id in highlight_ids:
-            tier_highlights.append(t)
-        else:
-            tier_complete.append(t)
+    tier_complete, tier_highlights, tier_none = _topic_tiers_for(current_user, summary)
 
     return render_template(
         "settings.html",
@@ -589,9 +630,7 @@ def settings():
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
         podcast_feed_url=podcast_feed_url,
-        recipients=recipients,
         keys=keys,
-        available_topics=available_topics,
         tier_complete=tier_complete,
         tier_highlights=tier_highlights,
         tier_none=tier_none,
@@ -1088,14 +1127,21 @@ def summaries():
 def dispatches():
     """Directory of published Dispatches plus the user's own (even if
     unpublished), each linking to its own page. Follow/unfollow inline."""
+    from ..services.schedule_text import describe_schedule
+
     listed = Summary.published().order_by(Summary.published_name).all()
     own = current_user.own_dispatch
     if own and own not in listed:
         listed = [own] + listed
     following_ids = {s.id for s in current_user.subscribed_dispatches.all()}
+    email_subscribed_ids = {s.id for s in current_user.email_subscribed_dispatches.all()}
+    schedule_text = {
+        s.id: describe_schedule(s.period, s.params) for s in listed
+    }
     return render_template(
         "dispatches.html",
         dispatches=listed, following_ids=following_ids, own=own,
+        email_subscribed_ids=email_subscribed_ids, schedule_text=schedule_text,
     )
 
 
@@ -1118,6 +1164,60 @@ def dispatch_detail(summary_id: int):
         is_following=current_user.is_following(summary),
         active_generation=active,
     )
+
+
+@bp.route("/dispatches/<int:summary_id>/details")
+@login_required
+def dispatch_details(summary_id: int):
+    """Read-only spec sheet for a Dispatch: schedule, model, preferences, and
+    average costs. Published, or your own even if unpublished."""
+    from ..agent import memory as agent_memory
+    from ..services.costs import dispatch_avg_costs
+    from ..services.schedule_text import describe_schedule
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    is_own = summary.user_id == current_user.id
+    if summary.type_key != "agentic_page" or not (summary.is_published or is_own):
+        abort(404)
+
+    params = summary.params or {}
+    tier_complete, tier_highlights, tier_none = _topic_tiers_for(summary.user, summary)
+    return render_template(
+        "summaries/dispatch_config.html",
+        summary=summary, is_own=is_own,
+        schedule_text=describe_schedule(summary.period, params),
+        model=params.get("model") or "(system default)",
+        interests=agent_memory.read(summary.user, summary, "interests"),
+        content_config=agent_memory.read(summary.user, summary, "content_config"),
+        tier_complete=tier_complete, tier_highlights=tier_highlights, tier_none=tier_none,
+        costs=dispatch_avg_costs(summary.id),
+    )
+
+
+@bp.route("/dispatches/<int:summary_id>/copy-to-own", methods=["POST"])
+@login_required
+def dispatch_copy_to_own(summary_id: int):
+    """Clone a Dispatch's config (schedule, model exempted, preferences,
+    description) onto the current user's own Dispatch, creating it first if
+    needed. Always overwrites — this is an explicit "copy settings" action."""
+    source = db.session.get(Summary, summary_id) or abort(404)
+    is_own_source = source.user_id == current_user.id
+    if source.type_key != "agentic_page" or not (source.is_published or is_own_source):
+        abort(404)
+
+    target = current_user.own_dispatch
+    was_created = target is None
+    target = _apply_dispatch_config(
+        target, source=source, user=current_user, overwrite_memory=True,
+    )
+    current_user.follow(target)
+    db.session.commit()
+
+    if was_created:
+        flash(f'Your Dispatch was created from "{source.display_name}"\'s settings.', "success")
+    else:
+        flash(f'Your Dispatch settings have been overwritten from "{source.display_name}".', "success")
+    return redirect(url_for("web.settings") + "#sec-dispatch")
 
 
 @bp.route("/summaries/<int:summary_id>/edit", methods=["GET", "POST"])
@@ -1155,14 +1255,24 @@ def summary_delete(summary_id: int):
     summary = db.session.get(Summary, summary_id) or abort(404)
     if summary.user_id != current_user.id:
         abort(403)
-    # Association rows have no ORM cascade — clear followers before deleting.
+    # Association rows have no ORM cascade — clear followers/subscribers
+    # before deleting.
     db.session.execute(
         dispatch_subscriptions.delete().where(
             dispatch_subscriptions.c.summary_id == summary.id
         )
     )
+    db.session.execute(
+        dispatch_email_subscriptions.delete().where(
+            dispatch_email_subscriptions.c.summary_id == summary.id
+        )
+    )
+    is_own_dispatch = summary.type_key == "agentic_page" and summary.user_id == current_user.id
     db.session.delete(summary)
     db.session.commit()
+    if is_own_dispatch:
+        flash("Your Dispatch and all its editions have been permanently deleted.", "info")
+        return redirect(url_for("web.settings"))
     flash("Summary deleted.", "info")
     return redirect(url_for("web.summaries"))
 
@@ -1374,6 +1484,15 @@ def edition_unshare(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/export")
 @login_required
 def edition_export(summary_id: int, run_id: int):
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    if not summary.pdf_export_enabled:
+        abort(404)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
     import mimetypes
     import os
     import re
@@ -1381,12 +1500,6 @@ def edition_export(summary_id: int, run_id: int):
     from weasyprint import HTML as WPHtml
     from weasyprint.urls import default_url_fetcher
 
-    summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
-        abort(403)
-    run = db.session.get(SummaryRun, run_id) or abort(404)
-    if run.summary_id != summary_id:
-        abort(404)
     plugin = summary_registry.get(summary.type_key)
     is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
 
@@ -1452,6 +1565,8 @@ def serve_edition_pdf(summary_id: int, run_id: int):
     summary = db.session.get(Summary, summary_id) or abort(404)
     if not _can_read(summary):
         abort(403)
+    if not summary.pdf_export_enabled:
+        abort(404)
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id or not run.pdf_file:
         abort(404)

@@ -38,11 +38,6 @@ class AgenticDailyPageSummary(NewsSummary):
                 (3, "Thu"), (4, "Fri"), (5, "Sat"), (6, "Sun"),
             ],
         },
-        "send_email": {
-            "type": "checkbox",
-            "label": "Send as email newsletter when edition is cut",
-            "default": False,
-        },
         "max_steps": {
             "type": "number",
             "label": "Max agent steps per edition",

@@ -42,6 +42,16 @@ dispatch_subscriptions = db.Table(
     db.Column("summary_id", db.Integer, db.ForeignKey("summaries.id"), primary_key=True),
 )
 
+# Many-to-many: which followed Dispatches a user has opted into receiving by
+# email, at their single `User.newsletter_email`. A row can only exist for a
+# summary the user also follows (see dispatch_unfollow / dispatch_publish
+# unpublish, which clear rows here alongside/independently of follows).
+dispatch_email_subscriptions = db.Table(
+    "dispatch_email_subscriptions",
+    db.Column("user_id", db.Integer, db.ForeignKey("users.id"), primary_key=True),
+    db.Column("summary_id", db.Integer, db.ForeignKey("summaries.id"), primary_key=True),
+)
+
 
 # ─────────────────────────────── Users ───────────────────────────────
 class User(UserMixin, db.Model):
@@ -71,6 +81,13 @@ class User(UserMixin, db.Model):
     # apps (which can't do session login) can fetch the feed and its MP3s.
     podcast_feed_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
+    # Single email address for edition newsletters, shared across every
+    # Dispatch the user opts into by email (see dispatch_email_subscriptions).
+    # Changing the address always clears confirmation and requires re-confirm.
+    newsletter_email = db.Column(db.String(255), nullable=True)
+    newsletter_email_confirmed_at = db.Column(db.DateTime, nullable=True)
+    newsletter_email_confirm_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
+
     # Gate for self-service source/API-key management. Admins are always
     # implicitly approved (see is_approved); this flag is for everyone else.
     approved = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
@@ -92,13 +109,13 @@ class User(UserMixin, db.Model):
         "Summary", back_populates="user", lazy="dynamic",
         foreign_keys="Summary.user_id",
     )
-    edition_recipients = db.relationship(
-        "EditionRecipient", back_populates="user", lazy="dynamic",
-        cascade="all, delete-orphan",
-    )
     # Dispatches this user follows (reads). Always includes their own, if any.
     subscribed_dispatches = db.relationship(
         "Summary", secondary=dispatch_subscriptions, lazy="dynamic",
+    )
+    # Followed Dispatches this user has additionally opted into by email.
+    email_subscribed_dispatches = db.relationship(
+        "Summary", secondary=dispatch_email_subscriptions, lazy="dynamic",
     )
     edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
 
@@ -109,10 +126,24 @@ class User(UserMixin, db.Model):
     def unfollow(self, summary: "Summary") -> None:
         if self.is_following(summary):
             self.subscribed_dispatches.remove(summary)
+        self.unsubscribe_email(summary)
 
     def is_following(self, summary: "Summary") -> bool:
         return self.subscribed_dispatches.filter(
             dispatch_subscriptions.c.summary_id == summary.id
+        ).count() > 0
+
+    def subscribe_email(self, summary: "Summary") -> None:
+        if not self.is_email_subscribed(summary):
+            self.email_subscribed_dispatches.append(summary)
+
+    def unsubscribe_email(self, summary: "Summary") -> None:
+        if self.is_email_subscribed(summary):
+            self.email_subscribed_dispatches.remove(summary)
+
+    def is_email_subscribed(self, summary: "Summary") -> bool:
+        return self.email_subscribed_dispatches.filter(
+            dispatch_email_subscriptions.c.summary_id == summary.id
         ).count() > 0
 
     @property
@@ -173,31 +204,9 @@ class User(UserMixin, db.Model):
         everyone else needs the ``podcast_enabled`` flag set by an admin."""
         return bool(self.podcast_enabled) or self.is_admin
 
-
-class EditionRecipient(db.Model):
-    """One email address that should receive edition emails for a user.
-
-    Starts seeded with just the account's own email (auto-confirmed — no
-    need to re-verify an address the account itself already owns). Any
-    additional address needs to click a confirmation link before it starts
-    receiving mail, and gets a notification when removed.
-    """
-
-    __tablename__ = "edition_recipients"
-    __table_args__ = (db.UniqueConstraint("user_id", "email", name="uq_edition_recipient"),)
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    email = db.Column(db.String(255), nullable=False)
-    confirmed_at = db.Column(db.DateTime, nullable=True)
-    confirm_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
-    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
-
-    user = db.relationship("User", back_populates="edition_recipients")
-
     @property
-    def is_confirmed(self) -> bool:
-        return self.confirmed_at is not None
+    def newsletter_email_is_confirmed(self) -> bool:
+        return bool(self.newsletter_email) and self.newsletter_email_confirmed_at is not None
 
 
 class UserDisabledSource(db.Model):
@@ -641,6 +650,13 @@ class Summary(db.Model):
     is_published = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
     published_name = db.Column(db.String(25), unique=True, nullable=True)
 
+    # Shown on the /dispatches directory card and the static details page.
+    description = db.Column(db.Text, nullable=True)
+
+    # Whether followers (and the owner) may export this Dispatch's editions as
+    # PDF. Off by default — owner opts in per Dispatch.
+    pdf_export_enabled = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
+
     user = db.relationship(
         "User", back_populates="summaries", foreign_keys=[user_id]
     )
@@ -652,6 +668,10 @@ class Summary(db.Model):
     @classmethod
     def get_system_dispatch(cls) -> "Summary | None":
         return cls.query.filter_by(is_system_dispatch=True).first()
+
+    @property
+    def email_subscriber_count(self) -> int:
+        return db.session.query(dispatch_email_subscriptions).filter_by(summary_id=self.id).count()
 
     @classmethod
     def published(cls):
@@ -884,7 +904,6 @@ __all__ = [
     "SummaryRun",
     "AgentMemory",
     "AdminSettings",
-    "EditionRecipient",
     "UserDisabledSource",
     "Invite",
 ]

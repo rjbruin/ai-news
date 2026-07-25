@@ -307,8 +307,8 @@
         <td class="small">{{ run.summary.user.email }}</td>
         <td class="small">{{ run.generated_at.strftime('%Y-%m-%d %H:%M') }}</td>
         <td class="small">
-          {% if run.summary.params and run.summary.params.get('send_email') %}
-            <span class="text-success">✓ enabled</span>
+          {% if run.summary.email_subscriber_count %}
+            <span class="text-success">{{ run.summary.email_subscriber_count }} subscriber(s)</span>
           {% else %}
             <span class="text-body-secondary">—</span>
           {% endif %}

@@ -583,7 +583,7 @@ def cut_due_editions(force: bool = False) -> int:
                 cut += 1
                 logger.info("Cut edition '%s' for summary %d", run.label if run else "?", summary.id)
 
-                if summary.params and summary.params.get("send_email") and run:
+                if run is not None and summary.email_subscriber_count > 0:
                     try:
                         _send_edition_email(summary, run, artifact.html or "")
                     except Exception:  # noqa: BLE001
@@ -697,14 +697,16 @@ def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> No
         logger.warning("SMTP not configured; skipping email for summary %d", summary.id)
         return
 
-    user = summary.user
-    if not user:
-        return
-
-    from ..models import EditionRecipient
+    from ..models import User, dispatch_email_subscriptions
 
     recipients = [
-        r.email for r in user.edition_recipients.filter(EditionRecipient.confirmed_at.isnot(None))
+        u.newsletter_email
+        for u in User.query.join(
+            dispatch_email_subscriptions, User.id == dispatch_email_subscriptions.c.user_id
+        ).filter(
+            dispatch_email_subscriptions.c.summary_id == summary.id,
+            User.newsletter_email_confirmed_at.isnot(None),
+        )
     ]
     if not recipients:
         return

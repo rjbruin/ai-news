@@ -11,7 +11,26 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from sqlalchemy import func
+
+from ..extensions import db
 from ..models import ApiKey, ApiKeyUsage, SummaryRun, utcnow
+
+
+def dispatch_avg_costs(summary_id: int) -> dict:
+    """Average generation/podcast cost per edition for one Dispatch, over
+    successful runs only. None averages (no runs yet, or no cost recorded)
+    render as "—" rather than $0.00 — that would imply a real free run."""
+    avg_agent, avg_podcast, run_count = db.session.query(
+        func.avg(SummaryRun.agent_cost),
+        func.avg(SummaryRun.podcast_cost),
+        func.count(SummaryRun.id),
+    ).filter(SummaryRun.summary_id == summary_id, SummaryRun.status == "ok").one()
+    return {
+        "avg_agent_cost": float(avg_agent) if avg_agent is not None else None,
+        "avg_podcast_cost": float(avg_podcast) if avg_podcast is not None else None,
+        "run_count": run_count or 0,
+    }
 
 
 def _daterange_labels(days: int) -> list[str]:

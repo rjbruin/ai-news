@@ -240,6 +240,7 @@ def test_serve_edition_pdf_allows_follower(auth_client, db, user, system_dispatc
     from flask import current_app
 
     user.follow(system_dispatch)
+    system_dispatch.pdf_export_enabled = True
     system_run.pdf_file = f"edition_{system_run.id}.pdf"
     db.session.commit()
     with auth_client.application.app_context():

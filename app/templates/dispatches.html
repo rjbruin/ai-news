@@ -10,23 +10,30 @@
   <a href="{{ url_for('web.settings') }}#sec-dispatch">Settings</a>.
 </p>
 
-<div class="table-responsive shadow-sm">
-  <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Dispatch</th><th>By</th><th></th></tr></thead>
-    <tbody>
-    {% for d in dispatches %}
-      <tr>
-        <td>
-          <a href="{{ url_for('web.dispatch_detail', summary_id=d.id) }}"
-             class="text-body fw-semibold text-decoration-none">{{ d.display_name }}</a>
+<div class="row row-cols-1 row-cols-md-2 g-3">
+{% for d in dispatches %}
+  <div class="col">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
+        <h2 class="h5 mb-1">
+          {{ d.display_name }}
           {% if own and d.id == own.id %}<span class="badge text-bg-info">yours</span>{% endif %}
           {% if own and d.id == own.id and not d.is_published %}
           <span class="badge text-bg-light border text-body-secondary">unpublished</span>{% endif %}
-        </td>
-        <td class="small">{{ d.user.username }}</td>
-        <td class="text-nowrap">
+        </h2>
+        <p class="text-body-secondary small mb-2 flex-grow-1">
+          {{ d.description or "No description yet." }}
+        </p>
+        <p class="small text-body-secondary mb-3">
+          {{ schedule_text.get(d.id, '') }} · by {{ d.user.username }}
+        </p>
+        <div class="d-flex flex-wrap gap-2 mt-auto">
+          {% if d.is_published %}
+          <a href="{{ url_for('web.dispatch_details', summary_id=d.id) }}"
+             class="btn btn-sm btn-outline-secondary">Details</a>
+          {% endif %}
           <a href="{{ url_for('web.dispatch_detail', summary_id=d.id) }}"
-             class="btn btn-sm btn-outline-primary">Open</a>
+             class="btn btn-sm btn-outline-primary">See Editions</a>
           {% if own and d.id == own.id %}
             {# You always "follow" your own; no unfollow toggle needed here. #}
           {% elif d.id in following_ids %}
@@ -37,15 +44,40 @@
           {% else %}
           <form method="post" action="{{ url_for('web.dispatch_follow') }}" class="d-inline">
             <input type="hidden" name="summary_id" value="{{ d.id }}">
-            <button class="btn btn-sm btn-primary">Follow</button>
+            <button class="btn btn-sm btn-primary">Subscribe</button>
           </form>
           {% endif %}
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="3" class="text-body-secondary">No published Dispatches yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+          {% if d.id in following_ids %}
+            {% if d.id in email_subscribed_ids %}
+            <form method="post" action="{{ url_for('web.dispatch_email_unsubscribe') }}" class="d-inline">
+              <input type="hidden" name="summary_id" value="{{ d.id }}">
+              <button class="btn btn-sm btn-outline-secondary">
+                <i class="fa-solid fa-envelope" aria-hidden="true"></i> Email: On
+              </button>
+            </form>
+            {% elif current_user.newsletter_email_is_confirmed %}
+            <form method="post" action="{{ url_for('web.dispatch_email_subscribe') }}" class="d-inline">
+              <input type="hidden" name="summary_id" value="{{ d.id }}">
+              <button class="btn btn-sm btn-outline-secondary">
+                <i class="fa-regular fa-envelope" aria-hidden="true"></i> Email me
+              </button>
+            </form>
+            {% else %}
+            <a href="{{ url_for('web.settings') }}#sec-recipients"
+               class="btn btn-sm btn-outline-secondary disabled"
+               title="Confirm your newsletter email in Settings first">
+              <i class="fa-regular fa-envelope" aria-hidden="true"></i> Email me
+            </a>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% else %}
+  <div class="col">
+    <p class="text-body-secondary">No published Dispatches yet.</p>
+  </div>
+{% endfor %}
 </div>
 {% endblock %}
