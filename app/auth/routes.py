@@ -14,7 +14,7 @@ from flask import (
 from flask_login import current_user, login_user, logout_user
 
 from ..extensions import db
-from ..models import AdminSettings, EditionRecipient, Invite, Summary, User, utcnow
+from ..models import AdminSettings, Invite, Summary, User, utcnow
 from . import tokens
 from .email_utils import send_email
 from .forms import LoginForm, MagicLinkForm, RegisterForm
@@ -101,7 +101,8 @@ def register():
                 user.follow(system_dispatch)
                 db.session.commit()
 
-            db.session.add(EditionRecipient(user_id=user.id, email=email, confirmed_at=utcnow()))
+            user.newsletter_email = email
+            user.newsletter_email_confirmed_at = utcnow()
             if invite is not None:
                 invite.uses_count += 1
             db.session.commit()

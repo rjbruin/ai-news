@@ -51,11 +51,13 @@
         Create
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
+        {% if summary.pdf_export_enabled %}
         <li>
           <a class="dropdown-item"
              href="{{ url_for('web.edition_export', summary_id=summary.id, run_id=run.id) }}">PDF</a>
         </li>
         <li><hr class="dropdown-divider"></li>
+        {% endif %}
         <li>
           <a class="dropdown-item"
              href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}">

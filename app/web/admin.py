@@ -390,7 +390,7 @@ def run_resend_email(run_id: int):
     try:
         resend_edition_email(summary, run)
         flash(
-            f"Email resent: \"{run.label or run.id}\" → {summary.user.email}",
+            f"Email resent: \"{run.label or run.id}\" to {summary.email_subscriber_count} subscriber(s)",
             "success",
         )
     except Exception as exc:
