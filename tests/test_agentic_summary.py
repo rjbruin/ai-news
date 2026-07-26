@@ -190,8 +190,9 @@ def test_build_agentic_summary_persists_quick_hits(monkeypatch, db, keyed_user, 
 def test_build_agentic_without_key_raises(monkeypatch, db, agentic_summary):
     from app.agent.creds import MissingCredentials
     from app.models import SummaryRun
-    # Remove the user's edition key selection.
-    agentic_summary.user.edition_api_key_id = None
+    # Remove the user's API key.
+    from app.models import ApiKey
+    ApiKey.query.filter_by(owner_user_id=agentic_summary.user.id, is_global=False).delete()
     db.session.commit()
     with pytest.raises(MissingCredentials):
         summarize.build_summary(agentic_summary, record_run=True)

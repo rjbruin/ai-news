@@ -27,7 +27,6 @@ from ..extensions import db
 from ..models import (
     AdminSettings,
     Alert,
-    ApiKey,
     IgnoredSender,
     IngestRun,
     Invite,
@@ -96,21 +95,15 @@ def index():
 @admin_required
 def source_new():
     types = source_registry.all_types()
-    keys = [k for k in ApiKey.manageable_by(current_user) if k.active]
     if request.method == "POST":
         type_key = request.form.get("type_key")
         plugin_cls = types.get(type_key)
-        key_id = request.form.get("api_key_id", type=int)
-        key = db.session.get(ApiKey, key_id) if key_id else None
         if plugin_cls is None:
             flash("Unknown source type.", "danger")
-        elif key is None or key not in keys:
-            flash("Choose an API key for this source.", "danger")
         else:
             source = Source(
                 type_key=type_key,
                 name=(request.form.get("name") or plugin_cls.label).strip(),
-                api_key_id=key.id,
                 config=_collect_config(plugin_cls),
                 poll_interval_override=_int_or_none(
                     request.form.get("poll_interval_override")
@@ -121,7 +114,7 @@ def source_new():
             db.session.commit()
             flash("Source added.", "success")
             return redirect(url_for("admin.index"))
-    return render_template("admin/source_edit.html", source=None, types=types, keys=keys)
+    return render_template("admin/source_edit.html", source=None, types=types)
 
 
 @bp.route("/sources/<int:source_id>/poll", methods=["POST"])

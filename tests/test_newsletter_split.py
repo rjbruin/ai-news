@@ -59,13 +59,16 @@ def fake_newsletter_source():
 
 @pytest.fixture
 def mailbox(db, fake_newsletter_source):
-    key = ApiKey(label="Test key", provider="openrouter")
+    owner = User(username="mailbox-owner", email="mailbox-owner@example.com", email_verified=True)
+    db.session.add(owner)
+    db.session.commit()
+    key = ApiKey(owner_user_id=owner.id, label="Test key", provider="openrouter")
     key.set_key("sk-or-test")
     db.session.add(key)
     db.session.commit()
     source = Source(
         type_key="imap_newsletter", name="Newsletters mailbox",
-        config={"host": "x"}, api_key_id=key.id, enabled=True,
+        config={"host": "x"}, owner_user_id=owner.id, enabled=True,
     )
     db.session.add(source)
     db.session.commit()
@@ -92,7 +95,7 @@ def test_mailbox_splits_into_newsletter_children(db, mailbox, fake_newsletter_so
     names = {c.name for c in children}
     assert names == {"TLDR AI", "Import AI"}
     assert all(c.parent_source_id == mailbox.id for c in children)
-    assert all(c.api_key_id == mailbox.api_key_id for c in children)
+    assert all(c.owner_user_id == mailbox.owner_user_id for c in children)
     assert stats["new_items"] == 2
     assert NewsItem.query.count() == 2
 
@@ -224,7 +227,7 @@ def test_reindex_rejects_non_mailbox_sources(db, mailbox, fake_newsletter_source
     fake_newsletter_source.scan_pairs = [("TLDR AI <news@tldrnewsletter.com>", "Issue #1")]
     child = Source(
         type_key="imap_newsletter", name="Child", parent_source_id=mailbox.id,
-        api_key_id=mailbox.api_key_id, config={"newsletter_sender": "x"},
+        config={"newsletter_sender": "x"},
     )
     db.session.add(child)
     db.session.commit()
@@ -253,7 +256,7 @@ def test_admin_reindex_route(admin_client, db, app, mailbox, fake_newsletter_sou
 def test_admin_reindex_rejects_child_source(admin_client, db, mailbox, fake_newsletter_source):
     child = Source(
         type_key="imap_newsletter", name="Child", parent_source_id=mailbox.id,
-        api_key_id=mailbox.api_key_id, config={"newsletter_sender": "x"}, enabled=True,
+        config={"newsletter_sender": "x"}, enabled=True,
     )
     db.session.add(child)
     db.session.commit()
@@ -298,7 +301,7 @@ def pending_subscription(db, mailbox, requester):
     db.session.commit()
     source = Source(
         type_key="imap_newsletter", name="TLDR AI",
-        owner_user_id=requester.id, api_key_id=key.id, parent_source_id=mailbox.id,
+        owner_user_id=requester.id, parent_source_id=mailbox.id,
         config={"newsletter_domain": "tldrnewsletter.com", "newsletter_name": "TLDR AI"},
         subscription_status="waiting_confirmation", enabled=True,
     )
@@ -422,7 +425,12 @@ def test_seed_type_hidden_for_non_admin(auth_client, user, db):
     assert b'value="seed"' not in resp.data
 
 
-def test_seed_type_visible_for_admin(admin_client):
+def test_seed_type_visible_for_admin(admin_client, db, admin):
+    key = ApiKey(owner_user_id=admin.id, label="Admin key")
+    key.set_key("sk-or-admin")
+    db.session.add(key)
+    db.session.commit()
+
     resp = admin_client.get("/sources/new")
     assert b'value="seed"' in resp.data
 
@@ -441,7 +449,6 @@ def test_newsletter_request_creates_pending_subscription(auth_client, db, user, 
             "type_key": "imap_newsletter",
             "newsletter_name": "Import AI",
             "newsletter_domain": "substack.com",
-            "api_key_id": str(key.id),
         },
     )
     assert resp.status_code == 302
@@ -467,7 +474,6 @@ def test_newsletter_request_without_mailbox_flashes_error(auth_client, db, user)
         "/sources/new",
         data={
             "type_key": "imap_newsletter", "newsletter_name": "X", "newsletter_domain": "x.com",
-            "api_key_id": str(key.id),
         },
         follow_redirects=True,
     )
@@ -667,7 +673,7 @@ def test_domain_normalization_tolerates_protocol_and_www(db, mailbox, requester)
     db.session.commit()
     pending = SourceModel(
         type_key="imap_newsletter", name="Weird Domain", owner_user_id=requester.id,
-        api_key_id=api_key.id, parent_source_id=mailbox.id,
+        parent_source_id=mailbox.id,
         config={"newsletter_domain": ingest.normalize_domain("https://www.example.com/")},
         subscription_status="waiting_confirmation", enabled=True,
     )

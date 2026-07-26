@@ -91,8 +91,12 @@ def _resolve_credentials(source: Source):
     per-key model overrides were removed (Settings' "Model" field is the
     only place model choice lives now, and that's specific to editions)."""
     from flask import current_app
+    from ..models import ApiKey
 
-    api_key_row = source.api_key
+    api_key_row = (
+        ApiKey.get_or_create_global() if source.owner_user_id is None
+        else ApiKey.query.filter_by(owner_user_id=source.owner_user_id, is_global=False).first()
+    )
     if api_key_row is None or not api_key_row.active:
         return None, None, None, "error: no active API key assigned to this source"
     secret = api_key_row.get_key()
@@ -303,10 +307,11 @@ def _get_or_create_newsletter_child(
     mailbox: Source, children_by_sender: dict, addr: str, display_name: str
 ) -> tuple[Source, bool]:
     """Find (or create) the subscription Source for one sender, detected while
-    polling the mailbox. Auto-created children inherit the mailbox's owner and
-    API key so they need no separate configuration, and start out already
-    ``subscribed`` — they were detected from mail already flowing through the
-    mailbox, so there's no confirmation step to wait for."""
+    polling the mailbox. Auto-created children inherit the mailbox's owner so
+    they need no separate configuration (funding follows automatically), and
+    start out already ``subscribed`` — they were detected from mail already
+    flowing through the mailbox, so there's no confirmation step to wait
+    for."""
     existing = children_by_sender.get(addr)
     if existing is not None:
         return existing, False
@@ -315,7 +320,6 @@ def _get_or_create_newsletter_child(
         type_key=mailbox.type_key,
         name=(display_name or addr)[:120],
         owner_user_id=mailbox.owner_user_id,
-        api_key_id=mailbox.api_key_id,
         parent_source_id=mailbox.id,
         config={"newsletter_sender": addr, "newsletter_sender_name": display_name},
         subscription_status="subscribed",

@@ -1,17 +1,16 @@
 """Resolve the OpenRouter credentials an agent run should use.
 
-The agentic pipeline uses whichever of the user's own ApiKey rows they've
-selected "for editions" on the API Keys page for the *secret* — agentic runs
-are billed to the user, so a missing key is a clear, actionable error rather
-than a silent charge to the shared account. The *model*, however, is an
-independent per-edition choice (see the summary's "model" setting), not tied
-to which key pays for it.
+The agentic pipeline uses the user's one ApiKey row for the *secret* —
+agentic runs are billed to the user, so a missing key is a clear, actionable
+error rather than a silent charge to the shared account. The *model*,
+however, is an independent per-edition choice (see the summary's "model"
+setting), not tied to which key pays for it.
 """
 from __future__ import annotations
 
 
 class MissingCredentials(RuntimeError):
-    """Raised when a user has not selected an API key for editions."""
+    """Raised when a user has not added an API key."""
 
 
 def resolve(user, summary=None) -> tuple[str, str]:
@@ -22,10 +21,10 @@ def resolve(user, summary=None) -> tuple[str, str]:
     """
     from flask import current_app
 
-    key = user.edition_api_key
+    key = user.api_key
     if key is None or not key.active:
         raise MissingCredentials(
-            "No API key selected for editions. Pick one on the API Keys page."
+            "Add your API key on the Your Dispatch page."
         )
     secret = key.get_key()
     if not secret:
