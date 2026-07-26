@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from flask import current_app, url_for
+from flask import current_app, request, url_for
 
 from ..extensions import db
 from ..models import Alert, NewsItem, Summary, SummaryRun, utcnow
@@ -612,6 +612,10 @@ def cut_due_editions(force: bool = False) -> int:
                         _maybe_autogenerate_podcast(summary, run)
                     except Exception:  # noqa: BLE001
                         logger.exception("Failed to start auto podcast for edition %d", run.id)
+                    try:
+                        _maybe_autogenerate_pdf(summary, run)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Failed to auto-generate PDF for edition %d", run.id)
 
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to cut edition for summary %d", summary.id)
@@ -710,6 +714,26 @@ def _maybe_autogenerate_podcast(summary: Summary, run: SummaryRun) -> None:
         daemon=True,
     ).start()
     logger.info("Auto-generating podcast for edition %d", run.id)
+
+
+def _maybe_autogenerate_pdf(summary: Summary, run: SummaryRun) -> None:
+    """Renders and persists a freshly-cut edition's PDF export synchronously,
+    if the Dispatch has PDF export enabled — so the PDF channel icon (see
+    partials/_channels.html) shows up immediately instead of only appearing
+    after someone's first manual download."""
+    if not summary.pdf_export_enabled or run.pdf_file:
+        return
+
+    from . import pdf_export as pdf_export_svc
+
+    user = summary.user
+    font_scale = (user.pdf_font_scale if user else None) or 80
+    cfg = current_app.config
+    with current_app.test_request_context(base_url=cfg.get("PUBLIC_URL", "")):
+        pdf_export_svc.generate_and_store_pdf(
+            summary, run, font_scale=font_scale, base_url=request.url_root,
+        )
+    logger.info("Auto-generated PDF for edition %d", run.id)
 
 
 def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> None:

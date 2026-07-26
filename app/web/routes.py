@@ -1499,57 +1499,12 @@ def edition_export(summary_id: int, run_id: int):
     if run.summary_id != summary_id:
         abort(404)
 
-    import mimetypes
-    import os
-    import re
+    from ..services.pdf_export import generate_and_store_pdf, pdf_download_filename
 
-    from weasyprint import HTML as WPHtml
-    from weasyprint.urls import default_url_fetcher
-
-    plugin = summary_registry.get(summary.type_key)
-    is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
-
-    font_scale = max(50, min(150, current_user.pdf_font_scale or 80))
-    html_str = render_template(
-        "summaries/print.html",
-        summary=summary, run=run, is_agentic=is_agentic,
-        font_scale=font_scale,
+    pdf_bytes = generate_and_store_pdf(
+        summary, run, font_scale=current_user.pdf_font_scale, base_url=request.url_root,
     )
-
-    static_folder = current_app.static_folder
-    static_url_path = current_app.static_url_path  # '/static'
-
-    def _url_fetcher(url):
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        if parsed.path.startswith(static_url_path + "/"):
-            rel = parsed.path[len(static_url_path) + 1:]
-            abs_path = os.path.join(static_folder, rel)
-            if os.path.exists(abs_path):
-                mime = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
-                with open(abs_path, "rb") as fh:
-                    return {"content": fh.read(), "mime_type": mime}
-        return default_url_fetcher(url)
-
-    pdf_bytes = WPHtml(
-        string=html_str,
-        base_url=request.url_root,
-        url_fetcher=_url_fetcher,
-    ).write_pdf()
-
-    label = run.label or run.generated_at.strftime("%Y-%m-%d")
-    safe_label = re.sub(r"[^\w\s.-]", "_", label).strip("_")
-    filename = f"{safe_label}.pdf"
-
-    # Persist the PDF so it becomes a "created" channel for this edition.
-    pdf_dir = os.path.join(current_app.instance_path, "pdfs")
-    os.makedirs(pdf_dir, exist_ok=True)
-    stored_name = f"edition_{run.id}.pdf"
-    with open(os.path.join(pdf_dir, stored_name), "wb") as fh:
-        fh.write(pdf_bytes)
-    if run.pdf_file != stored_name:
-        run.pdf_file = stored_name
-        db.session.commit()
+    filename = pdf_download_filename(run)
 
     return Response(
         pdf_bytes,
