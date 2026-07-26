@@ -38,9 +38,8 @@ def test_dispatch_settings_renders_for_user_with_dispatch(auth_client, db, user)
     assert b"Delete my Dispatch" in resp.data
 
 
-def test_api_keys_reachable_for_approved_user_without_dispatch(auth_client, db, user):
-    user.approved = True
-    db.session.commit()
+def test_api_keys_reachable_for_any_user_without_dispatch(auth_client, db, user):
+    # Managing API keys never requires admin approval or owning a Dispatch.
     resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -51,8 +50,6 @@ def test_api_keys_reachable_for_approved_user_without_dispatch(auth_client, db, 
 
 def test_settings_page_no_longer_shows_dispatch_or_api_keys(auth_client, db, user):
     _own_dispatch(db, user)
-    user.approved = True
-    db.session.commit()
     html = auth_client.get("/settings").data.decode()
     assert 'id="sec-dispatch"' not in html
     assert 'id="sec-api-keys"' not in html

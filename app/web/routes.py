@@ -41,21 +41,6 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("web", __name__)
 
 
-def approved_required(view):
-    """Gate self-service source/API-key management to approved users.
-
-    Admins are implicitly approved (see User.is_approved).
-    """
-    @wraps(view)
-    @login_required
-    def wrapped(*args, **kwargs):
-        if not current_user.is_approved:
-            abort(403)
-        return view(*args, **kwargs)
-
-    return wrapped
-
-
 def dispatch_required(view):
     """Gate features that only make sense for a user who runs their own
     Dispatch (topic management, the per-user source toggle): personal topics
@@ -632,7 +617,7 @@ def your_dispatch():
         }
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
-    keys = ApiKey.manageable_by(current_user) if current_user.is_approved else []
+    keys = ApiKey.manageable_by(current_user)
 
     tier_complete, tier_highlights, tier_none = _topic_tiers_for(current_user, summary)
 
@@ -672,7 +657,7 @@ def api_keys():
 
 
 @bp.route("/keys/new", methods=["POST"])
-@approved_required
+@login_required
 def api_key_new():
     label = (request.form.get("label") or "").strip()
     secret = (request.form.get("secret") or "").strip()
@@ -688,7 +673,7 @@ def api_key_new():
 
 
 @bp.route("/keys/<int:key_id>/revoke", methods=["POST"])
-@approved_required
+@login_required
 def api_key_revoke(key_id: int):
     key = db.session.get(ApiKey, key_id) or abort(404)
     if not key.can_manage(current_user):
@@ -707,7 +692,7 @@ def api_key_revoke(key_id: int):
 
 
 @bp.route("/keys/<int:key_id>/reactivate", methods=["POST"])
-@approved_required
+@login_required
 def api_key_reactivate(key_id: int):
     key = db.session.get(ApiKey, key_id) or abort(404)
     if not key.can_manage(current_user):
@@ -719,7 +704,7 @@ def api_key_reactivate(key_id: int):
 
 
 @bp.route("/keys/<int:key_id>/delete", methods=["POST"])
-@approved_required
+@login_required
 def api_key_delete(key_id: int):
     key = db.session.get(ApiKey, key_id) or abort(404)
     if not key.can_manage(current_user):
@@ -739,7 +724,7 @@ def api_key_delete(key_id: int):
 
 
 @bp.route("/keys/<int:key_id>/use-for-editions", methods=["POST"])
-@approved_required
+@login_required
 def api_key_use_for_editions(key_id: int):
     """Select which of the user's own keys pays for agentic edition
     generation. The shared/global key is deliberately not selectable here —

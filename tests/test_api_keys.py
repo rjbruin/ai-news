@@ -205,11 +205,16 @@ def test_approved_user_can_add_source(auth_client, db, user):
     assert source.api_key_id == key.id
 
 
-def test_unapproved_user_cannot_add_api_key(auth_client, user):
+def test_any_logged_in_user_can_add_api_key(auth_client, db, user):
+    # Managing your own API key never required admin approval — only adding
+    # Sources does (see test_source_new_requires_approval).
     resp = auth_client.post(
         "/keys/new", data={"label": "x", "secret": "sk-or-y"}, follow_redirects=True
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    key = ApiKey.query.filter_by(owner_user_id=user.id).first()
+    assert key is not None
+    assert key.get_key() == "sk-or-y"
 
 
 def test_approved_user_can_add_and_revoke_key(auth_client, db, user):
@@ -235,9 +240,6 @@ def test_approved_user_can_add_and_revoke_key(auth_client, db, user):
 
 
 def test_dispatch_settings_shows_api_keys_hero_and_explainer_modal(auth_client, db, user):
-    user.approved = True
-    db.session.commit()
-
     resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -250,23 +252,20 @@ def test_dispatch_settings_shows_api_keys_hero_and_explainer_modal(auth_client, 
 
 
 def test_api_keys_redirects_to_dispatch_settings(auth_client, db, user):
-    user.approved = True
-    db.session.commit()
-
     resp = auth_client.get("/keys")
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/dispatch/settings#sec-api-keys")
 
 
-def test_non_approved_user_does_not_see_api_keys_section(auth_client, db, user):
+def test_non_approved_user_still_sees_api_keys_section(auth_client, db, user):
     user.approved = False
     db.session.commit()
 
     resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
-    assert "id=\"sec-api-keys\"" not in html
-    assert "id=\"api-key-explainer\"" not in html
+    assert "id=\"sec-api-keys\"" in html
+    assert "id=\"api-key-explainer\"" in html
 
 
 def test_owner_can_retract_own_source_but_not_others(auth_client, db, user):
