@@ -414,13 +414,13 @@ def test_source_toggle_mine_forbidden_for_non_dispatch_user(auth_client, db, use
 
 
 def test_pdf_settings_hidden_for_non_dispatch_user(auth_client, db, user):
-    html = auth_client.get("/settings").data.decode()
+    html = auth_client.get("/dispatch/settings").data.decode()
     assert 'id="sec-pdf"' not in html
 
 
 def test_pdf_settings_shown_for_dispatch_user(auth_client, db, user):
     _make_user_own(db, user)
-    html = auth_client.get("/settings").data.decode()
+    html = auth_client.get("/dispatch/settings").data.decode()
     assert 'id="sec-pdf"' in html
 
 

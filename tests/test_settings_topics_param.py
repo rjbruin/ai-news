@@ -37,7 +37,7 @@ def test_settings_saves_topic_tiers(auth_client, db, user):
     db.session.commit()
 
     resp = auth_client.post(
-        "/settings",
+        "/dispatch/settings",
         data={
             "param_topic_tiers_highlights": [str(tag_a.id)],
             "param_topic_tiers_none": [str(tag_b.id)],
@@ -57,7 +57,7 @@ def test_settings_page_defaults_new_topics_to_complete(auth_client, db, user):
     db.session.add(tag)
     db.session.commit()
 
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     assert _tag_id_in_tier_box(resp.data, "complete", tag)
 
@@ -71,7 +71,7 @@ def test_settings_page_prepopulates_saved_tiers(auth_client, db, user):
     summary.params = {"topic_tiers": {"highlights": [highlight_tag.id], "none": [none_tag.id]}}
     db.session.commit()
 
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     assert _tag_id_in_tier_box(resp.data, "highlights", highlight_tag)
     assert _tag_id_in_tier_box(resp.data, "none", none_tag)

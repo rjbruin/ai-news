@@ -77,7 +77,7 @@
         Add your own OpenRouter API key to pay for the sources and editions you create.
       </p>
     </div>
-    <a href="{{ url_for('web.settings') }}#sec-api-keys" class="btn btn-warning flex-shrink-0">Add an API key</a>
+    <a href="{{ url_for('web.your_dispatch') }}#sec-api-keys" class="btn btn-warning flex-shrink-0">Add an API key</a>
   </div>
 </div>
 {% endif %}
@@ -128,7 +128,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     if (steps[i].querySelector('.onboarding-follow-checkbox')) saveFollows();
     if (i === steps.length - 1) {
       if (!followSaved) saveFollows();
-      window.location.href = "{{ url_for('web.settings') }}#sec-api-keys";
+      window.location.href = "{{ url_for('web.your_dispatch') }}#sec-api-keys";
       return;
     }
     i = Math.min(steps.length - 1, i + 1);

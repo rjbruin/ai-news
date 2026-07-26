@@ -298,10 +298,10 @@ def dispatch_publish():
     if publish:
         if not name:
             flash("Choose a name for your published Dispatch.", "danger")
-            return redirect(url_for("web.settings") + "#sec-dispatch")
+            return redirect(url_for("web.your_dispatch") + "#sec-dispatch")
         if len(name) > 25:
             flash("The published name must be 25 characters or fewer.", "danger")
-            return redirect(url_for("web.settings") + "#sec-dispatch")
+            return redirect(url_for("web.your_dispatch") + "#sec-dispatch")
         clash = (
             Summary.query
             .filter(db.func.lower(Summary.published_name) == name.lower(), Summary.id != own.id)
@@ -309,7 +309,7 @@ def dispatch_publish():
         )
         if clash:
             flash(f'The name "{name}" is already taken — pick another.', "danger")
-            return redirect(url_for("web.settings") + "#sec-dispatch")
+            return redirect(url_for("web.your_dispatch") + "#sec-dispatch")
         own.is_published = True
         own.published_name = name
         flash(f'Your Dispatch is now published as "{name}".', "success")
@@ -325,7 +325,7 @@ def dispatch_publish():
         )
         flash("Your Dispatch is no longer published.", "info")
     db.session.commit()
-    return redirect(url_for("web.settings") + "#sec-dispatch")
+    return redirect(url_for("web.your_dispatch") + "#sec-dispatch")
 
 
 def _apply_dispatch_config(
@@ -407,7 +407,7 @@ def dispatch_own():
         )
     else:
         flash("You already have your own Dispatch.", "info")
-    return redirect(url_for("web.settings"))
+    return redirect(url_for("web.your_dispatch"))
 
 
 # ───────────────────────── Search ─────────────────────────
@@ -553,6 +553,37 @@ def _topic_tiers_for(owner: User, summary: Summary | None) -> tuple[list, list, 
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
+    if request.method == "POST":
+        if current_user.has_podcast_access:
+            current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
+            db.session.commit()
+            if "mem_news_podcast_format" in request.form:
+                from ..services.podcast import _set_news_podcast_format
+                _set_news_podcast_format(current_user, request.form.get("mem_news_podcast_format", ""))
+
+        flash("Settings saved.", "success")
+        return redirect(url_for("web.settings"))
+
+    from ..services.podcast import _get_news_podcast_format, DEFAULT_NEWS_PODCAST_FORMAT
+
+    news_podcast_format = None
+    podcast_feed_url = None
+    if current_user.has_podcast_access:
+        news_podcast_format = _get_news_podcast_format(current_user)
+        feed_token = current_user.get_or_create_feed_token()
+        podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
+
+    return render_template(
+        "settings.html",
+        news_podcast_format=news_podcast_format,
+        default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
+        podcast_feed_url=podcast_feed_url,
+    )
+
+
+@bp.route("/dispatch/settings", methods=["GET", "POST"])
+@login_required
+def your_dispatch():
     from ..agent import memory as agent_memory
     from ..agent.prompt import DEFAULT_DAILY_CONTENT_CONFIG, DEFAULT_INTERESTS
 
@@ -562,26 +593,15 @@ def settings():
         .first()
     )
     types = summary_registry.all_types()
-
-    # Dispatch context for the Settings Dispatch card — always shown, unlike
-    # the Schedule/Content/Interests cards below (gated on owning a Summary).
     follow_count = current_user.subscribed_dispatches.count()
 
     if request.method == "POST":
-        if current_user.has_podcast_access:
-            current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
         try:
             current_user.pdf_font_scale = max(50, min(150, int(request.form.get("pdf_font_scale") or 80)))
         except (ValueError, TypeError):
             pass
         db.session.commit()
 
-        # Podcast format memory (user-level, no summary)
-        if current_user.has_podcast_access and "mem_news_podcast_format" in request.form:
-            from ..services.podcast import _set_news_podcast_format
-            _set_news_podcast_format(current_user, request.form.get("mem_news_podcast_format", ""))
-
-        # Summary schedule + memory
         if summary:
             summary.period = request.form.get("period", summary.period)
             summary.params = _collect_params(types[summary.type_key])
@@ -596,9 +616,10 @@ def settings():
                     )
 
         flash("Settings saved.", "success")
-        return redirect(url_for("web.settings"))
+        return redirect(url_for("web.your_dispatch"))
 
-    from ..services.podcast import _get_news_podcast_format, DEFAULT_NEWS_PODCAST_FORMAT
+    cur_cls = types.get(summary.type_key) if summary else None
+
     files, headlines = {}, []
     retention = current_app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
     if summary:
@@ -611,25 +632,15 @@ def settings():
         }
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
-    news_podcast_format = None
-    podcast_feed_url = None
-    if current_user.has_podcast_access:
-        news_podcast_format = _get_news_podcast_format(current_user)
-        feed_token = current_user.get_or_create_feed_token()
-        podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
-
     keys = ApiKey.manageable_by(current_user) if current_user.is_approved else []
 
     tier_complete, tier_highlights, tier_none = _topic_tiers_for(current_user, summary)
 
     return render_template(
-        "settings.html",
-        summary=summary, types=types,
+        "dispatch_settings.html",
+        summary=summary, types=types, cur_cls=cur_cls,
         follow_count=follow_count,
         files=files, headlines=headlines, retention=retention,
-        news_podcast_format=news_podcast_format,
-        default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
-        podcast_feed_url=podcast_feed_url,
         keys=keys,
         tier_complete=tier_complete,
         tier_highlights=tier_highlights,
@@ -647,10 +658,10 @@ def regenerate_podcast_feed_token():
 
 
 # ───────────────────────── API keys ─────────────────────────
-# API key management now lives on the Settings page (#sec-api-keys) rather
-# than its own page — these routes are the form actions it posts to.
+# API key management now lives on the Your Dispatch page (#sec-api-keys)
+# rather than its own page — these routes are the form actions it posts to.
 def _keys_redirect():
-    return redirect(url_for("web.settings") + "#sec-api-keys")
+    return redirect(url_for("web.your_dispatch") + "#sec-api-keys")
 
 
 @bp.route("/keys")
@@ -1254,19 +1265,19 @@ def dispatch_copy_to_own(summary_id: int):
         flash(f'Your Dispatch was created from "{source.display_name}"\'s settings.', "success")
     else:
         flash(f'Your Dispatch settings have been overwritten from "{source.display_name}".', "success")
-    return redirect(url_for("web.settings") + "#sec-dispatch")
+    return redirect(url_for("web.your_dispatch") + "#sec-dispatch")
 
 
 @bp.route("/summaries/<int:summary_id>/edit", methods=["GET", "POST"])
 @login_required
 def summary_edit(summary_id: int):
-    return redirect(url_for("web.settings"))
+    return redirect(url_for("web.your_dispatch"))
 
 
 @bp.route("/summaries/<int:summary_id>/memory", methods=["GET", "POST"])
 @login_required
 def summary_memory(summary_id: int):
-    return redirect(url_for("web.settings"))
+    return redirect(url_for("web.your_dispatch"))
 
 
 @bp.route("/summaries/<int:summary_id>/generate/custom", methods=["POST"])
@@ -1309,7 +1320,7 @@ def summary_delete(summary_id: int):
     db.session.commit()
     if is_own_dispatch:
         flash("Your Dispatch and all its editions have been permanently deleted.", "info")
-        return redirect(url_for("web.settings"))
+        return redirect(url_for("web.your_dispatch"))
     flash("Summary deleted.", "info")
     return redirect(url_for("web.summaries"))
 
@@ -1338,7 +1349,7 @@ def summary_generate(summary_id: int):
         _, _items, run = summarize.build_summary(summary, record_run=True)
     except MissingCredentials as exc:
         flash(str(exc), "warning")
-        return redirect(url_for("web.settings"))
+        return redirect(url_for("web.your_dispatch") + "#sec-api-keys")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not generate edition: {exc}", "danger")
         return redirect(url_for("web.summaries"))

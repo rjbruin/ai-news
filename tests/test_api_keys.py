@@ -234,11 +234,11 @@ def test_approved_user_can_add_and_revoke_key(auth_client, db, user):
     assert not source.enabled  # dependent source auto-disabled
 
 
-def test_settings_shows_api_keys_hero_and_explainer_modal(auth_client, db, user):
+def test_dispatch_settings_shows_api_keys_hero_and_explainer_modal(auth_client, db, user):
     user.approved = True
     db.session.commit()
 
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
     assert "API Keys" in html
@@ -249,20 +249,20 @@ def test_settings_shows_api_keys_hero_and_explainer_modal(auth_client, db, user)
     assert "$0.50 per edition" in html  # cost expectation blurb in "Add a key"
 
 
-def test_api_keys_redirects_to_settings(auth_client, db, user):
+def test_api_keys_redirects_to_dispatch_settings(auth_client, db, user):
     user.approved = True
     db.session.commit()
 
     resp = auth_client.get("/keys")
     assert resp.status_code == 302
-    assert resp.headers["Location"].endswith("/settings#sec-api-keys")
+    assert resp.headers["Location"].endswith("/dispatch/settings#sec-api-keys")
 
 
 def test_non_approved_user_does_not_see_api_keys_section(auth_client, db, user):
     user.approved = False
     db.session.commit()
 
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
     assert "id=\"sec-api-keys\"" not in html
