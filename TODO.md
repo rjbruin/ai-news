@@ -1,13 +1,13 @@
-Do all of the below. Keep iterating until done. Do not ask for permission to continue, you have it. Just keep going, even if it's a lot. Group changes in PRs. Once done, merge all PRs and publish a new minor release.
+This is your backlog. When you do an item, mark it as done (do not remove). Do all of the open items below. Keep iterating until done. Do not ask for permission to continue, you have it. Just keep going, even if it's a lot. Group changes in PRs. Once done, merge all PRs and publish a new minor release.
 
-* Either the preview server or production is sending a lot of emails to newbie@example.com to confirm account registration. Stop doing this, it's clouding the email box.
-* Add some kind of progress feedback to the Admin panel when 1) polling all sources and when 2) polling an individual source. Possibly implement this per source and have polling all sources just show the progress in each individual source. Figure it out.
-* In the Editions table, make the name of the edition clickable to open the edition.
-* In the navigation, swap the places of News and Editions.
-* Allow the user to add and manage email addresses that receive the edition emails. By default, have it be the email address of the account. Allow the user to add and remove other email addresses on the Settings page. When added, the user needs to confirm. Send a confirmation mail through the Newsletter inbox IMAP with a link to confirm adding the email address. When an email is removed, send a notification email. When the user removes all email addresses, uncheck the box for "Send as email newsletter...". When the user puts a first email address, check the box.
-* Resurface the Tags page, and make it accessible to the admin in the navigation.
-* In Settings, replace "agentic editions" with simply "editions".
-* Move the Admin nav entry to the right side of the navigation, as the last entry before Sign Out.
-* Show the generation cost of the edition as a separate box section at the bottom of the edition, above the Coverage box. Remove the badges just below the edition headline on the edition page. 
-* Track the cost of podcast generation. Elevenlabs uses credits. 10k credits cost $2. Add these cost as a separate entry to the costs box on the edition page. In the Editions page, add the cost in the badge of the podcast icon.
-* On the admin page, have a section Costs which uses multiple graphs to give insights about the cost of the global API keys, both OpenRouter and Elevenlabs. Figure out what is the best way to do this.
+[ ] Rewrite the front page text to more accurately capture the system as it is. Focus first on reading existing dispatches, then on the option to generate your own.
+[ ] Move podcast settings also to the Dispatch settings page.
+[ ] Add an Mark all as Read button to the Editions page.
+[ ] For all users, do not show the "published" badge when viewing a dispatch of another user.
+[ ] Automatically create the PDF export for all editions. Make sure it shows in the edition display (the icon) everywhere we should show it.
+[ ] Change the button "Email me" to "Subscribe to emails". Keep the icon. When active, it should be "Subscribed to emails" with a checkmark instead of the email icon.
+[ ] Remove the header description text from Dispatches and Editions.
+[ ] On the Dispatch details page, under Average cost for generation, add a note that only the publisher of the dispatch pays these costs.
+[ ] On the Dispatch details page, change "Copy to my Dispatch" to "Copy configuration to my Dispatch".
+[ ] Make the featured edition on the homepage *always* be the most recent edition of the AI Tech Dispatch by rjbruin. Make the featured dispatch (not the edition but the dispatch) configurable on the admin panel.
+[ ] Let's implement podcast setup for other dispatches. For this we need to refactor the Elevenlabs setup slightly: instead of a global API key, have one per user that has their own dispatch. They can set it like they set the OpenRouter key. Include instructions for setting up an account and key with Elevenlabs. Only the owner of a dispatch can either turn on automatic podcast generation, which uses their own API key, or click the button to generate per individual edition. Podcasts for a dispatch will become available to all subscribed users. Show a button Subscribe to Podcast on the page for the edition, as well as on the Dispatch card and on the dispatch details page. This button should always open a modal with instructions for to subscribe to the podcast in a podcast app using the RSS link, of course also giving the link.
