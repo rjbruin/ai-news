@@ -1102,6 +1102,37 @@ def summaries():
     )
 
 
+@bp.route("/summaries/mark-all-read", methods=["POST"])
+@login_required
+def editions_mark_all_read():
+    """Marks every edition shown on the current Editions month view as read
+    for the current viewer — same range logic as summaries()."""
+    from datetime import datetime
+
+    today = utcnow().date()
+    year = request.args.get("year", type=int) or today.year
+    month = request.args.get("month", type=int) or today.month
+    if not (1 <= month <= 12):
+        year, month = today.year, today.month
+
+    first = datetime(year, month, 1)
+    next_first = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+
+    followed = current_user.subscribed_dispatches.all()
+    month_feed = summarize.edition_heads_in_range(followed, first, next_first)
+    already_read = {
+        run_id for (run_id,) in EditionRead.query.filter_by(user_id=current_user.id)
+        .with_entities(EditionRead.run_id)
+        .filter(EditionRead.run_id.in_([run.id for run, _ in month_feed]))
+    }
+    for run, _ in month_feed:
+        if run.id not in already_read:
+            db.session.add(EditionRead(user_id=current_user.id, run_id=run.id, read_at=utcnow()))
+    db.session.commit()
+    flash("Marked all editions as read.", "info")
+    return redirect(url_for("web.summaries", year=year, month=month))
+
+
 @bp.route("/dispatches")
 @login_required
 def dispatches():

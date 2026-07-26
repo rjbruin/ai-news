@@ -2,7 +2,7 @@ This is your backlog. When you do an item, mark it as done (do not remove). Do a
 
 [ ] Rewrite the front page text to more accurately capture the system as it is. Focus first on reading existing dispatches, then on the option to generate your own.
 [ ] Move podcast settings also to the Dispatch settings page.
-[ ] Add an Mark all as Read button to the Editions page.
+[x] Add an Mark all as Read button to the Editions page.
 [x] For all users, do not show the "published" badge when viewing a dispatch of another user.
 [ ] Automatically create the PDF export for all editions. Make sure it shows in the edition display (the icon) everywhere we should show it.
 [x] Change the button "Email me" to "Subscribe to emails". Keep the icon. When active, it should be "Subscribed to emails" with a checkmark instead of the email icon.

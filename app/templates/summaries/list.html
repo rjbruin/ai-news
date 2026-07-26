@@ -2,7 +2,12 @@
 {% from "partials/_edition_row.html" import edition_hero_card with context %}
 {% block title %}Editions · Dispatch{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Editions</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Editions</h1>
+  <form method="post" action="{{ url_for('web.editions_mark_all_read', year=year, month=month) }}">
+    <button class="btn btn-sm btn-outline-secondary">Mark all as read</button>
+  </form>
+</div>
 
 <style>
   .calendar-grid { width: 100%; border-collapse: collapse; }
