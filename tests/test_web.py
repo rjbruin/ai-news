@@ -95,9 +95,10 @@ def test_index_does_not_show_non_system_dispatch_shared_edition(client, db, user
     assert b"A recent edition" not in resp.data
 
 
-def test_index_does_not_show_system_dispatch_unshared_edition(client, db, admin):
-    """share_token stays a required, explicit opt-in — being the system
-    dispatch isn't enough on its own; the edition must have actually been shared."""
+def test_index_features_system_dispatch_latest_edition_even_if_unshared(client, db, admin):
+    """The homepage always features the system dispatch's most recent
+    successful edition — sharing is no longer a manual prerequisite, a
+    share_token is generated on the fly if the edition doesn't have one."""
     from app.models import Summary, SummaryRun
 
     summary = Summary(
@@ -114,7 +115,9 @@ def test_index_does_not_show_system_dispatch_unshared_edition(client, db, admin)
     db.session.commit()
 
     resp = client.get("/")
-    assert b"A recent edition" not in resp.data
+    assert b"A recent edition" in resp.data
+    db.session.refresh(run)
+    assert run.share_token is not None
 
 
 def test_dashboard_requires_login(client):
