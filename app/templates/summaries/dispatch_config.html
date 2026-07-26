@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_podcast_subscribe.html" import podcast_subscribe_button, podcast_subscribe_modal %}
 {% block title %}{{ summary.display_name }} · Details · Dispatch{% endblock %}
 {% block content %}
 
@@ -9,8 +10,12 @@
       {% if is_own %}Your Dispatch{% else %}by {{ summary.user.username }}{% endif %}
     </p>
   </div>
-  <a href="{{ url_for('web.dispatches') }}" class="btn btn-sm btn-outline-secondary">Back to Dispatches</a>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    {{ podcast_subscribe_button(summary, 'podcast-subscribe-details') }}
+    <a href="{{ url_for('web.dispatches') }}" class="btn btn-sm btn-outline-secondary">Back to Dispatches</a>
+  </div>
 </div>
+{{ podcast_subscribe_modal(summary, 'podcast-subscribe-details') }}
 
 <div class="card shadow-sm mb-4">
   <div class="card-body">

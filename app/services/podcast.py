@@ -368,7 +368,7 @@ def _tts_segment(text: str, voice_id: str, api_key: str, el_model: str) -> bytes
     return resp.content
 
 
-def generate_audio_stream(script: str):
+def generate_audio_stream(script: str, *, api_key: str | None = None):
     """Generate a podcast MP3, yielding progress as each segment is synthesized.
 
     Yields ``("progress", done, total)`` after every TTS segment, then finally
@@ -379,13 +379,14 @@ def generate_audio_stream(script: str):
     events keeps the SSE connection active so proxy/worker read-timeouts
     (nginx/gunicorn, 120s) never fire on a silent long request.
 
-    Credentials/voices are global admin settings, not per-user — podcast
-    export just needs the requesting user to have podcast access (checked by
-    the caller), not their own ElevenLabs account.
+    ``api_key`` is the caller-resolved ElevenLabs credential — the Dispatch
+    owner's own key if they've added one, else the shared global key (see
+    run_podcast_job). Voice IDs and the model stay global admin settings
+    either way.
     """
     from ..models import AdminSettings
 
-    api_key = current_app.config.get("ELEVENLABS_API_KEY")
+    api_key = api_key or current_app.config.get("ELEVENLABS_API_KEY")
     if not api_key:
         raise ValueError("No ElevenLabs API key configured (set ELEVENLABS_API_KEY).")
 
@@ -435,13 +436,13 @@ def generate_audio_stream(script: str):
     yield ("done", filename, chapters, cost)
 
 
-def generate_audio(script: str) -> tuple[str, str]:
+def generate_audio(script: str, *, api_key: str | None = None) -> tuple[str, str]:
     """Generate podcast MP3 from a script (non-streaming convenience wrapper).
 
     Returns (absolute_path, web_filename).
     """
     filename = None
-    for event in generate_audio_stream(script):
+    for event in generate_audio_stream(script, api_key=api_key):
         if event[0] == "done":
             filename = event[1]
     path = os.path.join(current_app.instance_path, "podcasts", filename)
@@ -510,8 +511,13 @@ def run_podcast_job(app, job, run_id: int, user_id: int) -> None:
                 return
 
             job.emit({"type": "phase", "phase": "audio"})
+            elevenlabs_key = user.elevenlabs_key
+            el_api_key = (
+                elevenlabs_key.get_key() if elevenlabs_key and elevenlabs_key.active
+                else current_app.config.get("ELEVENLABS_API_KEY")
+            )
             filename, chapters, cost = None, [], 0.0
-            for event in generate_audio_stream(script):
+            for event in generate_audio_stream(script, api_key=el_api_key):
                 if event[0] == "progress":
                     job.emit({"type": "audio_progress", "done": event[1], "total": event[2]})
                 elif event[0] == "done":

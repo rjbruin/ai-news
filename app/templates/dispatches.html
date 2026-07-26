@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_podcast_subscribe.html" import podcast_subscribe_button, podcast_subscribe_modal %}
 {% block title %}Dispatches · Dispatch{% endblock %}
 {% block content %}
 <h1 class="h3 mb-3">Dispatches</h1>
@@ -63,10 +64,12 @@
             </a>
             {% endif %}
           {% endif %}
+          {{ podcast_subscribe_button(d, 'podcast-subscribe-' ~ d.id) }}
         </div>
       </div>
     </div>
   </div>
+  {{ podcast_subscribe_modal(d, 'podcast-subscribe-' ~ d.id) }}
 {% else %}
   <div class="col">
     <p class="text-body-secondary">No published Dispatches yet.</p>

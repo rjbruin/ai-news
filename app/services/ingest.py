@@ -95,7 +95,9 @@ def _resolve_credentials(source: Source):
 
     api_key_row = (
         ApiKey.get_or_create_global() if source.owner_user_id is None
-        else ApiKey.query.filter_by(owner_user_id=source.owner_user_id, is_global=False).first()
+        else ApiKey.query.filter_by(
+            owner_user_id=source.owner_user_id, provider="openrouter", is_global=False
+        ).first()
     )
     if api_key_row is None or not api_key_row.active:
         return None, None, None, "error: no active API key assigned to this source"

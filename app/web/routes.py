@@ -186,7 +186,7 @@ def dashboard():
         if not (s.parent_source_id is None and s.type_key == "imap_newsletter")
     ]
     source_badges = sorted({_source_badge_label(s) for s in enabled_sources})
-    has_api_key = ApiKey.query.filter_by(owner_user_id=current_user.id).first() is not None
+    has_api_key = current_user.api_key is not None
 
     # Flip the flag as soon as we decide to show it — not on explicit
     # dismissal — so it reliably only ever appears once, even if the user
@@ -641,6 +641,10 @@ def _keys_redirect():
     return redirect(url_for("web.your_dispatch") + "#sec-api-keys")
 
 
+def _elevenlabs_key_redirect():
+    return redirect(url_for("web.your_dispatch") + "#sec-podcast-format")
+
+
 @bp.route("/keys")
 @login_required
 def api_keys():
@@ -683,6 +687,37 @@ def api_key_remove():
         msg += f" Disabled {len(affected)} source(s) that used it: {names}."
     flash(msg, "warning" if affected else "info")
     return _keys_redirect()
+
+
+@bp.route("/keys/elevenlabs/save", methods=["POST"])
+@login_required
+def api_key_elevenlabs_save():
+    secret = (request.form.get("secret") or "").strip()
+    if not secret:
+        flash("An API key is required.", "danger")
+        return _elevenlabs_key_redirect()
+    key = current_user.elevenlabs_key
+    if key is None:
+        key = ApiKey(owner_user_id=current_user.id, label="ElevenLabs key", provider="elevenlabs")
+        db.session.add(key)
+    key.set_key(secret)
+    key.revoked_at = None
+    db.session.commit()
+    flash("ElevenLabs key saved.", "success")
+    return _elevenlabs_key_redirect()
+
+
+@bp.route("/keys/elevenlabs/remove", methods=["POST"])
+@login_required
+def api_key_elevenlabs_remove():
+    key = current_user.elevenlabs_key
+    if key is None:
+        return _elevenlabs_key_redirect()
+    current_user.podcast_auto_generate = False
+    db.session.delete(key)
+    db.session.commit()
+    flash("ElevenLabs key removed. Podcast auto-generation turned off.", "info")
+    return _elevenlabs_key_redirect()
 
 
 # ───────────────────────── Sources ─────────────────────────
@@ -1744,8 +1779,10 @@ def edition_mark_unread(summary_id: int, run_id: int):
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/podcast")
 @login_required
 def edition_podcast(summary_id: int, run_id: int):
-    if not current_user.has_podcast_access:
-        abort(403)
+    """Podcast page for an edition: the owner gets script/audio generation
+    controls; anyone who can read the edition can listen once audio exists —
+    podcasts are free to follow once the Dispatch owner has generated one,
+    no ElevenLabs access of their own required (see has_podcast_access)."""
     summary = db.session.get(Summary, summary_id) or abort(404)
     if not _can_read(summary):
         abort(403)
@@ -1753,9 +1790,17 @@ def edition_podcast(summary_id: int, run_id: int):
     run = db.session.get(SummaryRun, run_id) or abort(404)
     if run.summary_id != summary_id:
         abort(404)
-    if not current_app.config.get("ELEVENLABS_API_KEY"):
-        flash("Podcast export isn't configured yet — ask an admin to set it up.", "warning")
-        return redirect(url_for("web.dashboard"))
+
+    if is_own:
+        if not current_user.has_podcast_access:
+            abort(403)
+        has_key = bool(current_user.elevenlabs_key) or bool(current_app.config.get("ELEVENLABS_API_KEY"))
+        if not has_key:
+            flash("Add your ElevenLabs key on the Your Dispatch page to generate a podcast.", "warning")
+            return redirect(url_for("web.your_dispatch") + "#sec-elevenlabs-key")
+    elif not run.news_podcast_audio:
+        abort(404)
+
     from ..services import podcast_registry
     saved_script = run.news_podcast_script or ""
     saved_audio = run.news_podcast_audio or ""

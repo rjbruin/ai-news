@@ -20,6 +20,7 @@
     {% endif %}
     {% if current_user.own_dispatch %}
     <a class="nav-link px-2 py-1" href="#sec-pdf">PDF export</a>
+    <a class="nav-link px-2 py-1" href="#sec-elevenlabs-key">Podcast key</a>
     {% endif %}
     {% if current_user.has_podcast_access %}
     <a class="nav-link px-2 py-1" href="#sec-podcast-format">Podcast format</a>
@@ -277,6 +278,44 @@
   </div>
   {% endif %}
 
+  {% if current_user.own_dispatch %}
+  <div class="card shadow-sm mb-4" id="sec-elevenlabs-key" style="scroll-margin-top:5rem">
+    <div class="card-header fw-semibold d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span>Podcast (ElevenLabs) key</span>
+      <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" data-bs-toggle="modal"
+              data-bs-target="#elevenlabs-key-explainer">More about this key</button>
+    </div>
+    <div class="card-body">
+      {% set ek = current_user.elevenlabs_key %}
+      <p class="text-body-secondary small">
+        Your own ElevenLabs key pays for turning your editions into a two-host news podcast.
+        Add one to unlock podcast generation — followers of your Dispatch can then listen for
+        free once you've generated an episode.
+      </p>
+      {% if ek %}
+      <div class="mb-3">
+        <span class="{{ 'text-success' if ek.active else 'text-danger' }}">
+          {{ 'ElevenLabs key active' if ek.active else 'ElevenLabs key revoked' }}
+        </span>
+      </div>
+      <div class="mb-3" style="max-width: 480px">
+        <label class="form-label">Replace key</label>
+        <input type="password" name="secret" form="elevenlabs-key-save-form" class="form-control" autocomplete="off" placeholder="sk_...">
+      </div>
+      <button type="submit" form="elevenlabs-key-save-form" class="btn btn-primary">Save</button>
+      <button type="submit" form="elevenlabs-key-remove-form" class="btn btn-outline-danger"
+              onclick="return confirm('Remove your ElevenLabs key? Podcast auto-generation will be turned off.')">Remove key</button>
+      {% else %}
+      <div class="mb-3" style="max-width: 480px">
+        <label class="form-label">ElevenLabs API key</label>
+        <input type="password" name="secret" form="elevenlabs-key-save-form" class="form-control" autocomplete="off" placeholder="sk_..." required>
+      </div>
+      <button type="submit" form="elevenlabs-key-save-form" class="btn btn-primary">Save</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if current_user.has_podcast_access %}
   <div class="card shadow-sm mb-4" id="sec-podcast-format" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Podcast</div>
@@ -306,9 +345,9 @@
     <div class="card-header fw-semibold">Podcast feed <span class="fw-normal text-body-secondary">(subscribe on your phone)</span></div>
     <div class="card-body">
       <p class="form-text mt-0 mb-2">
-        Add this private URL in any podcast app (Overcast, Pocket Casts, Apple Podcasts →
-        “Add a show by URL”). New editions appear automatically once their audio is generated.
-        Keep it secret — anyone with the link can hear your podcasts.
+        Add this URL in any podcast app (Overcast, Pocket Casts, Apple Podcasts → “Add a show
+        by URL”) to listen yourself, or share it with your followers — this is the same link
+        the "Subscribe to Podcast" button on your Dispatch offers them.
       </p>
       <div class="input-group">
         <input type="text" class="form-control font-monospace" id="podcast-feed-url"
@@ -341,6 +380,41 @@
 {% endif %}
 <form id="api-key-save-form" method="post" action="{{ url_for('web.api_key_save') }}"></form>
 <form id="api-key-remove-form" method="post" action="{{ url_for('web.api_key_remove') }}"></form>
+<form id="elevenlabs-key-save-form" method="post" action="{{ url_for('web.api_key_elevenlabs_save') }}"></form>
+<form id="elevenlabs-key-remove-form" method="post" action="{{ url_for('web.api_key_elevenlabs_remove') }}"></form>
+
+<div class="modal fade" id="elevenlabs-key-explainer" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">What's the podcast key for?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Turning an edition into a two-host news podcast uses ElevenLabs' text-to-speech models,
+          which cost real money per character generated — the same bring-your-own-credit model as
+          your OpenRouter key, just for the podcast audio instead of the writing.
+        </p>
+        <p><strong>To create an ElevenLabs API key:</strong></p>
+        <ol>
+          <li>Go to <a href="https://elevenlabs.io" target="_blank" rel="noopener">elevenlabs.io</a> and create an account.</li>
+          <li>Add some credit or subscribe to a plan (a few dollars goes a long way for podcast audio).</li>
+          <li>Go to your <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">API keys settings</a> and create a new key.</li>
+          <li>Copy the key and paste it into the podcast key form on this page.</li>
+        </ol>
+        <p class="mb-0 text-body-secondary small">
+          Your key is stored encrypted and only ever used to pay for podcast audio your account
+          generates. Once you've generated an episode, anyone following your Dispatch can listen
+          to it for free — they don't need a key of their own.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="modal fade" id="api-key-explainer" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-scrollable">
