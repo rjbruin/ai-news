@@ -528,6 +528,31 @@ def test_owner_read_marker_independent_of_followers(admin_client, db, admin, use
     assert not system_run.is_read_by(user)
 
 
+def test_mark_all_read_marks_every_edition_in_current_month(auth_client, db, user, system_dispatch, system_run):
+    other_run = SummaryRun(
+        summary_id=system_dispatch.id, label="Tuesday",
+        document=[{"type": "intro", "markdown": "Hi again."}],
+        content="<p>Hi again.</p>", status="ok",
+    )
+    db.session.add(other_run)
+    db.session.commit()
+    user.follow(system_dispatch)
+    db.session.commit()
+
+    resp = auth_client.post("/summaries/mark-all-read", follow_redirects=True)
+    assert resp.status_code == 200
+    assert system_run.is_read_by(user)
+    assert other_run.is_read_by(user)
+
+
+def test_mark_all_read_does_not_affect_other_users(auth_client, db, user, admin, system_dispatch, system_run):
+    user.follow(system_dispatch)
+    db.session.commit()
+    auth_client.post("/summaries/mark-all-read")
+    assert system_run.is_read_by(user)
+    assert not system_run.is_read_by(admin)
+
+
 # ── Cost hidden from non-owning followers ──────────────────────────────────
 
 def test_podcast_cost_hidden_from_follower_in_channel_icon_tooltip(
