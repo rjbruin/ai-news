@@ -65,11 +65,6 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
 
-    # Which of this user's ApiKey rows (see ApiKey, api_keys.py) pays for the
-    # agentic summary pipeline. Editions and sources now share one API key
-    # system instead of separate per-feature credentials.
-    edition_api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=True)
-
     # Podcast export is opt-in per user (admins always have it — see
     # has_podcast_access); the ElevenLabs credential/voice/model themselves
     # are global admin settings now, not per-user (see AdminSettings).
@@ -117,7 +112,6 @@ class User(UserMixin, db.Model):
     email_subscribed_dispatches = db.relationship(
         "Summary", secondary=dispatch_email_subscriptions, lazy="dynamic",
     )
-    edition_api_key = db.relationship("ApiKey", foreign_keys=[edition_api_key_id])
 
     def follow(self, summary: "Summary") -> None:
         if not self.is_following(summary):
@@ -154,6 +148,13 @@ class User(UserMixin, db.Model):
         return Summary.query.filter_by(
             user_id=self.id, type_key="agentic_page"
         ).first()
+
+    @property
+    def api_key(self) -> "ApiKey | None":
+        """This user's single OpenRouter key, or None if they haven't added
+        one. Funds both their own edition generation and every Source they
+        own — one key per user, no per-source assignment."""
+        return ApiKey.query.filter_by(owner_user_id=self.id, is_global=False).first()
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
@@ -244,19 +245,28 @@ class AuthToken(db.Model):
 
 # ─────────────────────────────── API keys ───────────────────────────────
 class ApiKey(db.Model):
-    """A credential (currently always OpenRouter) usable to run a Source's
-    ingestion + tagging.
+    """A credential (currently always OpenRouter) that funds a user's own
+    edition generation and every Source they own — one row per non-global
+    user (enforced by the partial unique index below), plus the single
+    seeded global key.
 
-    ``owner_user_id`` is NULL only for the single seeded global key
-    (``is_global=True``), whose secret lives in the ``OPENROUTER_API_KEY`` env
-    var rather than in this row — it is conceptually owned by every admin
-    rather than any one user, so any admin can view/manage/revoke it.
+    ``owner_user_id`` is NULL only for the global key (``is_global=True``),
+    whose secret lives in the ``OPENROUTER_API_KEY`` env var rather than in
+    this row — it is conceptually owned by every admin rather than any one
+    user, so any admin can view/manage it. It funds every ownerless
+    ("system") Source.
     """
 
     __tablename__ = "api_keys"
+    __table_args__ = (
+        db.Index(
+            "uq_api_keys_owner", "owner_user_id",
+            unique=True, sqlite_where=db.text("owner_user_id IS NOT NULL"),
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     label = db.Column(db.String(120), nullable=False)
     provider = db.Column(db.String(30), default="openrouter", nullable=False)
     key_enc = db.Column(db.Text, nullable=True)  # NULL for the global key (read from env)
@@ -265,7 +275,6 @@ class ApiKey(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
     owner = db.relationship("User", foreign_keys=[owner_user_id])
-    sources = db.relationship("Source", back_populates="api_key", lazy="dynamic")
     usage_entries = db.relationship(
         "ApiKeyUsage", back_populates="api_key", cascade="all, delete-orphan", lazy="dynamic",
     )
@@ -312,15 +321,6 @@ class ApiKey(db.Model):
         return self.usage_entries.with_entities(
             db.func.max(ApiKeyUsage.created_at)
         ).scalar()
-
-    @classmethod
-    def manageable_by(cls, user: "User") -> list["ApiKey"]:
-        """Keys ``user`` may pick for a source / manage: their own, plus the
-        shared global key if they're an admin."""
-        keys = cls.query.filter_by(owner_user_id=user.id).order_by(cls.created_at).all()
-        if user.is_admin:
-            keys = [cls.get_or_create_global()] + keys
-        return keys
 
     @classmethod
     def get_or_create_global(cls) -> "ApiKey":
@@ -380,7 +380,6 @@ class Source(db.Model):
     type_key = db.Column(db.String(64), nullable=False)  # plugin key
     name = db.Column(db.String(120), nullable=False)
     owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    api_key_id = db.Column(db.Integer, db.ForeignKey("api_keys.id"), nullable=True)
     # Set only for auto-detected newsletter subscriptions (see services.ingest):
     # the mailbox Source they were split out of. NULL for everything else,
     # including the mailbox itself.
@@ -396,7 +395,6 @@ class Source(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
     owner = db.relationship("User", foreign_keys=[owner_user_id])
-    api_key = db.relationship("ApiKey", back_populates="sources")
     parent_source = db.relationship("Source", remote_side=[id], backref=db.backref(
         "children", lazy="dynamic", order_by="Source.name",
         cascade="all, delete-orphan",
@@ -441,23 +439,19 @@ class Source(db.Model):
     def payment_label(self, viewer: "User") -> str:
         """Who's actually paying for this source's usage, from ``viewer``'s
         point of view — deliberately vague about anyone else's key, same
-        privacy stance as owner_display."""
-        if self.api_key is None:
-            return "none assigned"
-        if self.api_key.is_global:
+        privacy stance as owner_display. Funding is implicit from ownership:
+        an owned source is always paid for by its owner's one API key
+        (global key for ownerless/system sources)."""
+        if self.owner_user_id is None:
             return "Included in system"
-        if self.api_key.owner_user_id == viewer.id:
+        if self.owner_user_id == viewer.id:
             return "your API key"
         return "another user's API key"
 
     def usage_visible_to(self, viewer: "User") -> bool:
-        """Only the key's own owner gets to see its usage/cost — not the
+        """Only the owner gets to see their own usage/cost — not the
         operator's global spend, not another user's."""
-        return bool(
-            self.api_key is not None
-            and not self.api_key.is_global
-            and self.api_key.owner_user_id == viewer.id
-        )
+        return self.owner_user_id is not None and self.owner_user_id == viewer.id
 
     @property
     def usage_tokens(self) -> int:

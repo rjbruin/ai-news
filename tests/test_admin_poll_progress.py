@@ -1,13 +1,19 @@
-from app.models import ApiKey, Source
+from app.models import ApiKey, Source, User
 from app.services import ingest, poll_registry
 
 
 def _seed_source(db, **kw):
-    key = ApiKey(label="Test key", provider="openrouter")
-    key.set_key("sk-or-test")
-    db.session.add(key)
-    db.session.commit()
-    source = Source(type_key="seed", name="Debug Seed Data", enabled=True, api_key_id=key.id, **kw)
+    owner = User.query.filter_by(username="seed-owner").first()
+    if owner is None:
+        owner = User(username="seed-owner", email="seed-owner@example.com", email_verified=True)
+        db.session.add(owner)
+        db.session.commit()
+    if ApiKey.query.filter_by(owner_user_id=owner.id, is_global=False).first() is None:
+        key = ApiKey(owner_user_id=owner.id, label="Test key", provider="openrouter")
+        key.set_key("sk-or-test")
+        db.session.add(key)
+        db.session.commit()
+    source = Source(type_key="seed", name="Debug Seed Data", enabled=True, owner_user_id=owner.id, **kw)
     db.session.add(source)
     db.session.commit()
     return source

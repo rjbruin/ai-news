@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from app.models import ApiKey, NewsItem, Source, Summary
+from app.models import ApiKey, NewsItem, Source, Summary, User
 from app.services import ingest, summarize
 from app.sources import registry as source_registry
 from app.sources.base import ExtractedItem, NewsSource, RawDocument
@@ -20,20 +20,23 @@ class FakeSource(NewsSource):
         ]
 
 
-def _make_api_key(db) -> ApiKey:
-    key = ApiKey(label="Test key", provider="openrouter")
+def _make_owner_with_key(db) -> User:
+    owner = User(username=f"owner{User.query.count()}", email=f"owner{User.query.count()}@example.com", email_verified=True)
+    db.session.add(owner)
+    db.session.commit()
+    key = ApiKey(owner_user_id=owner.id, label="Test key", provider="openrouter")
     key.set_key("sk-or-test")
     db.session.add(key)
     db.session.commit()
-    return key
+    return owner
 
 
 def test_ingest_source_creates_and_tags_items(app, db, sample_tags):
     app.config["TAGGING_MODE"] = "nb_only"
     app.config["NB_CONFIDENCE_THRESHOLD"] = 0.05
     source_registry.register(FakeSource)
-    api_key = _make_api_key(db)
-    source = Source(type_key="fake", name="Fake", config={}, api_key_id=api_key.id)
+    owner = _make_owner_with_key(db)
+    source = Source(type_key="fake", name="Fake", config={}, owner_user_id=owner.id)
     db.session.add(source)
     db.session.commit()
 
@@ -44,8 +47,8 @@ def test_ingest_source_creates_and_tags_items(app, db, sample_tags):
 
 def test_ingest_dedups(app, db):
     source_registry.register(FakeSource)
-    api_key = _make_api_key(db)
-    source = Source(type_key="fake", name="Fake", config={}, api_key_id=api_key.id)
+    owner = _make_owner_with_key(db)
+    source = Source(type_key="fake", name="Fake", config={}, owner_user_id=owner.id)
     db.session.add(source)
     db.session.commit()
     ingest.ingest_source(source)
@@ -55,7 +58,10 @@ def test_ingest_dedups(app, db):
 
 def test_ingest_source_without_api_key_fails_gracefully(app, db):
     source_registry.register(FakeSource)
-    source = Source(type_key="fake", name="Fake", config={})
+    owner = User(username="no-key-owner", email="no-key-owner@example.com", email_verified=True)
+    db.session.add(owner)
+    db.session.commit()
+    source = Source(type_key="fake", name="Fake", config={}, owner_user_id=owner.id)
     db.session.add(source)
     db.session.commit()
 
@@ -68,10 +74,11 @@ def test_revoked_api_key_blocks_ingest(app, db):
     from app.models import utcnow
 
     source_registry.register(FakeSource)
-    api_key = _make_api_key(db)
+    owner = _make_owner_with_key(db)
+    api_key = ApiKey.query.filter_by(owner_user_id=owner.id, is_global=False).first()
     api_key.revoked_at = utcnow()
     db.session.commit()
-    source = Source(type_key="fake", name="Fake", config={}, api_key_id=api_key.id)
+    source = Source(type_key="fake", name="Fake", config={}, owner_user_id=owner.id)
     db.session.add(source)
     db.session.commit()
 

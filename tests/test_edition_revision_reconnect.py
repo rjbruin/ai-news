@@ -50,7 +50,6 @@ def _seed_summary_with_run(db):
     key.set_key("sk-or-test")
     db.session.add(key)
     db.session.commit()
-    u.edition_api_key_id = key.id
     summary = Summary(
         user_id=u.id, name="AI Daily", type_key="agentic_page",
         scope_mode="fixed_period", period="day", params={},

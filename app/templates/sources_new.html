@@ -3,9 +3,9 @@
 {% block content %}
 <div class="row justify-content-center"><div class="col-md-7">
 <h1 class="h3 mb-3">Add source</h1>
-{% if not keys %}
+{% if not current_user.api_key %}
 <div class="alert alert-warning">
-  You don't have any active API keys yet.
+  You don't have an API key yet.
   <a href="{{ url_for('web.your_dispatch') }}#sec-api-keys" class="alert-link">Add one</a> before creating a source —
   it pays for fetching and tagging this source's news items.
 </div>
@@ -42,16 +42,6 @@
           <span class="text-danger">No newsletter mailbox is configured yet — ask an admin to add one first.</span>
         {% endif %}
       </div>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">API key</label>
-      <select name="api_key_id" class="form-select">
-        {% for k in keys %}
-        <option value="{{ k.id }}">{{ k.label }}{{ ' (shared, global)' if k.is_global else '' }}</option>
-        {% endfor %}
-      </select>
-      <div class="form-text">Pays for fetching and tagging this source's items. Manage your keys on the <a href="{{ url_for('web.your_dispatch') }}#sec-api-keys">Your Dispatch</a> page.</div>
     </div>
 
     <div class="mb-3 cfg-group cfg-not-imap_newsletter" style="display:none">

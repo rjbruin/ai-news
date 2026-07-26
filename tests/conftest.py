@@ -7,14 +7,12 @@ from app.models import ApiKey, NewsItem, Tag, User
 
 
 def give_edition_key(db, user, secret: str = "sk-or-test") -> ApiKey:
-    """Create a personal ApiKey for ``user`` and select it for editions —
-    the test equivalent of adding a key on /keys and clicking "Use for
-    editions"."""
+    """Create ``user``'s one personal ApiKey — the test equivalent of saving
+    a key on the Your Dispatch page. Funds both their editions and every
+    source they own."""
     key = ApiKey(owner_user_id=user.id, label="Test edition key")
     key.set_key(secret)
     db.session.add(key)
-    db.session.commit()
-    user.edition_api_key_id = key.id
     db.session.commit()
     return key
 

@@ -1,13 +1,9 @@
-from app.models import ApiKey, IngestRun, NewsItem, NewsItemTag, Source, Tag
+from app.models import IngestRun, NewsItem, NewsItemTag, Source, Tag
 from app.services import ingest
 
 
 def _seed_source_with_items(db):
-    key = ApiKey(label="Test key", provider="openrouter")
-    key.set_key("sk-or-test")
-    db.session.add(key)
-    db.session.commit()
-    source = Source(type_key="rss", name="Test Source", enabled=True, api_key_id=key.id)
+    source = Source(type_key="rss", name="Test Source", enabled=True)
     db.session.add(source)
     db.session.commit()
 

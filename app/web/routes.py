@@ -617,8 +617,6 @@ def your_dispatch():
         }
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
-    keys = ApiKey.manageable_by(current_user)
-
     tier_complete, tier_highlights, tier_none = _topic_tiers_for(current_user, summary)
 
     return render_template(
@@ -626,7 +624,6 @@ def your_dispatch():
         summary=summary, types=types, cur_cls=cur_cls,
         follow_count=follow_count,
         files=files, headlines=headlines, retention=retention,
-        keys=keys,
         tier_complete=tier_complete,
         tier_highlights=tier_highlights,
         tier_none=tier_none,
@@ -656,86 +653,40 @@ def api_keys():
     return _keys_redirect()
 
 
-@bp.route("/keys/new", methods=["POST"])
+@bp.route("/keys/save", methods=["POST"])
 @login_required
-def api_key_new():
-    label = (request.form.get("label") or "").strip()
+def api_key_save():
     secret = (request.form.get("secret") or "").strip()
-    if not label or not secret:
-        flash("A label and an API key are both required.", "danger")
+    if not secret:
+        flash("An API key is required.", "danger")
         return _keys_redirect()
-    key = ApiKey(owner_user_id=current_user.id, label=label, provider="openrouter")
+    key = current_user.api_key
+    if key is None:
+        key = ApiKey(owner_user_id=current_user.id, label="OpenRouter key", provider="openrouter")
+        db.session.add(key)
     key.set_key(secret)
-    db.session.add(key)
+    key.revoked_at = None
     db.session.commit()
-    flash(f'API key "{label}" added.', "success")
+    flash("API key saved.", "success")
     return _keys_redirect()
 
 
-@bp.route("/keys/<int:key_id>/revoke", methods=["POST"])
+@bp.route("/keys/remove", methods=["POST"])
 @login_required
-def api_key_revoke(key_id: int):
-    key = db.session.get(ApiKey, key_id) or abort(404)
-    if not key.can_manage(current_user):
-        abort(403)
-    key.revoked_at = utcnow()
-    affected = key.sources.filter_by(enabled=True).all()
+def api_key_remove():
+    key = current_user.api_key
+    if key is None:
+        return _keys_redirect()
+    affected = Source.query.filter_by(owner_user_id=current_user.id, enabled=True).all()
     for source in affected:
         source.enabled = False
+    db.session.delete(key)
     db.session.commit()
-    msg = f'API key "{key.label}" revoked.'
+    msg = "API key removed."
     if affected:
         names = ", ".join(s.name for s in affected)
         msg += f" Disabled {len(affected)} source(s) that used it: {names}."
     flash(msg, "warning" if affected else "info")
-    return _keys_redirect()
-
-
-@bp.route("/keys/<int:key_id>/reactivate", methods=["POST"])
-@login_required
-def api_key_reactivate(key_id: int):
-    key = db.session.get(ApiKey, key_id) or abort(404)
-    if not key.can_manage(current_user):
-        abort(403)
-    key.revoked_at = None
-    db.session.commit()
-    flash(f'API key "{key.label}" reactivated. Re-enable any sources that need it.', "success")
-    return _keys_redirect()
-
-
-@bp.route("/keys/<int:key_id>/delete", methods=["POST"])
-@login_required
-def api_key_delete(key_id: int):
-    key = db.session.get(ApiKey, key_id) or abort(404)
-    if not key.can_manage(current_user):
-        abort(403)
-    if key.is_global:
-        flash("The global key can't be deleted.", "danger")
-        return _keys_redirect()
-    if key.sources.count():
-        flash("Revoke or reassign this key's sources before deleting it.", "danger")
-        return _keys_redirect()
-    if current_user.edition_api_key_id == key.id:
-        current_user.edition_api_key_id = None
-    db.session.delete(key)
-    db.session.commit()
-    flash("API key deleted.", "info")
-    return _keys_redirect()
-
-
-@bp.route("/keys/<int:key_id>/use-for-editions", methods=["POST"])
-@login_required
-def api_key_use_for_editions(key_id: int):
-    """Select which of the user's own keys pays for agentic edition
-    generation. The shared/global key is deliberately not selectable here —
-    editions are billed to the user, never silently to the shared account."""
-    key = db.session.get(ApiKey, key_id) or abort(404)
-    if key.is_global or key.owner_user_id != current_user.id:
-        flash("Only your own keys can be used for editions.", "danger")
-        return _keys_redirect()
-    current_user.edition_api_key_id = key.id
-    db.session.commit()
-    flash(f'"{key.label}" will now be used for creating editions.', "success")
     return _keys_redirect()
 
 
@@ -795,19 +746,16 @@ def source_new():
         key: cls for key, cls in source_registry.all_types().items()
         if key != "seed" or current_user.is_admin
     }
-    keys = [k for k in ApiKey.manageable_by(current_user) if k.active]
     mailbox = ingest.default_newsletter_mailbox()
 
     if request.method == "POST":
         type_key = request.form.get("type_key")
         plugin_cls = types.get(type_key)
-        key_id = request.form.get("api_key_id", type=int)
-        key = db.session.get(ApiKey, key_id) if key_id else None
 
-        if plugin_cls is None:
+        if current_user.api_key is None:
+            flash("Add your API key before creating a source.", "danger")
+        elif plugin_cls is None:
             flash("Unknown source type.", "danger")
-        elif key is None or key not in keys:
-            flash("Choose one of your API keys for this source.", "danger")
         elif type_key == "imap_newsletter":
             if mailbox is None:
                 flash("No newsletter mailbox is configured yet — ask an admin to add one first.", "danger")
@@ -821,7 +769,6 @@ def source_new():
                         type_key="imap_newsletter",
                         name=name[:120],
                         owner_user_id=current_user.id,
-                        api_key_id=key.id,
                         parent_source_id=mailbox.id,
                         config={"newsletter_domain": domain, "newsletter_name": name},
                         subscription_status="waiting_confirmation",
@@ -835,7 +782,6 @@ def source_new():
                 type_key=type_key,
                 name=(request.form.get("name") or plugin_cls.label).strip(),
                 owner_user_id=current_user.id,
-                api_key_id=key.id,
                 config=_collect_source_config(plugin_cls),
                 poll_interval_override=_int_or_none(
                     request.form.get("poll_interval_override")
@@ -846,7 +792,7 @@ def source_new():
             db.session.commit()
             flash("Source added.", "success")
             return redirect(url_for("web.sources"))
-    return render_template("sources_new.html", types=types, keys=keys, mailbox=mailbox)
+    return render_template("sources_new.html", types=types, mailbox=mailbox)
 
 
 @bp.route("/sources/<int:source_id>/poll-confirmation", methods=["POST"])
@@ -906,8 +852,9 @@ def source_reactivate(source_id: int):
     source = db.session.get(Source, source_id) or abort(404)
     if not source.can_manage(current_user):
         abort(403)
-    if source.api_key_id is None or not source.api_key or not source.api_key.active:
-        flash("Assign an active API key to this source before re-enabling it.", "danger")
+    key = ApiKey.get_or_create_global() if source.owner_user_id is None else source.owner.api_key
+    if key is None or not key.active:
+        flash("Add an active API key before re-enabling this source.", "danger")
         return redirect(url_for("web.sources"))
     source.enabled = True
     db.session.commit()

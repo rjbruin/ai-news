@@ -28,8 +28,6 @@ def test_podcast_revision_completes_after_all_subscribers_disconnect(app, db):
         key.set_key("sk-or-test")
         db.session.add(key)
         db.session.commit()
-        user.edition_api_key_id = key.id
-        db.session.commit()
 
         summary = Summary(
             user_id=user.id, name="Daily", type_key="agentic_page",

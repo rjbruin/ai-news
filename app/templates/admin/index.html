@@ -42,10 +42,11 @@
     </td>
     <td class="small">{{ s.owner.username if s.owner else 'admin (global)' }}</td>
     <td class="small">
-      {% if s.api_key %}
-        {{ s.api_key.label }}{% if not s.api_key.active %} <span class="badge text-bg-danger">revoked</span>{% endif %}
+      {% set key = None if s.owner_user_id is none or s.owner is none else s.owner.api_key %}
+      {% if s.owner_user_id is none or (key and key.active) %}
+        <span class="text-success">funded</span>
       {% else %}
-        <span class="text-danger">none</span>
+        <span class="text-danger">no key</span>
       {% endif %}
     </td>
     <td class="small">{{ s.usage_tokens }} tok · ${{ '%.4f' % s.usage_cost }}</td>
@@ -82,7 +83,7 @@
 {% endmacro %}
 <div class="table-responsive shadow-sm mb-4">
   <table class="table table-hover bg-white align-middle mb-0">
-    <thead><tr><th>Name</th><th>Owner</th><th>API key</th><th>Usage</th><th>Interval</th><th>Last polled</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Owner</th><th>Funding</th><th>Usage</th><th>Interval</th><th>Last polled</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for s in sources %}
       {{ admin_source_row(s) }}
