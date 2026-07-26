@@ -65,9 +65,10 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
 
-    # Podcast export is opt-in per user (admins always have it — see
-    # has_podcast_access); the ElevenLabs credential/voice/model themselves
-    # are global admin settings now, not per-user (see AdminSettings).
+    # Podcast export is opt-in per user (admins always have it, and anyone
+    # with their own ElevenLabs key self-serves — see has_podcast_access).
+    # This flag is now just a legacy/admin-granted override; voice IDs and
+    # the model remain global admin settings (see AdminSettings).
     podcast_enabled = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
     podcast_auto_generate = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
     pdf_font_scale = db.Column(db.Integer, default=80, nullable=False, server_default="80")
@@ -154,7 +155,14 @@ class User(UserMixin, db.Model):
         """This user's single OpenRouter key, or None if they haven't added
         one. Funds both their own edition generation and every Source they
         own — one key per user, no per-source assignment."""
-        return ApiKey.query.filter_by(owner_user_id=self.id, is_global=False).first()
+        return ApiKey.query.filter_by(owner_user_id=self.id, provider="openrouter", is_global=False).first()
+
+    @property
+    def elevenlabs_key(self) -> "ApiKey | None":
+        """This user's own ElevenLabs key, or None. Funds their own podcast
+        generation (script→audio) — set the same way as the OpenRouter key,
+        on the Your Dispatch page."""
+        return ApiKey.query.filter_by(owner_user_id=self.id, provider="elevenlabs", is_global=False).first()
 
     def set_password(self, password: str) -> None:
         self.password_hash = _ph.hash(password)
@@ -202,8 +210,10 @@ class User(UserMixin, db.Model):
     @property
     def has_podcast_access(self) -> bool:
         """Whether this user may generate/export podcasts. Admins always do;
-        everyone else needs the ``podcast_enabled`` flag set by an admin."""
-        return bool(self.podcast_enabled) or self.is_admin
+        everyone else self-serves by bringing their own ElevenLabs key (see
+        elevenlabs_key), same pattern as the OpenRouter key — an admin can
+        also still grant test access via the legacy ``podcast_enabled`` flag."""
+        return bool(self.elevenlabs_key) or bool(self.podcast_enabled) or self.is_admin
 
     @property
     def newsletter_email_is_confirmed(self) -> bool:
@@ -245,10 +255,10 @@ class AuthToken(db.Model):
 
 # ─────────────────────────────── API keys ───────────────────────────────
 class ApiKey(db.Model):
-    """A credential (currently always OpenRouter) that funds a user's own
-    edition generation and every Source they own — one row per non-global
-    user (enforced by the partial unique index below), plus the single
-    seeded global key.
+    """A credential — OpenRouter (funds a user's own edition generation and
+    every Source they own) or ElevenLabs (funds their own podcast audio
+    generation) — one row per (owner, provider) (enforced by the partial
+    unique index below), plus the single seeded global OpenRouter key.
 
     ``owner_user_id`` is NULL only for the global key (``is_global=True``),
     whose secret lives in the ``OPENROUTER_API_KEY`` env var rather than in
@@ -260,7 +270,7 @@ class ApiKey(db.Model):
     __tablename__ = "api_keys"
     __table_args__ = (
         db.Index(
-            "uq_api_keys_owner", "owner_user_id",
+            "uq_api_keys_owner_provider", "owner_user_id", "provider",
             unique=True, sqlite_where=db.text("owner_user_id IS NOT NULL"),
         ),
     )

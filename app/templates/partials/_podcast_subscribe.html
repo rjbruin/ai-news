@@ -1,0 +1,43 @@
+{#
+  "Subscribe to Podcast" button + modal, shared across the edition page,
+  dispatch cards, and the dispatch details page. Always opens a modal with
+  subscribe instructions and the dispatch's podcast RSS feed link — the
+  same per-owner feed used on Your Dispatch, just shared with followers.
+#}
+
+{% macro podcast_subscribe_button(summary, modal_id) %}
+{% if summary.user and summary.user.podcast_feed_token %}
+<button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#{{ modal_id }}">
+  <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> Subscribe to Podcast
+</button>
+{% endif %}
+{% endmacro %}
+
+{% macro podcast_subscribe_modal(summary, modal_id) %}
+{% if summary.user and summary.user.podcast_feed_token %}
+{% set feed_url = url_for('web.podcast_feed', token=summary.user.podcast_feed_token, _external=True) %}
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Subscribe to {{ summary.display_name }}'s podcast</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Add this URL in any podcast app (Overcast, Pocket Casts, Apple Podcasts →
+          “Add a show by URL”). New episodes appear automatically as they're generated.
+        </p>
+        <div class="input-group">
+          <input type="text" class="form-control font-monospace podcast-subscribe-url" readonly value="{{ feed_url }}">
+          <button class="btn btn-outline-secondary podcast-subscribe-copy" type="button">Copy</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endmacro %}

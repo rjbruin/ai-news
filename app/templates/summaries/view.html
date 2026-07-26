@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/_channels.html" import channel_icons, channel_hero with context %}
+{% from "partials/_podcast_subscribe.html" import podcast_subscribe_button, podcast_subscribe_modal %}
 {% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · Dispatch{% endblock %}
 {% block content %}
 
@@ -98,9 +99,13 @@
   <div class="d-flex align-items-center gap-2 flex-wrap d-print-none">
     <a href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}"
        class="btn btn-sm btn-outline-secondary">Listen to podcast</a>
+    {{ podcast_subscribe_button(summary, 'podcast-subscribe-edition') }}
   </div>
   {% endif %}
 </div>
+{% if not is_shared_view and not is_own and run.news_podcast_audio %}
+{{ podcast_subscribe_modal(summary, 'podcast-subscribe-edition') }}
+{% endif %}
 
 {% if is_agentic and not is_shared_view and is_own and revisions and revisions|length > 1 %}
 <div class="mb-3 d-print-none">

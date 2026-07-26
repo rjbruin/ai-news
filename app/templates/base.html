@@ -97,6 +97,16 @@
     window.addEventListener('load', () =>
       navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}"));
   }
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.podcast-subscribe-copy');
+    if (!btn) return;
+    const input = btn.closest('.input-group').querySelector('.podcast-subscribe-url');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(function () {
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+    });
+  });
 </script>
 {% if show_changelog %}
 <script>

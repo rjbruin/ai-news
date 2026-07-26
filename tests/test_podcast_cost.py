@@ -60,7 +60,7 @@ def test_run_podcast_job_persists_podcast_cost(app, db, monkeypatch):
     db.session.add(run)
     db.session.commit()
 
-    def _fake_stream(script):
+    def _fake_stream(script, *, api_key=None):
         yield ("progress", 1, 1)
         yield ("done", "podcast_123.mp3", [{"title": "Intro", "start": 0}], 0.0042)
 
