@@ -24,7 +24,7 @@ def _run(db, summary, pdf_file=None):
 def test_settings_saves_description_and_pdf_export(auth_client, db, user):
     dispatch = _own_dispatch(db, user)
     resp = auth_client.post(
-        "/settings",
+        "/dispatch/settings",
         data={"period": "day", "description": "My favorite AI news.", "pdf_export_enabled": "1"},
         follow_redirects=True,
     )
@@ -38,7 +38,7 @@ def test_settings_blank_description_saves_as_none(auth_client, db, user):
     dispatch = _own_dispatch(db, user)
     dispatch.description = "old"
     db.session.commit()
-    auth_client.post("/settings", data={"period": "day", "description": "   "})
+    auth_client.post("/dispatch/settings", data={"period": "day", "description": "   "})
     db.session.refresh(dispatch)
     assert dispatch.description is None
 

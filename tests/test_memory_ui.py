@@ -12,18 +12,18 @@ def _agentic_summary(db, user):
     return s
 
 
-def test_old_memory_link_redirects_to_settings(auth_client, db, user):
-    # Memory editing moved into Settings; old bookmarked /memory links still
-    # work by redirecting there instead of 404ing.
+def test_old_memory_link_redirects_to_your_dispatch(auth_client, db, user):
+    # Memory editing moved into Your Dispatch; old bookmarked /memory links
+    # still work by redirecting there instead of 404ing.
     s = _agentic_summary(db, user)
     resp = auth_client.get(f"/summaries/{s.id}/memory")
     assert resp.status_code == 302
-    assert resp.headers["Location"].endswith("/settings")
+    assert resp.headers["Location"].endswith("/dispatch/settings")
 
 
-def test_settings_page_seeds_memory_defaults(auth_client, db, user):
+def test_dispatch_settings_page_seeds_memory_defaults(auth_client, db, user):
     s = _agentic_summary(db, user)
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     assert b"Content configuration" in resp.data
     # defaults seeded so the textareas have content
@@ -31,17 +31,17 @@ def test_settings_page_seeds_memory_defaults(auth_client, db, user):
     assert memory.read(user, s, "content_config")
 
 
-def test_settings_page_does_not_say_agentic_editions(auth_client, db, user):
+def test_dispatch_settings_page_does_not_say_agentic_editions(auth_client, db, user):
     _agentic_summary(db, user)
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert b"agentic editions" not in resp.data
     assert b"Shared across all editions" in resp.data
 
 
-def test_settings_page_saves_memory_edits(auth_client, db, user):
+def test_dispatch_settings_page_saves_memory_edits(auth_client, db, user):
     s = _agentic_summary(db, user)
     resp = auth_client.post(
-        "/settings",
+        "/dispatch/settings",
         data={
             "mem_interests": "Only robotics, please.",
             "mem_content_config": "One section, five items.",

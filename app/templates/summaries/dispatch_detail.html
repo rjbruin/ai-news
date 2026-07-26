@@ -22,7 +22,7 @@
       <button type="button" class="btn btn-sm btn-primary"
               data-bs-toggle="modal" data-bs-target="#modal-new-edition">New custom edition</button>
       {% endif %}
-      <a href="{{ url_for('web.settings') }}#sec-dispatch" class="btn btn-sm btn-outline-secondary">Settings</a>
+      <a href="{{ url_for('web.your_dispatch') }}#sec-dispatch" class="btn btn-sm btn-outline-secondary">Manage</a>
     {% else %}
       {% if is_following %}
       <form method="post" action="{{ url_for('web.dispatch_unfollow') }}">

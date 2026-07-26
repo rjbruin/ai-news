@@ -42,6 +42,11 @@
       </ul>
       <ul class="navbar-nav">
         {% if current_user.is_authenticated %}
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('web.your_dispatch') }}">
+            {{ 'Your Dispatch' if current_user.own_dispatch else 'Set up your Dispatch' }}
+          </a>
+        </li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('web.settings') }}">Settings</a></li>
         {% if current_user.is_admin %}
         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.index') }}">Admin</a></li>

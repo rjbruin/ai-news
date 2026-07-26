@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "partials/_topic_tier_picker.html" import topic_tier_picker %}
 {% block title %}Settings · Dispatch{% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">Settings</h1>
@@ -7,23 +6,7 @@
 
 <div class="col-lg-3 d-none d-lg-block">
   <nav id="settings-nav" class="nav flex-column position-sticky" style="top:5rem">
-    <a class="nav-link px-2 py-1" href="#sec-dispatch">Dispatch</a>
     <a class="nav-link px-2 py-1" href="#sec-recipients">Newsletter email</a>
-    {% if summary %}
-    <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
-    {% endif %}
-    {% if current_user.is_approved %}
-    <a class="nav-link px-2 py-1" href="#sec-api-keys">API Keys</a>
-    {% endif %}
-    {% if summary %}
-    <a class="nav-link px-2 py-1" href="#sec-interests">Interests</a>
-    <a class="nav-link px-2 py-1" href="#sec-content">Content</a>
-    <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
-    <a class="nav-link px-2 py-1" href="#sec-headlines">Recent headlines</a>
-    {% endif %}
-    {% if current_user.own_dispatch %}
-    <a class="nav-link px-2 py-1" href="#sec-pdf">PDF export</a>
-    {% endif %}
     {% if current_user.has_podcast_access %}
     <a class="nav-link px-2 py-1" href="#sec-podcast-format">Podcast format</a>
     <a class="nav-link px-2 py-1" href="#sec-feed">Podcast feed</a>
@@ -33,61 +16,6 @@
 
 <div class="col-lg-9">
 <form method="post">
-
-<div class="card shadow-sm mb-4" id="sec-dispatch" style="scroll-margin-top:5rem">
-  <div class="card-header fw-semibold">Dispatch</div>
-  <div class="card-body">
-    <p class="text-body-secondary small">
-      A Dispatch is an AI-written publication — each issue is an edition. You're
-      following <strong>{{ follow_count }}</strong> Dispatch{{ 'es' if follow_count != 1 else '' }};
-      browse and follow more on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page.
-      Bring your own OpenRouter API key to run a <strong>custom Dispatch</strong> of your own,
-      tuned to your interests.
-    </p>
-    {% if not summary %}
-    <button type="submit" form="dispatch-own-form" class="btn btn-primary btn-sm">Set up my own Dispatch</button>
-    {% else %}
-    <div class="mb-3">
-      <label class="form-label" for="description">Description</label>
-      <textarea name="description" id="description" class="form-control" rows="2"
-                placeholder="What's this Dispatch about?">{{ summary.description or '' }}</textarea>
-      <div class="form-text">Shown on the Dispatches page and your Details page.</div>
-    </div>
-    <div class="border-top pt-3 mt-2">
-      <p class="fw-semibold mb-1">Publish my Dispatch</p>
-      <p class="text-body-secondary small mb-2">
-        Publishing lists your Dispatch on the Dispatches page so others can follow and
-        read it (read-only — they can't change your settings or generate editions).
-        Unchecking this only unpublishes it — your Dispatch and its editions stay intact,
-        existing followers stay subscribed, and you can republish any time.
-      </p>
-      <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" name="is_published" id="is_published"
-               form="dispatch-publish-form" {{ 'checked' if summary.is_published else '' }}>
-        <label class="form-check-label" for="is_published">Publish my Dispatch</label>
-      </div>
-      <div class="input-group" style="max-width: 360px">
-        <span class="input-group-text">Name</span>
-        <input type="text" name="published_name" class="form-control" maxlength="25"
-               form="dispatch-publish-form" placeholder="e.g. AI Tech Dispatch"
-               value="{{ summary.published_name or '' }}">
-        <button type="submit" form="dispatch-publish-form" class="btn btn-outline-primary">Save</button>
-      </div>
-      <div class="form-text">Up to 25 characters, unique across all Dispatches.</div>
-    </div>
-    <div class="border-top pt-3 mt-3">
-      <p class="fw-semibold mb-1 text-danger">Danger zone</p>
-      <p class="text-body-secondary small mb-2">
-        Permanently deletes your Dispatch and every edition it has ever generated.
-        This cannot be undone.
-      </p>
-      <button type="submit" form="dispatch-delete-form" class="btn btn-outline-danger btn-sm">
-        Delete my Dispatch
-      </button>
-    </div>
-    {% endif %}
-  </div>
-</div>
 
 <div class="card shadow-sm mb-4" id="sec-recipients" style="scroll-margin-top:5rem">
   <div class="card-header fw-semibold">Newsletter email</div>
@@ -119,241 +47,6 @@
     <div class="form-text">Changing the address always requires re-confirming via email.</div>
   </div>
 </div>
-
-{% if summary %}
-  {% set cur_cls = types.get(summary.type_key) %}
-
-  <div class="card shadow-sm mb-4" id="sec-schedule" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">Schedule</div>
-    <div class="card-body">
-      <div class="mb-3">
-        <label class="form-label">Period</label>
-        <select name="period" class="form-select" id="period_select">
-          <option value="day" {{ 'selected' if summary.period == 'day' else '' }}>Daily</option>
-          <option value="week" {{ 'selected' if summary.period == 'week' else '' }}>Weekly</option>
-        </select>
-      </div>
-      {% if cur_cls %}
-        {% for field, spec in (cur_cls.param_schema or {}).items() %}
-        {% if spec.type != 'topic_tiers' %}
-        {% set cur_val = (summary.params or {}).get(field, spec.get('default', '')) %}
-        <div class="mb-3 param-group
-                    {%- if spec.get('scope') == 'day' %} scope-day{% endif %}
-                    {%- if spec.get('scope') == 'week' %} scope-week{% endif %}"
-             style="display:none">
-          {% if spec.type == 'checkbox' %}
-          <div class="form-check">
-            <input type="checkbox" name="param_{{ field }}" class="form-check-input"
-                   id="p_{{ field }}" {{ 'checked' if cur_val else '' }}>
-            <label class="form-check-label" for="p_{{ field }}">{{ spec.label }}</label>
-          </div>
-          {% elif spec.type == 'checkboxes' %}
-          <label class="form-label">{{ spec.label }}</label>
-          <div class="d-flex flex-wrap gap-3">
-            {% for val, lbl in spec.options %}
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox"
-                     name="param_{{ field }}" value="{{ val }}"
-                     id="p_{{ field }}_{{ val }}"
-                     {{ 'checked' if val in (cur_val if cur_val is iterable and cur_val is not string else spec.get('default', [])) }}>
-              <label class="form-check-label" for="p_{{ field }}_{{ val }}">{{ lbl }}</label>
-            </div>
-            {% endfor %}
-          </div>
-          {% elif spec.type == 'time' %}
-          <label class="form-label">{{ spec.label }}</label>
-          <input type="time" name="param_{{ field }}" class="form-control"
-                 value="{{ cur_val if cur_val else spec.get('default','08:00') }}">
-          {% elif spec.type == 'number' %}
-          <label class="form-label">{{ spec.label }}</label>
-          <input type="number" name="param_{{ field }}" class="form-control"
-                 value="{{ cur_val if cur_val is not none else spec.get('default', '') }}"
-                 min="{{ spec.get('min', 1) }}" max="{{ spec.get('max', '') }}">
-          {% else %}
-          <label class="form-label">{{ spec.label }}</label>
-          <input name="param_{{ field }}" class="form-control" value="{{ cur_val }}">
-          {% endif %}
-        </div>
-        {% endif %}
-        {% endfor %}
-      {% endif %}
-    </div>
-  </div>
-
-{% endif %}
-
-{% if current_user.is_approved %}
-  <div class="card shadow-sm mb-4" id="sec-api-keys" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <span>API Keys</span>
-      <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" data-bs-toggle="modal"
-              data-bs-target="#api-key-explainer">More about API keys</button>
-    </div>
-    <div class="card-body">
-      <p class="text-body-secondary small">
-        These OpenRouter keys pay for fetching and tagging the news sources you assign them to
-        (see <a href="{{ url_for('web.sources') }}">Sources</a>), and one of your own keys can also
-        pay for generating your editions. Revoke a key to stop it being used immediately — any
-        source using it is disabled automatically.
-      </p>
-
-      <div class="table-responsive shadow-sm mb-4">
-        <table class="table bg-white align-middle mb-0">
-          <thead><tr><th>Label</th><th>Sources</th><th>Usage</th><th>Last used</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-          {% for k in keys %}
-            <tr>
-              <td>
-                {{ 'Shared key' if k.is_global else k.label }}
-                {% if k.is_global %}<span class="badge text-bg-secondary">global</span>{% endif %}
-                {% if not k.is_global and current_user.edition_api_key_id == k.id %}
-                  <span class="badge text-bg-info">used for editions</span>
-                {% endif %}
-              </td>
-              <td class="small">{{ k.sources.count() }}</td>
-              <td class="small">{{ k.total_requests }} call(s) · {{ k.total_tokens }} tok · ${{ '%.4f' % k.total_cost }}</td>
-              <td class="small">{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else '—' }}</td>
-              <td class="small">
-                {% if k.active %}
-                  <span class="text-success">active</span>
-                {% else %}
-                  <span class="text-danger">revoked</span>
-                {% endif %}
-              </td>
-              <td class="text-nowrap">
-                {% if not k.is_global and current_user.edition_api_key_id != k.id %}
-                <form method="post" action="{{ url_for('web.api_key_use_for_editions', key_id=k.id) }}" class="d-inline">
-                  <button class="btn btn-sm btn-outline-info">Use for editions</button></form>
-                {% endif %}
-                {% if k.active %}
-                <form method="post" action="{{ url_for('web.api_key_revoke', key_id=k.id) }}" class="d-inline"
-                      onsubmit="return confirm('Revoke this key? Sources using it will be disabled.')">
-                  <button class="btn btn-sm btn-outline-secondary">Revoke</button></form>
-                {% else %}
-                <form method="post" action="{{ url_for('web.api_key_reactivate', key_id=k.id) }}" class="d-inline">
-                  <button class="btn btn-sm btn-outline-secondary">Reactivate</button></form>
-                {% endif %}
-                {% if not k.is_global %}
-                <form method="post" action="{{ url_for('web.api_key_delete', key_id=k.id) }}" class="d-inline"
-                      onsubmit="return confirm('Delete this key permanently?')">
-                  <button class="btn btn-sm btn-outline-danger">Delete</button></form>
-                {% endif %}
-              </td>
-            </tr>
-          {% else %}
-            <tr><td colspan="6" class="text-body-secondary">No API keys yet.</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="card shadow-sm" style="max-width: 480px">
-        <div class="card-header fw-semibold">Add a key</div>
-        <div class="card-body">
-          <p class="text-body-secondary small">
-            Using Claude Sonnet 5 costs about $0.50 per edition; polling one news source for new
-            items is usually a fraction of a cent. Actual cost depends on the model set above and
-            how much content there is to process — check OpenRouter's own usage dashboard for
-            exact numbers once you're using a key.
-          </p>
-          <div class="mb-3">
-            <label class="form-label">Label</label>
-            <input name="label" form="api-key-new-form" class="form-control" placeholder="e.g. My OpenRouter key" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">OpenRouter API key</label>
-            <input type="password" name="secret" form="api-key-new-form" class="form-control" autocomplete="off" placeholder="sk-or-..." required>
-          </div>
-          <button type="submit" form="api-key-new-form" class="btn btn-primary">Add key</button>
-        </div>
-      </div>
-    </div>
-  </div>
-{% endif %}
-
-{% if summary %}
-  <div class="card shadow-sm mb-4" id="sec-interests" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">Interests</div>
-    <div class="card-body">
-      <p class="form-text mb-2">Your evolving interests. Shared across all editions.</p>
-      <textarea name="mem_interests" class="form-control font-monospace" rows="8"
-                spellcheck="false">{{ files.interests }}</textarea>
-      {% if cur_cls %}
-        {% for field, spec in (cur_cls.param_schema or {}).items() %}
-        {% if spec.type == 'topic_tiers' %}
-        <div class="mt-3">
-          <label class="form-label">{{ spec.label }}</label>
-          {{ topic_tier_picker('param_' ~ field, tier_complete, tier_highlights, tier_none) }}
-        </div>
-        {% endif %}
-        {% endfor %}
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="card shadow-sm mb-4" id="sec-content" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">Content configuration</div>
-    <div class="card-body">
-      <p class="form-text mb-2">Structure and content preferences — sections, how many items, citation style, etc.</p>
-      <textarea name="mem_content_config" class="form-control font-monospace" rows="12"
-                spellcheck="false">{{ files.content_config }}</textarea>
-    </div>
-  </div>
-
-  <div class="card shadow-sm mb-4" id="sec-notes" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">Running notes</div>
-    <div class="card-body">
-      <p class="form-text mb-2">Notes the agent keeps for trend-spotting across editions.</p>
-      <textarea name="mem_history" class="form-control font-monospace" rows="6"
-                spellcheck="false">{{ files.history }}</textarea>
-    </div>
-  </div>
-
-  <div class="card shadow-sm mb-4" id="sec-headlines" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">
-      Recent headlines
-      <span class="text-body-secondary fw-normal">(last {{ retention }} days, read-only)</span>
-    </div>
-    <div class="card-body">
-      <p class="form-text">Auto-generated per edition so the agent doesn't re-report the same news.</p>
-      {% if headlines %}
-        {% for h in headlines %}
-        <div class="mb-2">
-          <div class="small text-body-secondary">{{ h.edition_ts.strftime('%Y-%m-%d %H:%M') if h.edition_ts else '' }}</div>
-          <pre class="small bg-body-tertiary p-2 rounded mb-0">{{ h.content }}</pre>
-        </div>
-        {% endfor %}
-      {% else %}
-        <p class="text-body-secondary small mb-0">No headline notes yet.</p>
-      {% endif %}
-    </div>
-  </div>
-
-{% endif %}
-
-  {% if current_user.own_dispatch %}
-  <div class="card shadow-sm mb-4" id="sec-pdf" style="scroll-margin-top:5rem">
-    <div class="card-header fw-semibold">PDF export</div>
-    <div class="card-body">
-      <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" name="pdf_export_enabled" id="pdf_export_enabled"
-               {{ 'checked' if summary and summary.pdf_export_enabled else '' }}>
-        <label class="form-check-label" for="pdf_export_enabled">
-          Allow PDF export of my Dispatch's editions
-        </label>
-        <div class="form-text">When off, PDF export/download is unavailable to you and to followers.</div>
-      </div>
-      <div class="mb-0">
-        <label class="form-label" for="pdf_font_scale">Font scale (%)</label>
-        <input type="number" name="pdf_font_scale" id="pdf_font_scale"
-               class="form-control" style="max-width: 120px;"
-               min="50" max="150" step="5"
-               value="{{ current_user.pdf_font_scale or 80 }}">
-        <div class="form-text">Scales all text in PDF exports. 80% is a good fit for A4. Range: 50–150.</div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
 
   {% if current_user.has_podcast_access %}
   <div class="card shadow-sm mb-4" id="sec-podcast-format" style="scroll-margin-top:5rem">
@@ -409,59 +102,11 @@
 
 </form>
 
-<form id="dispatch-own-form" method="post" action="{{ url_for('web.dispatch_own') }}"></form>
-<form id="dispatch-publish-form" method="post" action="{{ url_for('web.dispatch_publish') }}"></form>
-{% if summary %}
-<form id="dispatch-delete-form" method="post" action="{{ url_for('web.summary_delete', summary_id=summary.id) }}"
-      onsubmit="return confirm('This permanently deletes your Dispatch and every edition. This cannot be undone.')"></form>
-{% endif %}
 <form id="regen-feed-form" method="post"
       action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
-<form id="api-key-new-form" method="post" action="{{ url_for('web.api_key_new') }}"></form>
 <form id="newsletter-email-form" method="post" action="{{ url_for('web.newsletter_email_set') }}"></form>
 <form id="newsletter-email-remove-form" method="post" action="{{ url_for('web.newsletter_email_remove') }}"></form>
 
-{% if current_user.is_approved %}
-<div class="modal fade" id="api-key-explainer" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">What are API keys?</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p>
-          Dispatch uses AI models to read your news sources and write your editions. Running those
-          models costs real money, charged per request — this app doesn't have a subscription fee,
-          so instead it needs <em>you</em> to bring your own credit to pay for the AI usage your
-          account causes.
-        </p>
-        <p>
-          <strong>OpenRouter</strong> is a service that gives you a single account and a single
-          API key that works with models from many different AI providers (Anthropic, OpenAI,
-          Google, and others). You add credit to your OpenRouter account, then give Dispatch an
-          <em>API key</em> — a secret code, like a password, that lets Dispatch spend from that
-          credit on your behalf, without ever needing your actual OpenRouter login.
-        </p>
-        <p><strong>To create an OpenRouter API key:</strong></p>
-        <ol>
-          <li>Go to <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a> and create an account.</li>
-          <li>Add some credit to your account (OpenRouter accepts card payments; a few dollars goes a long way for this app).</li>
-          <li>Go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a> and create a new API key.</li>
-          <li>Copy the key (it starts with <code>sk-or-</code>) and paste it into the "Add a key" form on this page.</li>
-        </ol>
-        <p class="mb-0 text-body-secondary small">
-          Your key is stored encrypted and is only ever used to pay for AI requests your account
-          triggers — nothing else has access to your OpenRouter credit.
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
 </div></div>
 {% endblock %}
 {% block scripts %}
@@ -510,19 +155,4 @@ if (resetNewsLink) {
   });
 }
 </script>
-{% if summary %}
-<script>
-  const periodSelect = document.getElementById('period_select');
-  function sync() {
-    const period = periodSelect ? periodSelect.value : '{{ summary.period }}';
-    document.querySelectorAll('.param-group').forEach(el => {
-      const isDay = el.classList.contains('scope-day');
-      const isWeek = el.classList.contains('scope-week');
-      el.style.display = (isDay && period !== 'day') || (isWeek && period !== 'week') ? 'none' : '';
-    });
-  }
-  if (periodSelect) periodSelect.addEventListener('change', sync);
-  sync();
-</script>
-{% endif %}
 {% endblock %}
