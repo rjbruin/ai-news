@@ -537,35 +537,10 @@ def _topic_tiers_for(owner: User, summary: Summary | None) -> tuple[list, list, 
 
 
 # ───────────────────────── Settings ─────────────────────────
-@bp.route("/settings", methods=["GET", "POST"])
+@bp.route("/settings")
 @login_required
 def settings():
-    if request.method == "POST":
-        if current_user.has_podcast_access:
-            current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
-            db.session.commit()
-            if "mem_news_podcast_format" in request.form:
-                from ..services.podcast import _set_news_podcast_format
-                _set_news_podcast_format(current_user, request.form.get("mem_news_podcast_format", ""))
-
-        flash("Settings saved.", "success")
-        return redirect(url_for("web.settings"))
-
-    from ..services.podcast import _get_news_podcast_format, DEFAULT_NEWS_PODCAST_FORMAT
-
-    news_podcast_format = None
-    podcast_feed_url = None
-    if current_user.has_podcast_access:
-        news_podcast_format = _get_news_podcast_format(current_user)
-        feed_token = current_user.get_or_create_feed_token()
-        podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
-
-    return render_template(
-        "settings.html",
-        news_podcast_format=news_podcast_format,
-        default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
-        podcast_feed_url=podcast_feed_url,
-    )
+    return render_template("settings.html")
 
 
 @bp.route("/dispatch/settings", methods=["GET", "POST"])
@@ -587,7 +562,13 @@ def your_dispatch():
             current_user.pdf_font_scale = max(50, min(150, int(request.form.get("pdf_font_scale") or 80)))
         except (ValueError, TypeError):
             pass
+        if current_user.has_podcast_access:
+            current_user.podcast_auto_generate = bool(request.form.get("podcast_auto_generate"))
         db.session.commit()
+
+        if current_user.has_podcast_access and "mem_news_podcast_format" in request.form:
+            from ..services.podcast import _set_news_podcast_format
+            _set_news_podcast_format(current_user, request.form.get("mem_news_podcast_format", ""))
 
         if summary:
             summary.period = request.form.get("period", summary.period)
@@ -621,6 +602,15 @@ def your_dispatch():
 
     tier_complete, tier_highlights, tier_none = _topic_tiers_for(current_user, summary)
 
+    from ..services.podcast import _get_news_podcast_format, DEFAULT_NEWS_PODCAST_FORMAT
+
+    news_podcast_format = None
+    podcast_feed_url = None
+    if current_user.has_podcast_access:
+        news_podcast_format = _get_news_podcast_format(current_user)
+        feed_token = current_user.get_or_create_feed_token()
+        podcast_feed_url = url_for("web.podcast_feed", token=feed_token, _external=True)
+
     return render_template(
         "dispatch_settings.html",
         summary=summary, types=types, cur_cls=cur_cls,
@@ -629,6 +619,9 @@ def your_dispatch():
         tier_complete=tier_complete,
         tier_highlights=tier_highlights,
         tier_none=tier_none,
+        news_podcast_format=news_podcast_format,
+        default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
+        podcast_feed_url=podcast_feed_url,
     )
 
 
@@ -638,7 +631,7 @@ def regenerate_podcast_feed_token():
     """Rotate the podcast-feed token, invalidating the old feed URL."""
     current_user.reset_feed_token()
     flash("Podcast feed URL regenerated. Update the subscription in your podcast app.", "success")
-    return redirect(url_for("web.settings"))
+    return redirect(url_for("web.your_dispatch") + "#sec-feed")
 
 
 # ───────────────────────── API keys ─────────────────────────

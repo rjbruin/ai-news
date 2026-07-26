@@ -108,14 +108,14 @@ def test_podcast_set_auto_requires_access(auth_client, db, user):
     assert resp.status_code == 403
 
 
-def test_settings_page_hides_podcast_sections_without_access(auth_client, user, db):
-    resp = auth_client.get("/settings")
+def test_dispatch_settings_page_hides_podcast_sections_without_access(auth_client, user, db):
+    resp = auth_client.get("/dispatch/settings")
     assert b"Podcast feed" not in resp.data
     assert b'id="sec-podcast-format"' not in resp.data
 
     user.podcast_enabled = True
     db.session.commit()
-    resp = auth_client.get("/settings")
+    resp = auth_client.get("/dispatch/settings")
     assert b"Podcast feed" in resp.data
     assert b'id="sec-podcast-format"' in resp.data
 
