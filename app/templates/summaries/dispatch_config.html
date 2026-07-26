@@ -75,6 +75,7 @@
       · Podcast: {{ '$%.4f'|format(costs.avg_podcast_cost) if costs.avg_podcast_cost is not none else '—' }}
       <span class="small">({{ costs.run_count }} edition{{ 's' if costs.run_count != 1 else '' }})</span>
     </p>
+    <p class="text-body-secondary small mb-0">Only the publisher of this Dispatch pays these costs.</p>
   </div>
 </div>
 
@@ -82,7 +83,7 @@
       {% if current_user.own_dispatch %}
       onsubmit="return confirm('This will overwrite your own Dispatch\'s schedule, model preference, description, interests, and content configuration. Continue?')"
       {% endif %}>
-  <button type="submit" class="btn btn-primary">Copy to my Dispatch</button>
+  <button type="submit" class="btn btn-primary">Copy configuration to my Dispatch</button>
 </form>
 
 {% endblock %}

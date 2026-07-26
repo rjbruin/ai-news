@@ -2,13 +2,6 @@
 {% block title %}Dispatches · Dispatch{% endblock %}
 {% block content %}
 <h1 class="h3 mb-3">Dispatches</h1>
-<p class="text-body-secondary small">
-  A Dispatch is an AI-written publication — each issue is an edition. Follow any
-  number of them; their editions appear together on your
-  <a href="{{ url_for('web.summaries') }}">Editions</a> page. Bring your own
-  OpenRouter key to run and publish your own from
-  <a href="{{ url_for('web.your_dispatch') }}#sec-dispatch">Your Dispatch</a>.
-</p>
 
 <div class="row row-cols-1 row-cols-md-2 g-3">
 {% for d in dispatches %}
@@ -52,21 +45,21 @@
             <form method="post" action="{{ url_for('web.dispatch_email_unsubscribe') }}" class="d-inline">
               <input type="hidden" name="summary_id" value="{{ d.id }}">
               <button class="btn btn-sm btn-outline-secondary">
-                <i class="fa-solid fa-envelope" aria-hidden="true"></i> Email: On
+                <i class="fa-solid fa-check" aria-hidden="true"></i> Subscribed to emails
               </button>
             </form>
             {% elif current_user.newsletter_email_is_confirmed %}
             <form method="post" action="{{ url_for('web.dispatch_email_subscribe') }}" class="d-inline">
               <input type="hidden" name="summary_id" value="{{ d.id }}">
               <button class="btn btn-sm btn-outline-secondary">
-                <i class="fa-regular fa-envelope" aria-hidden="true"></i> Email me
+                <i class="fa-regular fa-envelope" aria-hidden="true"></i> Subscribe to emails
               </button>
             </form>
             {% else %}
             <a href="{{ url_for('web.settings') }}#sec-recipients"
                class="btn btn-sm btn-outline-secondary disabled"
                title="Confirm your newsletter email in Settings first">
-              <i class="fa-regular fa-envelope" aria-hidden="true"></i> Email me
+              <i class="fa-regular fa-envelope" aria-hidden="true"></i> Subscribe to emails
             </a>
             {% endif %}
           {% endif %}
