@@ -123,11 +123,13 @@ def index():
     if system_dispatch:
         demo_run = (
             SummaryRun.query
-            .filter_by(summary_id=system_dispatch.id)
-            .filter(SummaryRun.share_token.isnot(None))
+            .filter_by(summary_id=system_dispatch.id, status="ok")
             .order_by(SummaryRun.generated_at.desc())
             .first()
         )
+        if demo_run and not demo_run.share_token:
+            demo_run.share_token = secrets.token_hex(32)
+            db.session.commit()
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
