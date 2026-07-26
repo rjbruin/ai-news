@@ -11,9 +11,7 @@
     {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
     {% endif %}
-    {% if current_user.is_approved %}
     <a class="nav-link px-2 py-1" href="#sec-api-keys">API Keys</a>
-    {% endif %}
     {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-interests">Interests</a>
     <a class="nav-link px-2 py-1" href="#sec-content">Content</a>
@@ -144,7 +142,6 @@
 
 {% endif %}
 
-{% if current_user.is_approved %}
   <div class="card shadow-sm mb-4" id="sec-api-keys" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span>API Keys</span>
@@ -231,7 +228,6 @@
       </div>
     </div>
   </div>
-{% endif %}
 
 {% if summary %}
   <div class="card shadow-sm mb-4" id="sec-interests" style="scroll-margin-top:5rem">
@@ -331,7 +327,6 @@
 {% endif %}
 <form id="api-key-new-form" method="post" action="{{ url_for('web.api_key_new') }}"></form>
 
-{% if current_user.is_approved %}
 <div class="modal fade" id="api-key-explainer" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-scrollable">
     <div class="modal-content">
@@ -371,7 +366,6 @@
     </div>
   </div>
 </div>
-{% endif %}
 </div></div>
 {% endblock %}
 {% block scripts %}
