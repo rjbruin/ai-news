@@ -1,12 +1,41 @@
 {% extends "base.html" %}
-{% from "partials/_edition_row.html" import edition_row with context %}
+{% from "partials/_edition_row.html" import edition_hero_card with context %}
 {% block title %}Editions · Dispatch{% endblock %}
 {% block content %}
-<h1 class="h3 mb-4">Editions</h1>
-<p class="text-body-secondary small">
-  Every edition from every Dispatch you follow, newest first. Manage which
-  Dispatches you follow on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page.
-</p>
+<h1 class="h3 mb-3">Editions</h1>
+
+<style>
+  .calendar-grid { width: 100%; border-collapse: collapse; }
+  .calendar-grid th {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--bs-secondary-color);
+    padding: .25rem; text-align: center;
+  }
+  .calendar-day {
+    text-align: center; padding: .55rem .25rem; border-radius: .4rem;
+    vertical-align: middle;
+  }
+  .calendar-day--empty { color: var(--bs-secondary-color); opacity: .35; }
+  .calendar-day.has-edition {
+    cursor: pointer; background: var(--ag-blue-tint); font-weight: 600;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .calendar-day.has-edition:hover { background: var(--ag-blue); color: #fff; }
+  .calendar-day.has-failed-only {
+    cursor: pointer; background: var(--ag-coral-tint); font-weight: 600;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .calendar-day.has-failed-only:hover { background: var(--ag-coral); color: #fff; }
+  .calendar-day.is-today { outline: 2px solid var(--brand); outline-offset: -2px; }
+  .calendar-day.is-selected.has-edition { background: var(--ag-blue); color: #fff; }
+  .calendar-day.is-selected.has-failed-only { background: var(--ag-coral); color: #fff; }
+  .calendar-dot {
+    display: block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ag-blue); margin: 3px auto 0;
+  }
+  .has-failed-only .calendar-dot { background: var(--ag-coral); }
+  .calendar-day.is-selected .calendar-dot { background: #fff; }
+</style>
 
 {% if active_generations %}
 <div class="card shadow-sm mb-4">
@@ -33,23 +62,91 @@
 </div>
 {% endif %}
 
-{% if feed %}
-<div class="card shadow-sm">
-  <div class="list-group list-group-flush">
-    {% for run, summary in feed %}
-    {{ edition_row(run, summary, is_own=(summary.id in own_ids), show_dispatch=True) }}
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <a href="{{ url_for('web.summaries', year=prev_year, month=prev_month) }}"
+             class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-chevron-left"></i></a>
+          <div class="fw-semibold">{{ month_label }}</div>
+          <a href="{{ url_for('web.summaries', year=next_year, month=next_month) }}"
+             class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-chevron-right"></i></a>
+        </div>
+        <table class="calendar-grid">
+          <thead>
+            <tr>
+              {% for wd in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] %}
+              <th>{{ wd }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for week in weeks %}
+            <tr>
+              {% for day in week %}
+              {% if day.month == month %}
+                {% set entries = by_day.get(day) %}
+                <td class="calendar-day {{ 'has-edition' if day in ok_days }} {{ 'has-failed-only' if day in failed_only_days }} {{ 'is-today' if day == today }}"
+                    {% if entries %}data-day-panel="day-{{ day.isoformat() }}" role="button" tabindex="0"{% endif %}>
+                  {{ day.day }}
+                  {% if entries %}<span class="calendar-dot"></span>{% endif %}
+                </td>
+              {% else %}
+                <td class="calendar-day calendar-day--empty">{{ day.day }}</td>
+              {% endif %}
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div id="calendar-detail-empty" class="card shadow-sm">
+      <div class="card-body text-body-secondary small fst-italic">
+        Click a highlighted day to see its edition(s).
+      </div>
+    </div>
+    {% for day, entries in by_day.items() %}
+    <div id="day-{{ day.isoformat() }}" class="calendar-day-panel d-none">
+      {% for run, summary in entries %}
+      {{ edition_hero_card(run, summary, is_own=(summary.id in own_ids)) }}
+      {% endfor %}
+    </div>
     {% endfor %}
   </div>
 </div>
-{% else %}
-<div class="card shadow-sm">
-  <div class="card-body text-center py-5">
-    <p class="text-body-secondary mb-1">No editions yet.</p>
-    <p class="text-body-secondary small mb-0">
-      Follow a Dispatch on the <a href="{{ url_for('web.dispatches') }}">Dispatches</a> page,
-      or set up your own in <a href="{{ url_for('web.settings') }}#sec-dispatch">Settings</a>.
-    </p>
-  </div>
-</div>
-{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var days = document.querySelectorAll('.calendar-day[data-day-panel]');
+  var panels = document.querySelectorAll('.calendar-day-panel');
+  var emptyState = document.getElementById('calendar-detail-empty');
+
+  function selectDay(id, dayEl) {
+    panels.forEach(function (p) { p.classList.add('d-none'); });
+    days.forEach(function (d) { d.classList.remove('is-selected'); });
+    var panel = document.getElementById(id);
+    if (panel) {
+      panel.classList.remove('d-none');
+      emptyState.classList.add('d-none');
+      dayEl.classList.add('is-selected');
+    }
+  }
+
+  days.forEach(function (d) {
+    d.addEventListener('click', function () { selectDay(d.dataset.dayPanel, d); });
+    d.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectDay(d.dataset.dayPanel, d); }
+    });
+  });
+
+  var todayEl = document.querySelector('.calendar-day.is-today[data-day-panel]');
+  if (todayEl) { selectDay(todayEl.dataset.dayPanel, todayEl); }
+})();
+</script>
 {% endblock %}

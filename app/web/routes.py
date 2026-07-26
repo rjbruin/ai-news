@@ -1105,18 +1105,55 @@ def _merged_edition_feed(dispatches, *, cap=50):
 @bp.route("/summaries")
 @login_required
 def summaries():
-    """Editions feed — every edition of every Dispatch the user follows,
-    merged newest-first. Owner-only controls appear per row on the user's own."""
+    """Editions page — a month calendar of every Dispatch the user follows.
+    Highlighted days link to that day's edition(s); owner-only controls
+    (Logs/Retry/Delete) appear in the detail card for the user's own."""
+    import calendar as calendar_module
+    from datetime import date, datetime
+
+    today = utcnow().date()
+    year = request.args.get("year", type=int) or today.year
+    month = request.args.get("month", type=int) or today.month
+    if not (1 <= month <= 12):
+        year, month = today.year, today.month
+
+    # Range bounds are naive UTC to match how generated_at is actually
+    # stored/read (SQLite drops tzinfo — see edition_heads_in_range's docstring).
+    first = datetime(year, month, 1)
+    if month == 12:
+        next_first = datetime(year + 1, 1, 1)
+    else:
+        next_first = datetime(year, month + 1, 1)
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+
     followed = current_user.subscribed_dispatches.all()
-    feed = _merged_edition_feed(followed)
+    month_feed = summarize.edition_heads_in_range(followed, first, next_first)
     own_ids = {s.id for s in followed if s.user_id == current_user.id}
     active_generations = {
         sid: generation_registry.get(sid)
         for sid in own_ids if generation_registry.get(sid)
     }
+
+    by_day: dict[date, list] = {}
+    for run, summary in month_feed:
+        by_day.setdefault(run.generated_at.date(), []).append((run, summary))
+    ok_days = {d for d, entries in by_day.items() if any(r.status == "ok" for r, _ in entries)}
+    failed_only_days = set(by_day.keys()) - ok_days
+
+    weeks = calendar_module.Calendar(firstweekday=0).monthdatescalendar(year, month)
+
     return render_template(
         "summaries/list.html",
-        feed=feed,
+        weeks=weeks,
+        by_day=by_day,
+        ok_days=ok_days,
+        failed_only_days=failed_only_days,
+        month_label=first.strftime("%B %Y"),
+        year=year, month=month,
+        prev_year=prev_year, prev_month=prev_month,
+        next_year=next_year, next_month=next_month,
+        today=today,
         own_ids=own_ids,
         active_generations=active_generations,
     )
