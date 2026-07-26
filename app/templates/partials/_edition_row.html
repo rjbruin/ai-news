@@ -39,3 +39,54 @@
   {% endif %}
 </div>
 {% endmacro %}
+
+{# A single edition "featured" as a card: title, pills (dispatch/date/coverage-
+   or-item-count/cost), channel icons, and action buttons (Open always;
+   Logs/Retry/Delete owner-only, same gating as edition_row above). Used by
+   the dashboard hero and the Editions calendar's day-detail panel. #}
+{% macro edition_hero_card(run, summary, is_own=False, coverage=None) %}
+{% from "partials/_channels.html" import channel_icons with context %}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h2 class="h5 mb-1">
+      {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if run.is_read_by(current_user) %}
+      <i class="fa-regular fa-envelope-open text-body-secondary ms-2" title="Read"></i>
+      {% else %}
+      <i class="fa-solid fa-envelope text-primary ms-2" title="Unread"></i>
+      {% endif %}
+    </h2>
+    <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+      <span class="pill pill-slate">{{ summary.display_name }}</span>
+      <span class="pill pill-teal">{{ run.generated_at | natural_dt }}</span>
+      {% if run.status == 'failed' %}
+      <span class="pill pill-coral">Failed</span>
+      {% elif coverage %}
+      <span class="pill pill-blue">{{ coverage.included_count }}/{{ coverage.scope_count }} stories covered</span>
+      {% else %}
+      <span class="pill pill-blue">{{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}</span>
+      {% endif %}
+      {% if is_own and run.agent_cost is not none %}
+      <span class="pill pill-amber" title="Generation cost">${{ '%.4f'|format(run.agent_cost) }}</span>
+      {% endif %}
+      <span title="Channels">{{ channel_icons(run, show_podcast_cost=is_own) }}</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+         class="btn btn-primary btn-sm">Open</a>
+      {% if is_own %}
+      {% if run.agent_log %}
+      <a href="{{ url_for('web.edition_logs', summary_id=summary.id, run_id=run.id) }}"
+         class="btn btn-sm btn-outline-secondary">Logs</a>
+      {% endif %}
+      {% if run.status == 'failed' %}
+      <form method="post" action="{{ url_for('web.edition_retry', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-danger">Retry</button></form>
+      {% endif %}
+      <form method="post" action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
+        <button class="btn btn-sm btn-outline-danger">Delete</button></form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endmacro %}
