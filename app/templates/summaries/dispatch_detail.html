@@ -8,7 +8,7 @@
     <h1 class="h3 mb-1">{{ summary.display_name }}</h1>
     <p class="text-body-secondary small mb-0">
       {% if is_own %}Your Dispatch{% else %}by {{ summary.user.username }}{% endif %}
-      {% if summary.is_published %}· <span class="badge text-bg-light border text-body-secondary">published</span>{% endif %}
+      {% if is_own and summary.is_published %}· <span class="badge text-bg-light border text-body-secondary">published</span>{% endif %}
     </p>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
