@@ -1,6 +1,6 @@
 This is your backlog. When you do an item, mark it as done (do not remove). Do all of the open items below. Keep iterating until done. Do not ask for permission to continue, you have it. Just keep going, even if it's a lot. Group changes in PRs. Once done, merge all PRs and publish a new minor release.
 
-[ ] Rewrite the front page text to more accurately capture the system as it is. Focus first on reading existing dispatches, then on the option to generate your own.
+[x] Rewrite the front page text to more accurately capture the system as it is. Focus first on reading existing dispatches, then on the option to generate your own.
 [x] Move podcast settings also to the Dispatch settings page.
 [x] Add an Mark all as Read button to the Editions page.
 [x] For all users, do not show the "published" badge when viewing a dispatch of another user.
