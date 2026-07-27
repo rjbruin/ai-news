@@ -31,7 +31,13 @@
 <form method="post">
 
 <div class="card shadow-sm mb-4" id="sec-dispatch" style="scroll-margin-top:5rem">
-  <div class="card-header fw-semibold">Dispatch</div>
+  <div class="card-header fw-semibold d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>Dispatch</span>
+    {% if summary %}
+    <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" data-bs-toggle="modal"
+            data-bs-target="#own-dispatch-onboarding-modal">Restart onboarding</button>
+    {% endif %}
+  </div>
   <div class="card-body">
     {% if not summary %}
     <p class="text-body-secondary small">
@@ -44,45 +50,53 @@
     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal"
             data-bs-target="#own-dispatch-onboarding-modal">Set up my own Dispatch</button>
     {% else %}
-    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" data-bs-toggle="modal"
-            data-bs-target="#own-dispatch-onboarding-modal">Restart own Dispatch onboarding</button>
-    {% endif %}
-    {% if summary %}
-    <div class="mb-3">
+
+    <!-- Title & publish status ─────────────────────────────────────────── -->
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <h3 class="h6 mb-0">Title &amp; publishing</h3>
+      <span class="badge {{ 'text-bg-success' if summary.is_published else 'text-bg-secondary' }}">
+        {{ 'Published' if summary.is_published else 'Unpublished' }}
+      </span>
+    </div>
+    <div class="mb-2" style="max-width: 420px">
+      <label class="form-label small" for="published_name">Title</label>
+      <input type="text" name="published_name" id="published_name" class="form-control"
+             maxlength="25" form="dispatch-publish-form"
+             placeholder="e.g. AI Tech Dispatch" value="{{ summary.published_name or '' }}">
+      <div class="form-text">Up to 25 characters, unique across all Dispatches.</div>
+    </div>
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" role="switch" name="is_published" id="is_published"
+             form="dispatch-publish-form" {{ 'checked' if summary.is_published else '' }}>
+      <label class="form-check-label" for="is_published">Publish to the Dispatches page</label>
+    </div>
+    <p class="text-body-secondary small mb-3">
+      Published Dispatches are read-only for others — they can follow and read, but can't
+      change your settings or generate editions. Unpublishing keeps your Dispatch and its
+      editions intact; you can republish any time.
+    </p>
+    <button type="submit" form="dispatch-publish-form" class="btn btn-outline-primary btn-sm">
+      Save title &amp; publish status
+    </button>
+
+    <!-- Description ───────────────────────────────────────────────────── -->
+    <div class="border-top pt-3 mt-3">
       <label class="form-label" for="description">Description</label>
       <textarea name="description" id="description" class="form-control" rows="2"
                 placeholder="What's this Dispatch about?">{{ summary.description or '' }}</textarea>
       <div class="form-text">Shown on the Dispatches page and your Details page.</div>
     </div>
-    <div class="border-top pt-3 mt-2">
-      <p class="fw-semibold mb-1">Publish my Dispatch</p>
-      <p class="text-body-secondary small mb-2">
-        Publishing lists your Dispatch on the Dispatches page so others can follow and
-        read it (read-only — they can't change your settings or generate editions).
-        Unchecking this only unpublishes it — your Dispatch and its editions stay intact,
-        existing followers stay subscribed, and you can republish any time.
-      </p>
-      <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" name="is_published" id="is_published"
-               form="dispatch-publish-form" {{ 'checked' if summary.is_published else '' }}>
-        <label class="form-check-label" for="is_published">Publish my Dispatch</label>
+
+    <!-- Danger zone ───────────────────────────────────────────────────── -->
+    <div class="border-top pt-3 mt-3 d-flex align-items-start justify-content-between flex-wrap gap-3">
+      <div>
+        <p class="fw-semibold mb-1 text-danger">Danger zone</p>
+        <p class="text-body-secondary small mb-0">
+          Permanently deletes your Dispatch and every edition it has ever generated.
+          This cannot be undone.
+        </p>
       </div>
-      <div class="input-group" style="max-width: 360px">
-        <span class="input-group-text">Name</span>
-        <input type="text" name="published_name" class="form-control" maxlength="25"
-               form="dispatch-publish-form" placeholder="e.g. AI Tech Dispatch"
-               value="{{ summary.published_name or '' }}">
-        <button type="submit" form="dispatch-publish-form" class="btn btn-outline-primary">Save</button>
-      </div>
-      <div class="form-text">Up to 25 characters, unique across all Dispatches.</div>
-    </div>
-    <div class="border-top pt-3 mt-3">
-      <p class="fw-semibold mb-1 text-danger">Danger zone</p>
-      <p class="text-body-secondary small mb-2">
-        Permanently deletes your Dispatch and every edition it has ever generated.
-        This cannot be undone.
-      </p>
-      <button type="submit" form="dispatch-delete-form" class="btn btn-outline-danger btn-sm">
+      <button type="submit" form="dispatch-delete-form" class="btn btn-outline-danger btn-sm text-nowrap">
         Delete my Dispatch
       </button>
     </div>
