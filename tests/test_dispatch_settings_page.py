@@ -113,7 +113,7 @@ def test_set_up_own_dispatch_opens_onboarding_modal_not_direct_submit(auth_clien
 def test_dispatch_settings_shows_restart_onboarding_button_with_dispatch(auth_client, db, user):
     _own_dispatch(db, user)
     html = auth_client.get("/dispatch/settings").data.decode()
-    assert "Restart own Dispatch onboarding" in html
+    assert "Restart onboarding" in html
     # The generic intro copy is replaced, not shown alongside the button.
     assert "A Dispatch is an AI-written publication" not in html
 
