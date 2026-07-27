@@ -20,7 +20,7 @@ from ..summaries import registry as summary_registry
 
 def generate_and_store_pdf(summary, run, *, font_scale: int | None = None, base_url: str = "/") -> bytes:
     from weasyprint import HTML as WPHtml
-    from weasyprint.urls import default_url_fetcher
+    from weasyprint.urls import URLFetcher, URLFetcherResponse
 
     plugin = summary_registry.get(summary.type_key)
     is_agentic = bool(plugin and getattr(plugin, "is_agentic", False))
@@ -33,6 +33,7 @@ def generate_and_store_pdf(summary, run, *, font_scale: int | None = None, base_
 
     static_folder = current_app.static_folder
     static_url_path = current_app.static_url_path  # '/static'
+    fallback_fetcher = URLFetcher()
 
     def _url_fetcher(url):
         parsed = urlparse(url)
@@ -42,8 +43,9 @@ def generate_and_store_pdf(summary, run, *, font_scale: int | None = None, base_
             if os.path.exists(abs_path):
                 mime = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
                 with open(abs_path, "rb") as fh:
-                    return {"content": fh.read(), "mime_type": mime}
-        return default_url_fetcher(url)
+                    content = fh.read()
+                return URLFetcherResponse(url, content, {"Content-Type": mime})
+        return fallback_fetcher(url)
 
     pdf_bytes = WPHtml(
         string=html_str,

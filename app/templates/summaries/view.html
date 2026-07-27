@@ -122,8 +122,8 @@
 </div>
 {% endif %}
 
-{% if not is_shared_view and is_own %}
-{{ channel_hero(run) }}
+{% if not is_shared_view %}
+{{ channel_hero(run, show_podcast=is_own) }}
 {% endif %}
 
 {% if run.status == 'failed' %}

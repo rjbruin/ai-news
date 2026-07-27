@@ -74,6 +74,30 @@ def test_pdf_export_enabled_allows_follower_download(auth_client, db, user, admi
     assert resp.status_code == 200
 
 
+def test_edition_page_shows_pdf_card_for_follower(auth_client, db, user, admin):
+    """The "Also available as" card was previously gated to the Dispatch
+    owner, hiding the PDF (and podcast) links from anyone just following
+    someone else's published Dispatch."""
+    dispatch = _own_dispatch(db, admin, pdf_export_enabled=True)
+    run = _run(db, dispatch, pdf_file="edition_1.pdf")
+    user.follow(dispatch)
+    db.session.commit()
+
+    html = auth_client.get(f"/summaries/{dispatch.id}/editions/{run.id}").data.decode()
+    assert "Also available as:" in html
+    assert "channel-pill--pdf" in html
+
+
+def test_edition_page_hides_pdf_card_when_export_disabled_for_follower(auth_client, db, user, admin):
+    dispatch = _own_dispatch(db, admin, pdf_export_enabled=False)
+    run = _run(db, dispatch, pdf_file="edition_1.pdf")
+    user.follow(dispatch)
+    db.session.commit()
+
+    html = auth_client.get(f"/summaries/{dispatch.id}/editions/{run.id}").data.decode()
+    assert "Also available as:" not in html
+
+
 # ── Automatic PDF generation on edition creation ────────────────────────────
 
 def test_autogenerate_pdf_when_export_enabled(app, db, user, monkeypatch):
