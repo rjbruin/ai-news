@@ -31,12 +31,12 @@
 </span>
 {% endmacro %}
 
-{% macro channel_hero(run) %}
-{% if run.news_podcast_audio or (run.pdf_file and run.summary.pdf_export_enabled) %}
+{% macro channel_hero(run, show_podcast=True) %}
+{% if (show_podcast and run.news_podcast_audio) or (run.pdf_file and run.summary.pdf_export_enabled) %}
 <div class="card shadow-sm mb-4 d-print-none">
   <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
     <span class="small text-body-secondary me-1">Also available as:</span>
-    {% if run.news_podcast_audio %}
+    {% if show_podcast and run.news_podcast_audio %}
     <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
        class="channel-pill channel-pill--podcast">
       <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>Podcast

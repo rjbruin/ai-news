@@ -27,6 +27,23 @@
       src: url("{{ url_for('static', filename='fonts/inter-800.woff2') }}") format("woff2");
     }
 
+    /* ── Lexend font (headings — matches the website's heading font) ────── */
+    @font-face {
+      font-family: "Lexend";
+      font-weight: 600;
+      src: url("{{ url_for('static', filename='fonts/lexend-600.woff2') }}") format("woff2");
+    }
+    @font-face {
+      font-family: "Lexend";
+      font-weight: 700;
+      src: url("{{ url_for('static', filename='fonts/lexend-700.woff2') }}") format("woff2");
+    }
+    @font-face {
+      font-family: "Lexend";
+      font-weight: 800;
+      src: url("{{ url_for('static', filename='fonts/lexend-800.woff2') }}") format("woff2");
+    }
+
     /* ── Page setup ─────────────────────────────────────────────────────── */
     @page {
       size: A4 portrait;
@@ -61,6 +78,10 @@
     a[target="_blank"]::after { display: none !important; }
 
     /* ── Heading scale (rem so they scale with html font-size) ──────────── */
+    .an-h1, .an-h2, .an-h3, .an-h4, .an-h5 {
+      font-family: "Lexend", "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      letter-spacing: -.01em;
+    }
     .an-h1 { font-size: 1.67rem; font-weight: 800; }  /* ≈ 20pt at 100% */
     .an-h2 { font-size: 1.17rem; font-weight: 800; color: #1f3a5f; }  /* ≈ 14pt */
     .an-h3 { font-size: 0.92rem; font-weight: 700; }  /* ≈ 11pt */
