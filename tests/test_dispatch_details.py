@@ -88,3 +88,27 @@ def test_copy_to_own_overwrites_existing(auth_client, db, user, admin):
     assert own.description == "Source description"
     assert own.period == "day"
     assert "old" not in (own.params or {})
+
+
+def test_own_dispatch_details_shows_edit_settings_not_copy_button(auth_client, db, user):
+    own = Summary(
+        user_id=user.id, name="Mine", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    )
+    db.session.add(own)
+    db.session.commit()
+
+    resp = auth_client.get(f"/dispatches/{own.id}/details")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "Copy configuration to my Dispatch" not in html
+    assert html.count("Edit settings") == 2  # top-right and in place of the copy button
+
+
+def test_other_dispatch_details_shows_copy_not_edit_settings(auth_client, db, user, admin):
+    dispatch = _published(db, admin)
+    resp = auth_client.get(f"/dispatches/{dispatch.id}/details")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "Copy configuration to my Dispatch" in html
+    assert "Edit settings" not in html

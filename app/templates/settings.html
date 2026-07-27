@@ -7,6 +7,7 @@
 <div class="col-lg-3 d-none d-lg-block">
   <nav id="settings-nav" class="nav flex-column position-sticky" style="top:5rem">
     <a class="nav-link px-2 py-1" href="#sec-recipients">Newsletter email</a>
+    <a class="nav-link px-2 py-1" href="#sec-onboarding">Onboarding</a>
   </nav>
 </div>
 
@@ -43,8 +44,17 @@
   </div>
 </div>
 
+<div class="card shadow-sm mb-4" id="sec-onboarding" style="scroll-margin-top:5rem">
+  <div class="card-header fw-semibold">Onboarding</div>
+  <div class="card-body">
+    <p class="form-text mt-0 mb-2">Want to see the welcome tutorial again?</p>
+    <button type="submit" form="restart-onboarding-form" class="btn btn-outline-secondary">Restart onboarding</button>
+  </div>
+</div>
+
 <form id="newsletter-email-form" method="post" action="{{ url_for('web.newsletter_email_set') }}"></form>
 <form id="newsletter-email-remove-form" method="post" action="{{ url_for('web.newsletter_email_remove') }}"></form>
+<form id="restart-onboarding-form" method="post" action="{{ url_for('web.restart_onboarding') }}"></form>
 
 </div></div>
 {% endblock %}

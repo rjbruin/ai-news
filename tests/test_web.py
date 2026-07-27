@@ -135,7 +135,10 @@ def test_dashboard_shows_onboarding_once_for_new_user(auth_client, db, user):
     assert resp.status_code == 200
     assert b"onboarding-modal" in resp.data
     assert b"Welcome to Dispatch" in resp.data
-    assert b"AI models that cost money" in resp.data
+    assert b"Follow some Dispatches" in resp.data
+    # API keys/sources/topics are deliberately not discussed here — that's
+    # covered by the separate own-Dispatch-setup onboarding instead.
+    assert b"API key" not in resp.data
 
     db.session.refresh(user)
     assert user.has_seen_onboarding is True
@@ -323,9 +326,13 @@ def test_topics_nav_link_shown_for_admin(admin_client):
 
 
 def test_dashboard_no_header_shows_sources_and_key_nudge(auth_client, db, user):
-    from app.models import ApiKey, Source
+    from app.models import ApiKey, Source, Summary
 
     user.approved = True
+    db.session.add(Summary(
+        user_id=user.id, name="Daily", type_key="agentic_page",
+        scope_mode="fixed_period", period="day", params={},
+    ))
     db.session.commit()
 
     resp = auth_client.get("/dashboard")

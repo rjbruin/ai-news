@@ -68,7 +68,7 @@
   </div>
 </div>
 
-{% if not has_api_key %}
+{% if not has_api_key and current_user.own_dispatch %}
 <div class="card shadow-sm mt-4 border-warning">
   <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
@@ -120,7 +120,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     steps.forEach((el, idx) => el.classList.toggle('d-none', idx !== i));
     dots.forEach((el, idx) => el.classList.toggle('active', idx === i));
     backBtn.classList.toggle('invisible', i === 0);
-    nextBtn.textContent = i === steps.length - 1 ? 'Set up API key' : 'Next';
+    nextBtn.textContent = i === steps.length - 1 ? 'Browse Dispatches' : 'Next';
   }
   backBtn.addEventListener('click', () => { i = Math.max(0, i - 1); render(); });
   nextBtn.addEventListener('click', () => {
@@ -128,7 +128,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     if (steps[i].querySelector('.onboarding-follow-checkbox')) saveFollows();
     if (i === steps.length - 1) {
       if (!followSaved) saveFollows();
-      window.location.href = "{{ url_for('web.your_dispatch') }}#sec-api-keys";
+      window.location.href = "{{ url_for('web.dispatches') }}";
       return;
     }
     i = Math.min(steps.length - 1, i + 1);

@@ -355,7 +355,17 @@ def test_onboarding_modal_includes_follow_step(auth_client, db, user, system_dis
     html = auth_client.get("/dashboard").data.decode()
     assert "Follow some Dispatches" in html
     assert "AI Tech Dispatch" in html
-    assert html.count("onboarding-dot") >= 6
+    assert html.count("onboarding-dot") >= 4
+
+
+def test_onboarding_follow_step_shows_description(auth_client, db, user, system_dispatch):
+    system_dispatch.description = "Daily coverage of AI news, curated for engineers."
+    db.session.commit()
+    user.has_seen_onboarding = False
+    db.session.commit()
+
+    html = auth_client.get("/dashboard").data.decode()
+    assert "Daily coverage of AI news, curated for engineers." in html
 
 
 # ── Part A: "dispatch user" gating (topics / sources / PDF) ────────────────
