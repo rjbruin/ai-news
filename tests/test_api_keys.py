@@ -241,6 +241,7 @@ def test_api_key_remove_deletes_key_and_disables_owned_sources(auth_client, db, 
 
 
 def test_dispatch_settings_shows_api_key_hero_and_explainer_modal(auth_client, db, user):
+    _give_dispatch(db, user)
     resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -258,8 +259,9 @@ def test_api_keys_redirects_to_dispatch_settings(auth_client, db, user):
     assert resp.headers["Location"].endswith("/dispatch/settings#sec-api-keys")
 
 
-def test_non_approved_user_still_sees_api_keys_section(auth_client, db, user):
+def test_non_approved_user_with_dispatch_still_sees_api_keys_section(auth_client, db, user):
     user.approved = False
+    _give_dispatch(db, user)
     db.session.commit()
 
     resp = auth_client.get("/dispatch/settings")
@@ -267,6 +269,13 @@ def test_non_approved_user_still_sees_api_keys_section(auth_client, db, user):
     html = resp.data.decode()
     assert "id=\"sec-api-keys\"" in html
     assert "id=\"api-key-explainer\"" in html
+
+
+def test_dispatchless_user_does_not_see_api_keys_section(auth_client, db, user):
+    resp = auth_client.get("/dispatch/settings")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "id=\"sec-api-keys\"" not in html
 
 
 def test_owner_can_retract_own_source_but_not_others(auth_client, db, user):

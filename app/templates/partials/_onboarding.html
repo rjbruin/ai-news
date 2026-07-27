@@ -1,6 +1,10 @@
 {# First-visit onboarding tutorial, shown once from the dashboard (see
    web.dashboard, which flips User.has_seen_onboarding the moment this is
-   rendered). A simple multi-step modal — no JS framework, just show/hide. #}
+   rendered). Focused entirely on the reading experience — following and
+   reading existing Dispatches. Setting up your own Dispatch (API keys,
+   sources, topics) has its own separate onboarding, triggered from the
+   "Set up my own Dispatch" button on Your Dispatch. A simple multi-step
+   modal — no JS framework, just show/hide. #}
 <div class="modal fade" id="onboarding-modal" tabindex="-1" aria-hidden="true"
      data-bs-backdrop="static" data-bs-keyboard="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -9,31 +13,31 @@
         <h5 class="modal-title">Welcome to Dispatch</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Skip"></button>
       </div>
-      <div class="modal-body" style="min-height: 260px">
+      <div class="modal-body" style="min-height: 220px">
 
         <div class="onboarding-step">
           <h6 class="fw-bold mb-2">What Dispatch does</h6>
-          <p>
-            Dispatch watches the news sources you point it at — newsletters, RSS/Atom feeds —
-            pulls out the individual stories, and tags each one against a shared topic taxonomy.
-            An AI agent then writes editions from whatever matches its interests, on a schedule.
+          <p class="mb-0">
+            Dispatch is a directory of AI-written news publications. Each one is called a
+            Dispatch, and each issue it puts out is an edition — an AI agent reads news sources
+            and writes it up on a schedule, so you don't have to.
           </p>
         </div>
 
         <div class="onboarding-step d-none">
           <h6 class="fw-bold mb-2">Follow some Dispatches</h6>
           <p class="mb-2">
-            A Dispatch is an AI-written publication; each issue is an edition. Follow any number —
-            their editions show up together on your Editions page. You can change these anytime
-            from the <strong>Dispatches</strong> page.
+            Follow any number — their editions show up together on your Editions page. You can
+            change these anytime from the <strong>Dispatches</strong> page.
           </p>
           {% for d in published_dispatches %}
-          <div class="form-check">
+          <div class="form-check mb-2">
             <input class="form-check-input onboarding-follow-checkbox" type="checkbox"
                    value="{{ d.id }}" id="follow-{{ d.id }}"
                    {{ 'checked' if current_user.is_following(d) else '' }}>
             <label class="form-check-label" for="follow-{{ d.id }}">
               {{ d.display_name }} <span class="text-body-secondary small">· by {{ d.user.username }}</span>
+              <div class="text-body-secondary small">{{ d.description or "No description yet." }}</div>
             </label>
           </div>
           {% else %}
@@ -42,54 +46,20 @@
         </div>
 
         <div class="onboarding-step d-none">
-          <h6 class="fw-bold mb-2">Sources are shared, but configurable per person</h6>
-          <p>
-            Everyone using this instance shares the same pool of sources on the
-            <strong>Sources</strong> page — no need to set up your own newsletter subscription if
-            someone already has. Approved users can add their own sources too.
-          </p>
+          <h6 class="fw-bold mb-2">Your editions are written for you</h6>
           <p class="mb-0">
-            Don't want a particular source in your own editions? Turn it off just for yourself
-            from the "In my editions" toggle on the Sources page — it stays on for everyone else.
-          </p>
-        </div>
-
-        <div class="onboarding-step d-none">
-          <h6 class="fw-bold mb-2">Your edition is written for you</h6>
-          <p>
             There's nothing to manually curate — the agent selects, groups, and writes up the
-            stories that match your Dispatch's interests every time an edition is cut.
-          </p>
-          <p class="mb-0">
-            Once you have an edition, you can also export it as a printable PDF or generate a
-            narrated podcast episode of it, if that's enabled for your account.
+            stories that matter every time an edition is cut. Read it on the web, export it as a
+            printable PDF, or listen to it as a narrated podcast, if the Dispatch's owner has one
+            available.
           </p>
         </div>
 
         <div class="onboarding-step d-none">
-          <h6 class="fw-bold mb-2">Or run your own Dispatch</h6>
-          <p>
-            Following a Dispatch is free — someone else pays for generating it. Want one tuned
-            exactly to you instead? Bring your own OpenRouter API key and set up a
-            <strong>custom Dispatch</strong> of your own in <strong>Settings</strong>.
-          </p>
+          <h6 class="fw-bold mb-2">Want one tuned exactly to you?</h6>
           <p class="mb-0">
-            It starts as a copy of the System Dispatch's settings, and you shape it from there —
-            then you can publish it for others to follow, too.
-          </p>
-        </div>
-
-        <div class="onboarding-step d-none">
-          <h6 class="fw-bold mb-2">⚠️ A custom Dispatch runs on AI models that cost money</h6>
-          <p>
-            Reading sources and writing editions uses AI models, and those cost real money per
-            request. This app doesn't charge a subscription — instead, a custom Dispatch is paid
-            for with your own OpenRouter API key.
-          </p>
-          <p class="mb-0">
-            When you set up a custom Dispatch, add a key in the
-            <strong>API Keys</strong> section of Settings — it walks you through creating one, and
-            gives you a rough idea of what it costs.
+            Following a Dispatch is free. If you'd rather run your own — tuned to your own
+            interests — you can set one up any time from the <strong>Dispatches</strong> page.
           </p>
         </div>
 
@@ -97,8 +67,6 @@
       <div class="modal-footer d-flex justify-content-between align-items-center">
         <div class="d-flex gap-1">
           <span class="onboarding-dot active"></span>
-          <span class="onboarding-dot"></span>
-          <span class="onboarding-dot"></span>
           <span class="onboarding-dot"></span>
           <span class="onboarding-dot"></span>
           <span class="onboarding-dot"></span>

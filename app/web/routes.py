@@ -543,6 +543,14 @@ def settings():
     return render_template("settings.html")
 
 
+@bp.route("/settings/restart-onboarding", methods=["POST"])
+@login_required
+def restart_onboarding():
+    current_user.has_seen_onboarding = False
+    db.session.commit()
+    return redirect(url_for("web.dashboard"))
+
+
 @bp.route("/dispatch/settings", methods=["GET", "POST"])
 @login_required
 def your_dispatch():

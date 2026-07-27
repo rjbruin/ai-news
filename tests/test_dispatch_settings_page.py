@@ -11,9 +11,9 @@ def _own_dispatch(db, user):
     return s
 
 
-def test_nav_shows_set_up_your_dispatch_when_none(auth_client, db, user):
+def test_nav_hides_dispatch_link_when_none(auth_client, db, user):
     html = auth_client.get("/dashboard").data.decode()
-    assert "Set up your Dispatch" in html
+    assert "Set up your Dispatch" not in html
     assert ">Your Dispatch<" not in html
 
 
@@ -38,14 +38,21 @@ def test_dispatch_settings_renders_for_user_with_dispatch(auth_client, db, user)
     assert b"Delete my Dispatch" in resp.data
 
 
-def test_api_keys_reachable_for_any_user_without_dispatch(auth_client, db, user):
-    # Managing API keys never requires admin approval or owning a Dispatch.
+def test_api_keys_hidden_for_user_without_dispatch(auth_client, db, user):
+    # Without a Dispatch there's nothing an API key would fund, so the
+    # section is hidden entirely rather than shown pre-emptively.
     resp = auth_client.get("/dispatch/settings")
     assert resp.status_code == 200
     html = resp.data.decode()
-    assert 'id="sec-api-keys"' in html
-    # Still shows the CTA to set up a Dispatch alongside the API Keys card.
+    assert 'id="sec-api-keys"' not in html
     assert "Set up my own Dispatch" in html
+
+
+def test_api_keys_reachable_once_dispatch_owned(auth_client, db, user):
+    _own_dispatch(db, user)
+    resp = auth_client.get("/dispatch/settings")
+    assert resp.status_code == 200
+    assert b'id="sec-api-keys"' in resp.data
 
 
 def test_settings_page_no_longer_shows_dispatch_or_api_keys(auth_client, db, user):
@@ -55,3 +62,39 @@ def test_settings_page_no_longer_shows_dispatch_or_api_keys(auth_client, db, use
     assert 'id="sec-api-keys"' not in html
     assert 'id="sec-schedule"' not in html
     assert 'id="sec-recipients"' in html
+
+
+def test_dispatches_page_shows_setup_card_without_own_dispatch(auth_client, db, user):
+    html = auth_client.get("/dispatches").data.decode()
+    assert "Set up your own Dispatch" in html
+    assert "Configure your own agentic editor" in html
+    assert 'id="own-dispatch-explainer"' in html
+
+
+def test_dispatches_page_hides_setup_card_with_own_dispatch(auth_client, db, user):
+    _own_dispatch(db, user)
+    html = auth_client.get("/dispatches").data.decode()
+    assert "Set up your own Dispatch" not in html
+
+
+def test_set_up_own_dispatch_opens_onboarding_modal_not_direct_submit(auth_client, db, user):
+    html = auth_client.get("/dispatch/settings").data.decode()
+    assert 'data-bs-target="#own-dispatch-onboarding-modal"' in html
+    assert 'id="own-dispatch-onboarding-modal"' in html
+
+
+def test_restart_onboarding_resets_flag_and_redirects(auth_client, db, user):
+    user.has_seen_onboarding = True
+    db.session.commit()
+
+    resp = auth_client.post("/settings/restart-onboarding", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/dashboard")
+    db.session.refresh(user)
+    assert user.has_seen_onboarding is False
+
+
+def test_settings_has_restart_onboarding_button(auth_client, db, user):
+    html = auth_client.get("/settings").data.decode()
+    assert "Restart onboarding" in html
+    assert 'action="/settings/restart-onboarding"' in html

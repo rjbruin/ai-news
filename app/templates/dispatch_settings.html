@@ -10,9 +10,7 @@
     <a class="nav-link px-2 py-1" href="#sec-dispatch">Dispatch</a>
     {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
-    {% endif %}
     <a class="nav-link px-2 py-1" href="#sec-api-keys">API Keys</a>
-    {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-interests">Interests</a>
     <a class="nav-link px-2 py-1" href="#sec-content">Content</a>
     <a class="nav-link px-2 py-1" href="#sec-notes">Running notes</a>
@@ -43,7 +41,8 @@
       tuned to your interests.
     </p>
     {% if not summary %}
-    <button type="submit" form="dispatch-own-form" class="btn btn-primary btn-sm">Set up my own Dispatch</button>
+    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal"
+            data-bs-target="#own-dispatch-onboarding-modal">Set up my own Dispatch</button>
     {% else %}
     <div class="mb-3">
       <label class="form-label" for="description">Description</label>
@@ -145,8 +144,6 @@
     </div>
   </div>
 
-{% endif %}
-
   <div class="card shadow-sm mb-4" id="sec-api-keys" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span>API Key</span>
@@ -194,7 +191,6 @@
     </div>
   </div>
 
-{% if summary %}
   <div class="card shadow-sm mb-4" id="sec-interests" style="scroll-margin-top:5rem">
     <div class="card-header fw-semibold">Interests</div>
     <div class="card-body">
@@ -373,6 +369,9 @@
 <form id="regen-feed-form" method="post"
       action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
 <form id="dispatch-own-form" method="post" action="{{ url_for('web.dispatch_own') }}"></form>
+{% if not summary %}
+{% include "partials/_own_dispatch_onboarding.html" %}
+{% endif %}
 <form id="dispatch-publish-form" method="post" action="{{ url_for('web.dispatch_publish') }}"></form>
 {% if summary %}
 <form id="dispatch-delete-form" method="post" action="{{ url_for('web.summary_delete', summary_id=summary.id) }}"
@@ -516,6 +515,37 @@ if (resetNewsLink) {
   }
   if (periodSelect) periodSelect.addEventListener('change', sync);
   sync();
+</script>
+{% endif %}
+{% if not summary %}
+<script>
+(function () {
+  const modalEl = document.getElementById('own-dispatch-onboarding-modal');
+  if (!modalEl) return;
+  const steps = Array.from(modalEl.querySelectorAll('.own-onboarding-step'));
+  const dots = Array.from(modalEl.querySelectorAll('.own-onboarding-dot'));
+  const backBtn = modalEl.querySelector('.own-onboarding-back');
+  const nextBtn = modalEl.querySelector('.own-onboarding-next');
+  let i = 0;
+
+  function render() {
+    steps.forEach((el, idx) => el.classList.toggle('d-none', idx !== i));
+    dots.forEach((el, idx) => el.classList.toggle('active', idx === i));
+    backBtn.classList.toggle('invisible', i === 0);
+    nextBtn.textContent = i === steps.length - 1 ? 'Set up my Dispatch' : 'Next';
+  }
+  backBtn.addEventListener('click', () => { i = Math.max(0, i - 1); render(); });
+  nextBtn.addEventListener('click', () => {
+    if (i === steps.length - 1) {
+      document.getElementById('dispatch-own-form').submit();
+      return;
+    }
+    i = Math.min(steps.length - 1, i + 1);
+    render();
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => { i = 0; render(); });
+  render();
+})();
 </script>
 {% endif %}
 {% endblock %}

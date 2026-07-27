@@ -23,13 +23,7 @@
 <div class="d-flex align-items-center gap-3 mb-3">
   <div class="flex-grow-1">
     <h1 class="h3 mb-0">
-      {{ run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
-      {% if run.status == 'failed' %}
-      <span class="pill pill-coral align-middle">Failed</span>
-      {% endif %}
-      {% if is_agentic and run.revision and run.revision > 1 %}
-      <span class="pill pill-slate align-middle">rev {{ run.revision }}</span>
-      {% endif %}
+      {{ run.headline or run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
       {% if not is_shared_view %}
       <button id="read-toggle" class="btn btn-link read-toggle ms-2 border-0 align-baseline"
               style="font-size:inherit;line-height:inherit"
@@ -38,6 +32,15 @@
       </button>
       {% endif %}
     </h1>
+    <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+      <span class="pill pill-teal">{{ run.label or run.generated_at.strftime('%Y-%m-%d') }}</span>
+      {% if run.status == 'failed' %}
+      <span class="pill pill-coral">Failed</span>
+      {% endif %}
+      {% if is_agentic and run.revision and run.revision > 1 %}
+      <span class="pill pill-slate">rev {{ run.revision }}</span>
+      {% endif %}
+    </div>
     {% if not is_shared_view and is_own %}
     <div class="d-flex align-items-center gap-2 mt-1">
       <span title="Channels">{{ channel_icons(run, show_podcast_cost=True) }}</span>
