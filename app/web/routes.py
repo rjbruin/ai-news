@@ -1334,6 +1334,7 @@ def summary_open(summary_id: int):
     if summary.user_id != current_user.id:
         abort(403)
     _, _items, run = summarize.build_summary(summary, record_run=True, mark_consumed=True)
+    summarize.autogenerate_channels(summary, run)
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
 
 
@@ -1354,6 +1355,7 @@ def summary_generate(summary_id: int):
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not generate edition: {exc}", "danger")
         return redirect(url_for("web.summaries"))
+    summarize.autogenerate_channels(summary, run)
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
 
 
@@ -1404,6 +1406,7 @@ def generate_stream(summary_id: int):
                         s, record_run=True, log_fn=handle.emit,
                         cancel_event=handle.cancel_event,
                     )
+                    summarize.autogenerate_channels(s, run)
                     handle.emit({"type": "done", "run_id": run.id})
                 except AgentCancelled:
                     handle.emit({"type": "cancelled"})
@@ -1705,6 +1708,7 @@ def edition_feedback_stream(summary_id: int, run_id: int):
                         parent_run, text, from_scratch=from_scratch, log_fn=handle.emit,
                         cancel_event=handle.cancel_event,
                     )
+                    summarize.autogenerate_channels(parent_run.summary, new_run)
                     handle.emit({"type": "done", "run_id": new_run.id})
                 except AgentCancelled:
                     handle.emit({"type": "cancelled"})

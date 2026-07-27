@@ -40,9 +40,7 @@
     <div class="d-flex gap-2 flex-shrink-0">
       <a href="{{ url_for('web.dispatches') }}" class="btn btn-sm btn-outline-primary">Browse Dispatches</a>
       {% if not own_dispatch %}
-      <form method="post" action="{{ url_for('web.dispatch_own') }}">
-        <button class="btn btn-sm btn-outline-secondary">Set up my own</button>
-      </form>
+      <a href="{{ url_for('web.your_dispatch') }}" class="btn btn-sm btn-outline-secondary">Set up my own</a>
       {% endif %}
     </div>
   </div>

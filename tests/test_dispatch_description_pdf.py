@@ -135,3 +135,45 @@ def test_autogenerate_pdf_skips_if_already_generated(app, db, user, monkeypatch)
     summarize._maybe_autogenerate_pdf(dispatch, run)
 
     assert calls == []
+
+
+# ── autogenerate_channels wired into on-demand generation routes ───────────
+# (previously only the scheduled ingest_all_due loop called the
+# podcast/PDF auto-generation hooks — a manually-triggered edition, e.g. via
+# "New custom edition", silently skipped them.)
+
+def test_summary_open_triggers_autogenerate_channels(auth_client, db, user, monkeypatch):
+    from app.services import summarize
+
+    dispatch = _own_dispatch(db, user, pdf_export_enabled=True)
+    run = _run(db, dispatch)
+
+    calls = []
+    monkeypatch.setattr(summarize, "build_summary", lambda *a, **kw: (None, [], run))
+    monkeypatch.setattr(summarize, "autogenerate_channels", lambda s, r: calls.append((s.id, r.id)))
+
+    resp = auth_client.get(f"/summaries/{dispatch.id}/open")
+    assert resp.status_code == 302
+    assert calls == [(dispatch.id, run.id)]
+
+
+def test_summary_generate_triggers_autogenerate_channels(auth_client, db, user, monkeypatch):
+    from app.services import summarize
+
+    dispatch = _own_dispatch(db, user, pdf_export_enabled=True)
+    run = _run(db, dispatch)
+
+    calls = []
+    monkeypatch.setattr(summarize, "build_summary", lambda *a, **kw: (None, [], run))
+    monkeypatch.setattr(summarize, "autogenerate_channels", lambda s, r: calls.append((s.id, r.id)))
+
+    resp = auth_client.post(f"/summaries/{dispatch.id}/generate", follow_redirects=True)
+    assert resp.status_code == 200
+    assert calls == [(dispatch.id, run.id)]
+
+
+def test_autogenerate_channels_skips_none_run(app, db):
+    from app.services import summarize
+
+    # Should not raise when a caller passes a None run (e.g. a cancelled job).
+    summarize.autogenerate_channels(None, None)

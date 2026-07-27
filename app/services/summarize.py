@@ -607,15 +607,7 @@ def cut_due_editions(force: bool = False) -> int:
                     except Exception:  # noqa: BLE001
                         logger.exception("Failed to send email for edition %d", run.id)
 
-                if run is not None:
-                    try:
-                        _maybe_autogenerate_podcast(summary, run)
-                    except Exception:  # noqa: BLE001
-                        logger.exception("Failed to start auto podcast for edition %d", run.id)
-                    try:
-                        _maybe_autogenerate_pdf(summary, run)
-                    except Exception:  # noqa: BLE001
-                        logger.exception("Failed to auto-generate PDF for edition %d", run.id)
+                autogenerate_channels(summary, run)
 
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to cut edition for summary %d", summary.id)
@@ -734,6 +726,28 @@ def _maybe_autogenerate_pdf(summary: Summary, run: SummaryRun) -> None:
             summary, run, font_scale=font_scale, base_url=request.url_root,
         )
     logger.info("Auto-generated PDF for edition %d", run.id)
+
+
+def autogenerate_channels(summary: Summary, run: SummaryRun | None) -> None:
+    """Kick off podcast/PDF auto-generation for a freshly-cut edition.
+
+    Called after every code path that cuts a new edition — the scheduled
+    ingest_all_due loop, and the on-demand routes (summary_open,
+    summary_generate, generate_stream) — so a manually-triggered edition
+    gets the same auto-generated channels as a scheduled one, instead of
+    only working for scheduled cuts. Each sub-call is independently
+    try/excepted so a failure in one never blocks the other or the caller.
+    """
+    if run is None:
+        return
+    try:
+        _maybe_autogenerate_podcast(summary, run)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to start auto podcast for edition %d", run.id)
+    try:
+        _maybe_autogenerate_pdf(summary, run)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to auto-generate PDF for edition %d", run.id)
 
 
 def _send_edition_email(summary: Summary, run: SummaryRun, html_body: str) -> None:
