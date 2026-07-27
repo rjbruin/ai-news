@@ -33,6 +33,7 @@
 <div class="card shadow-sm mb-4" id="sec-dispatch" style="scroll-margin-top:5rem">
   <div class="card-header fw-semibold">Dispatch</div>
   <div class="card-body">
+    {% if not summary %}
     <p class="text-body-secondary small">
       A Dispatch is an AI-written publication — each issue is an edition. You're
       following <strong>{{ follow_count }}</strong> Dispatch{{ 'es' if follow_count != 1 else '' }};
@@ -40,10 +41,13 @@
       Bring your own OpenRouter API key to run a <strong>custom Dispatch</strong> of your own,
       tuned to your interests.
     </p>
-    {% if not summary %}
     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal"
             data-bs-target="#own-dispatch-onboarding-modal">Set up my own Dispatch</button>
     {% else %}
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" data-bs-toggle="modal"
+            data-bs-target="#own-dispatch-onboarding-modal">Restart own Dispatch onboarding</button>
+    {% endif %}
+    {% if summary %}
     <div class="mb-3">
       <label class="form-label" for="description">Description</label>
       <textarea name="description" id="description" class="form-control" rows="2"
@@ -369,9 +373,7 @@
 <form id="regen-feed-form" method="post"
       action="{{ url_for('web.regenerate_podcast_feed_token') }}"></form>
 <form id="dispatch-own-form" method="post" action="{{ url_for('web.dispatch_own') }}"></form>
-{% if not summary %}
 {% include "partials/_own_dispatch_onboarding.html" %}
-{% endif %}
 <form id="dispatch-publish-form" method="post" action="{{ url_for('web.dispatch_publish') }}"></form>
 {% if summary %}
 <form id="dispatch-delete-form" method="post" action="{{ url_for('web.summary_delete', summary_id=summary.id) }}"
@@ -517,11 +519,11 @@ if (resetNewsLink) {
   sync();
 </script>
 {% endif %}
-{% if not summary %}
 <script>
 (function () {
   const modalEl = document.getElementById('own-dispatch-onboarding-modal');
   if (!modalEl) return;
+  const hasDispatch = {{ 'true' if summary else 'false' }};
   const steps = Array.from(modalEl.querySelectorAll('.own-onboarding-step'));
   const dots = Array.from(modalEl.querySelectorAll('.own-onboarding-dot'));
   const backBtn = modalEl.querySelector('.own-onboarding-back');
@@ -532,12 +534,20 @@ if (resetNewsLink) {
     steps.forEach((el, idx) => el.classList.toggle('d-none', idx !== i));
     dots.forEach((el, idx) => el.classList.toggle('active', idx === i));
     backBtn.classList.toggle('invisible', i === 0);
-    nextBtn.textContent = i === steps.length - 1 ? 'Set up my Dispatch' : 'Next';
+    if (i === steps.length - 1) {
+      nextBtn.textContent = hasDispatch ? 'Done' : 'Set up my Dispatch';
+    } else {
+      nextBtn.textContent = 'Next';
+    }
   }
   backBtn.addEventListener('click', () => { i = Math.max(0, i - 1); render(); });
   nextBtn.addEventListener('click', () => {
     if (i === steps.length - 1) {
-      document.getElementById('dispatch-own-form').submit();
+      if (hasDispatch) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+      } else {
+        document.getElementById('dispatch-own-form').submit();
+      }
       return;
     }
     i = Math.min(steps.length - 1, i + 1);
@@ -547,5 +557,4 @@ if (resetNewsLink) {
   render();
 })();
 </script>
-{% endif %}
 {% endblock %}

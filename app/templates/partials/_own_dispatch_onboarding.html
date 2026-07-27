@@ -1,9 +1,11 @@
 {# Onboarding for setting up a custom Dispatch — triggered by the "Set up my
-   own Dispatch" button on Your Dispatch (dispatch_settings.html), before
-   the Dispatch is actually created. Covers what the account-level
-   onboarding (_onboarding.html) deliberately skips: API keys, sources, and
-   topics. Same multi-step modal mechanic; the final step submits
-   dispatch-own-form to actually create the Dispatch. #}
+   own Dispatch" button on Your Dispatch (dispatch_settings.html) before the
+   Dispatch is actually created, or by "Restart own Dispatch onboarding"
+   once one already exists (informational replay, no side effects). Covers
+   what the account-level onboarding (_onboarding.html) deliberately skips:
+   API keys, sources, topics, and publishing. Same multi-step modal
+   mechanic; the final step submits dispatch-own-form to actually create
+   the Dispatch, only when one doesn't exist yet. #}
 <div class="modal fade" id="own-dispatch-onboarding-modal" tabindex="-1" aria-hidden="true"
      data-bs-backdrop="static" data-bs-keyboard="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -61,17 +63,35 @@
         </div>
 
         <div class="own-onboarding-step d-none">
+          <h6 class="fw-bold mb-2">Publishing your Dispatch</h6>
+          <p class="mb-0">
+            Once you're happy with it, you can publish your Dispatch from this page — that lists
+            it on the Dispatches directory so other people can follow and read it too (read-only;
+            they can't change your settings or generate editions). Unpublishing later keeps your
+            Dispatch and its editions intact, just off the directory.
+          </p>
+        </div>
+
+        <div class="own-onboarding-step d-none">
+          {% if summary %}
+          <h6 class="fw-bold mb-2">That's it</h6>
+          <p class="mb-0">
+            You already have your own Dispatch — tune it from this page any time.
+          </p>
+          {% else %}
           <h6 class="fw-bold mb-2">Ready?</h6>
           <p class="mb-0">
             Set up your Dispatch now, cloned from the System Dispatch's settings — you can tune
             everything, including adding your API key, right after.
           </p>
+          {% endif %}
         </div>
 
       </div>
       <div class="modal-footer d-flex justify-content-between align-items-center">
         <div class="d-flex gap-1">
           <span class="own-onboarding-dot active"></span>
+          <span class="own-onboarding-dot"></span>
           <span class="own-onboarding-dot"></span>
           <span class="own-onboarding-dot"></span>
           <span class="own-onboarding-dot"></span>
