@@ -123,7 +123,9 @@ def index():
     if system_dispatch:
         demo_run = (
             SummaryRun.query
-            .filter_by(summary_id=system_dispatch.id, status="ok")
+            # kind: the logged-out demo should show a typical edition; a review
+            # is a periodic retrospective and reads as something else entirely.
+            .filter_by(summary_id=system_dispatch.id, status="ok", kind="edition")
             .order_by(SummaryRun.generated_at.desc())
             .first()
         )
@@ -163,21 +165,47 @@ def dashboard():
     followed_ids = [s.id for s in followed]
     own_dispatch = current_user.own_dispatch
 
-    # Hero = the single most recent edition across everything the user follows.
-    hero_run = None
-    if followed_ids:
-        hero_run = (
+    # One card per followed Dispatch — its most recent edition — rather than a
+    # single hero across all of them, so a Dispatch is never hidden just
+    # because another one published more recently. Unread reviews ride along as
+    # extra cards: they arrive rarely and are easy to miss otherwise.
+    from ..services.coverage import edition_coverage
+
+    hero_cards = []
+    for summary in followed:
+        latest_edition = (
             SummaryRun.query
-            .filter(SummaryRun.summary_id.in_(followed_ids))
+            .filter_by(summary_id=summary.id, kind="edition")
+            .filter(SummaryRun.status == "ok")
             .order_by(SummaryRun.generated_at.desc())
             .first()
         )
-    hero_is_own = bool(hero_run and hero_run.summary.user_id == current_user.id)
+        if latest_edition is not None:
+            hero_cards.append({
+                "run": latest_edition,
+                "summary": summary,
+                "is_own": summary.user_id == current_user.id,
+                "coverage": (
+                    edition_coverage(latest_edition) if latest_edition.document else None
+                ),
+            })
 
-    hero_coverage = None
-    if hero_run and hero_run.document:
-        from ..services.coverage import edition_coverage
-        hero_coverage = edition_coverage(hero_run)
+        latest_rev = (
+            SummaryRun.query
+            .filter_by(summary_id=summary.id, kind="review")
+            .filter(SummaryRun.status == "ok")
+            .order_by(SummaryRun.generated_at.desc())
+            .first()
+        )
+        if latest_rev is not None and not latest_rev.is_read_by(current_user):
+            hero_cards.append({
+                "run": latest_rev,
+                "summary": summary,
+                "is_own": summary.user_id == current_user.id,
+                "coverage": None,
+            })
+
+    hero_cards.sort(key=lambda c: c["run"].generated_at or utcnow(), reverse=True)
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
@@ -199,9 +227,7 @@ def dashboard():
     return render_template(
         "dashboard.html",
         followed=followed,
-        hero_run=hero_run,
-        hero_is_own=hero_is_own,
-        hero_coverage=hero_coverage,
+        hero_cards=hero_cards,
         own_dispatch=own_dispatch,
         system_dispatch=system_dispatch,
         source_badges=source_badges,
@@ -556,6 +582,7 @@ def restart_onboarding():
 def your_dispatch():
     from ..agent import memory as agent_memory
     from ..agent.prompt import DEFAULT_DAILY_CONTENT_CONFIG, DEFAULT_INTERESTS
+    from ..agent.review_prompt import DEFAULT_REVIEW_CONTENT_CONFIG
 
     summary = (
         Summary.query
@@ -583,8 +610,15 @@ def your_dispatch():
             summary.params = _collect_params(types[summary.type_key])
             summary.description = (request.form.get("description") or "").strip() or None
             summary.pdf_export_enabled = bool(request.form.get("pdf_export_enabled"))
+            review_period = (request.form.get("review_period") or "").strip()
+            summary.review_period = (
+                review_period if review_period in summarize.REVIEW_PERIODS else None
+            )
             db.session.commit()
-            for kind in ("interests", "content_config", "history"):
+            # review_content_config has no interests counterpart by design — a
+            # review reads editions, which already reflect the reader's
+            # interests (see docs/review-editions-spec.md).
+            for kind in ("interests", "content_config", "history", "review_content_config"):
                 if f"mem_{kind}" in request.form:
                     agent_memory.write(
                         current_user, summary, kind,
@@ -605,6 +639,9 @@ def your_dispatch():
             "content_config": agent_memory.ensure_default(
                 current_user, summary, "content_config", DEFAULT_DAILY_CONTENT_CONFIG),
             "history": agent_memory.read(current_user, summary, "history"),
+            "review_content_config": agent_memory.ensure_default(
+                current_user, summary, "review_content_config",
+                DEFAULT_REVIEW_CONTENT_CONFIG),
         }
         headlines = agent_memory.recent_headlines(current_user, summary, days=retention)
 
@@ -630,6 +667,10 @@ def your_dispatch():
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
         podcast_feed_url=podcast_feed_url,
+        review_periods=summarize.REVIEW_PERIODS,
+        review_period_labels=summarize.REVIEW_PERIOD_LABELS,
+        default_review_content_config=DEFAULT_REVIEW_CONTENT_CONFIG,
+        latest_review=summarize.latest_review(summary) if summary else None,
     )
 
 
@@ -1355,6 +1396,36 @@ def summary_generate(summary_id: int):
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not generate edition: {exc}", "danger")
         return redirect(url_for("web.summaries"))
+    summarize.autogenerate_channels(summary, run)
+    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
+
+
+@bp.route("/summaries/<int:summary_id>/review/generate", methods=["POST"])
+@login_required
+def review_generate(summary_id: int):
+    """Cut a review edition on demand, for the most recent completed period.
+
+    Synchronous like summary_generate — a review reads a digest rather than a
+    full scope, so it is not meaningfully slower than a normal edition.
+    """
+    from ..agent.creds import MissingCredentials
+
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if summary.user_id != current_user.id:
+        abort(403)
+    if not summary.review_period:
+        flash("Turn on a review schedule first.", "warning")
+        return redirect(url_for("web.your_dispatch") + "#sec-review")
+
+    start, end = summarize.resolve_review_range(summary)
+    try:
+        run = summarize.build_review(summary, start, end)
+    except MissingCredentials as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("web.your_dispatch") + "#sec-api-keys")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not generate review: {exc}", "danger")
+        return redirect(url_for("web.your_dispatch") + "#sec-review")
     summarize.autogenerate_channels(summary, run)
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
 

@@ -672,6 +672,13 @@ class Summary(db.Model):
     # PDF. Off by default — owner opts in per Dispatch.
     pdf_export_enabled = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
 
+    # Review editions: a slower retrospective cadence over this Dispatch's own
+    # editions (see docs/review-editions-spec.md). NULL = off; otherwise one of
+    # week|month|quarter|year. Reviews are SummaryRuns with kind="review" on
+    # this same Summary, so they inherit its followers, publishing state, email
+    # subscribers and podcast feed rather than forking them.
+    review_period = db.Column(db.String(20), nullable=True)
+
     user = db.relationship(
         "User", back_populates="summaries", foreign_keys=[user_id]
     )
@@ -704,6 +711,14 @@ class SummaryRun(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     summary_id = db.Column(db.Integer, db.ForeignKey("summaries.id"), nullable=False)
+    # "edition" (the normal cadence) or "review" (the slower retrospective over
+    # a period's editions — see docs/review-editions-spec.md). Anything asking
+    # for "the latest run" as a proxy for "the latest edition" MUST filter on
+    # this: an unfiltered lookup lets a review convince the scheduler that the
+    # daily period is already cut, which silently stops daily editions.
+    kind = db.Column(
+        db.String(16), default="edition", nullable=False, server_default="edition"
+    )
     generated_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     range_start = db.Column(db.DateTime, nullable=True)
     range_end = db.Column(db.DateTime, nullable=True)
@@ -757,6 +772,16 @@ class SummaryRun(db.Model):
         backref=db.backref("parent", remote_side=[id]),
         lazy="dynamic",
     )
+
+    __table_args__ = (
+        # Every "latest run for this Dispatch" lookup is now also filtered by
+        # kind — see the column's note.
+        db.Index("ix_summary_runs_summary_kind", "summary_id", "kind"),
+    )
+
+    @property
+    def is_review(self) -> bool:
+        return self.kind == "review"
 
     def read_at_for(self, user) -> "datetime | None":
         row = EditionRead.query.filter_by(user_id=user.id, run_id=self.id).first()

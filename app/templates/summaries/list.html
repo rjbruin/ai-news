@@ -34,10 +34,16 @@
   .calendar-day.is-today { outline: 2px solid var(--brand); outline-offset: -2px; }
   .calendar-day.is-selected.has-edition { background: var(--ag-blue); color: #fff; }
   .calendar-day.is-selected.has-failed-only { background: var(--ag-coral); color: #fff; }
+  /* A day can hold both an edition and a review, so dots are a row rather
+     than a single marker — one per kind present. */
+  .calendar-dots {
+    display: flex; justify-content: center; gap: 2px; margin: 3px auto 0;
+  }
   .calendar-dot {
     display: block; width: 5px; height: 5px; border-radius: 50%;
-    background: var(--ag-blue); margin: 3px auto 0;
+    background: var(--ag-blue);
   }
+  .calendar-dot--review { background: var(--ag-purple); }
   .has-failed-only .calendar-dot { background: var(--ag-coral); }
   .calendar-day.is-selected .calendar-dot { background: #fff; }
 </style>
@@ -95,7 +101,13 @@
                 <td class="calendar-day {{ 'has-edition' if day in ok_days }} {{ 'has-failed-only' if day in failed_only_days }} {{ 'is-today' if day == today }}"
                     {% if entries %}data-day-panel="day-{{ day.isoformat() }}" role="button" tabindex="0"{% endif %}>
                   {{ day.day }}
-                  {% if entries %}<span class="calendar-dot"></span>{% endif %}
+                  {% if entries %}
+                  {% set kinds = entries | map(attribute='0') | map(attribute='kind') | list %}
+                  <span class="calendar-dots">
+                    {% if 'edition' in kinds %}<span class="calendar-dot"></span>{% endif %}
+                    {% if 'review' in kinds %}<span class="calendar-dot calendar-dot--review"></span>{% endif %}
+                  </span>
+                  {% endif %}
                 </td>
               {% else %}
                 <td class="calendar-day calendar-day--empty">{{ day.day }}</td>

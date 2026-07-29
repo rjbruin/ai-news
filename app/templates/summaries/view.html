@@ -33,6 +33,9 @@
       {% endif %}
     </h1>
     <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+      {% if run.is_review %}
+      <span class="pill pill-purple" title="A retrospective over this Dispatch's editions">Review edition</span>
+      {% endif %}
       <span class="pill pill-teal">{{ run.label or run.generated_at.strftime('%Y-%m-%d') }}</span>
       {% if run.status == 'failed' %}
       <span class="pill pill-coral">Failed</span>

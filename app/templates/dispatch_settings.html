@@ -10,6 +10,7 @@
     <a class="nav-link px-2 py-1" href="#sec-dispatch">Dispatch</a>
     {% if summary %}
     <a class="nav-link px-2 py-1" href="#sec-schedule">Schedule</a>
+    <a class="nav-link px-2 py-1" href="#sec-review">Review editions</a>
     <a class="nav-link px-2 py-1" href="#sec-api-keys">API Keys</a>
     <a class="nav-link px-2 py-1" href="#sec-interests">Interests</a>
     <a class="nav-link px-2 py-1" href="#sec-content">Content</a>
@@ -158,6 +159,59 @@
         </div>
         {% endif %}
         {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4" id="sec-review" style="scroll-margin-top:5rem">
+    <div class="card-header fw-semibold">Review editions</div>
+    <div class="card-body">
+      <p class="text-body-secondary small">
+        A review looks back over a period's editions — not the raw news — and writes
+        a retrospective on what mattered and how the stories developed. It reads
+        your published editions, so it inherits the interests they already reflect;
+        there is no separate interests file for reviews.
+      </p>
+
+      <div class="mb-3" style="max-width: 260px">
+        <label class="form-label" for="review_period">Schedule</label>
+        <select name="review_period" id="review_period" class="form-select">
+          <option value="" {{ 'selected' if not summary.review_period else '' }}>Off</option>
+          {% for p in review_periods %}
+          <option value="{{ p }}" {{ 'selected' if summary.review_period == p else '' }}>
+            {{ review_period_labels[p] }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Cut once the period has completed — a monthly review covers a whole calendar month.</div>
+      </div>
+
+      <label class="form-label" for="mem_review_content_config">Review content configuration</label>
+      <p class="form-text mb-2">
+        How many items a review should carry and how it should be laid out.
+      </p>
+      <textarea name="mem_review_content_config" id="mem_review_content_config"
+                class="form-control font-monospace" rows="14"
+                spellcheck="false">{{ files.review_content_config }}</textarea>
+      <div class="form-text mt-2">
+        <a href="#" id="reset-review-content-config">Reset to default</a>
+      </div>
+
+      {% if summary.review_period %}
+      <div class="border-top pt-3 mt-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="small text-body-secondary">
+          {% if latest_review %}
+          Last review: <strong>{{ latest_review.label }}</strong>
+          ({{ latest_review.generated_at.strftime('%Y-%m-%d') }}).
+          {% else %}
+          No review generated yet.
+          {% endif %}
+        </div>
+        <button type="submit" form="review-generate-form" class="btn btn-outline-primary btn-sm text-nowrap"
+                onclick="return confirm('Generate a review edition now? This uses your API key.')">
+          Generate review now
+        </button>
+      </div>
       {% endif %}
     </div>
   </div>
@@ -392,6 +446,8 @@
 {% if summary %}
 <form id="dispatch-delete-form" method="post" action="{{ url_for('web.summary_delete', summary_id=summary.id) }}"
       onsubmit="return confirm('This permanently deletes your Dispatch and every edition. This cannot be undone.')"></form>
+<form id="review-generate-form" method="post"
+      action="{{ url_for('web.review_generate', summary_id=summary.id) }}"></form>
 {% endif %}
 <form id="api-key-save-form" method="post" action="{{ url_for('web.api_key_save') }}"></form>
 <form id="api-key-remove-form" method="post" action="{{ url_for('web.api_key_remove') }}"></form>
@@ -506,6 +562,15 @@ if (copyFeedBtn) {
       copyFeedBtn.textContent = 'Copied';
       setTimeout(function() { copyFeedBtn.textContent = 'Copy'; }, 1500);
     });
+  });
+}
+
+const DEFAULT_REVIEW_CONTENT_CONFIG = {{ default_review_content_config | tojson }};
+const resetReviewLink = document.getElementById('reset-review-content-config');
+if (resetReviewLink) {
+  resetReviewLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    document.getElementById('mem_review_content_config').value = DEFAULT_REVIEW_CONTENT_CONFIG;
   });
 }
 

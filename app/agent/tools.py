@@ -79,7 +79,9 @@ def t_get_item(session: AgentSession, item_id: int) -> dict:
 
 def t_list_past_editions(session: AgentSession, limit: int = 10, offset: int = 0) -> dict:
     q = (
-        SummaryRun.query.filter_by(summary_id=session.summary.id)
+        # kind: the daily editor's continuity checks are against past editions;
+        # a review is a different artefact and would just confuse the picture.
+        SummaryRun.query.filter_by(summary_id=session.summary.id, kind="edition")
         .filter(SummaryRun.document.isnot(None))
         .order_by(SummaryRun.generated_at.desc())
         .offset(max(0, offset))
@@ -123,6 +125,44 @@ def t_read_headlines(session: AgentSession, days: int = 7) -> dict:
             for r in rows
         ]
     }
+
+
+def t_list_editions_in_scope(session: AgentSession) -> dict:
+    """The review editor's view of the period: one skeleton per edition.
+
+    Deliberately not the full documents — see services/review_digest.py.
+    """
+    from ..services.review_digest import digest_for_range
+
+    digests = digest_for_range(
+        session.summary, session.range_start, session.range_end,
+    )
+    return {"count": len(digests), "editions": digests}
+
+
+def t_get_edition_item(session: AgentSession, run_id: int, block_id: str) -> dict:
+    """Full text of ONE featured story from a past edition.
+
+    This is the review editor's only route to item bodies; there is no
+    equivalent of get_edition in review mode, because returning whole documents
+    would defeat the digest's entire purpose.
+    """
+    from ..services.review_digest import find_item_block, item_block_payload
+
+    run = SummaryRun.query.filter_by(
+        id=run_id, summary_id=session.summary.id, kind="edition",
+    ).first()
+    if run is None:
+        return {"error": f"No edition with run_id {run_id} for this Dispatch."}
+    block = find_item_block(run, block_id)
+    if block is None:
+        return {"error": f"No featured item {block_id!r} in edition {run_id}."}
+    payload = item_block_payload(block)
+    payload["run_id"] = run.id
+    payload["edition_date"] = (
+        run.generated_at.date().isoformat() if run.generated_at else None
+    )
+    return payload
 
 
 def t_read_coverage(session: AgentSession, days: int = 14) -> dict:
@@ -295,6 +335,8 @@ _HANDLERS = {
     "get_edition": t_get_edition,
     "read_headlines": t_read_headlines,
     "read_coverage": t_read_coverage,
+    "list_editions_in_scope": t_list_editions_in_scope,
+    "get_edition_item": t_get_edition_item,
     "get_document": t_get_document,
     "set_document": t_set_document,
     "add_block": t_add_block,
@@ -443,4 +485,47 @@ TOOL_SPECS = [
         "parameters": {"type": "object", "properties": {
             "notes": {"type": "string"}}, "required": ["notes"]},
     }},
+]
+
+
+# ── Review-mode tool set ────────────────────────────────────────────────────
+#
+# A review edition reads editions rather than news items, so it swaps the data
+# tools entirely. get_edition is deliberately absent: it returns whole stored
+# documents, which would defeat the digest that keeps a whole period in view.
+# write_headlines is absent too — the next review receives this one's full
+# document, so per-edition notes would add nothing.
+
+_REVIEW_DATA_TOOLS = [
+    {"type": "function", "function": {
+        "name": "list_editions_in_scope",
+        "description": (
+            "List every edition in the period under review: its headline, "
+            "subheader, and the headline of each featured story with the "
+            "block_id you need to open it."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_edition_item",
+        "description": (
+            "Full text of ONE featured story from a past edition — headline, "
+            "subheader, body and sources. Call this for every story you intend "
+            "to write about; a headline alone is not enough to describe an arc."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "run_id": {"type": "integer"},
+            "block_id": {"type": "string"}},
+            "required": ["run_id", "block_id"]},
+    }},
+]
+
+_REVIEW_EXCLUDED = {
+    "list_scope_items", "get_item", "list_past_editions", "get_edition",
+    "read_headlines", "read_coverage", "write_headlines", "append_history",
+}
+
+REVIEW_TOOL_SPECS = _REVIEW_DATA_TOOLS + [
+    spec for spec in TOOL_SPECS
+    if spec["function"]["name"] not in _REVIEW_EXCLUDED
 ]
