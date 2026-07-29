@@ -11,15 +11,17 @@
   </div>
 </form>
 
-{% if hero_run %}
+{% if hero_cards %}
 <div class="d-flex justify-content-between align-items-start mb-2">
   <span class="text-body-secondary small fw-semibold d-flex align-items-center gap-2">
     <span style="width:8px;height:8px;border-radius:2px;background:var(--ag-teal);display:inline-block"></span>
-    Latest across your Dispatches
+    Latest from your Dispatches
   </span>
   <a href="{{ url_for('web.summaries') }}" class="small">All editions</a>
 </div>
-{{ edition_hero_card(hero_run, hero_run.summary, is_own=hero_is_own, coverage=hero_coverage) }}
+{% for card in hero_cards %}
+{{ edition_hero_card(card.run, card.summary, is_own=card.is_own, coverage=card.coverage) }}
+{% endfor %}
 {% else %}
 <div class="card shadow-sm mb-4">
   <div class="card-body text-center py-5">

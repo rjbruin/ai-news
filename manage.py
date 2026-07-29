@@ -7,6 +7,7 @@ Commands:
   rerender-editions Re-render stored HTML for all agentic editions from their block documents.
   backfill-coverage Persist coverage records for editions generated before they existed.
   collapse-dupes    Merge pre-existing duplicate news items (same title, forked by URL).
+  generate-review   Cut a review edition, optionally over an explicit date range.
   run               Run the dev server.
 """
 from __future__ import annotations
@@ -227,6 +228,61 @@ def collapse_dupes(app, apply=False):
             print("(dry run — pass --apply to write)")
 
 
+def generate_review(app, argv):
+    """Cut a review edition for one Dispatch.
+
+    With no dates, covers the most recent *completed* review period. An
+    explicit range is needed to review a period that has not ended yet — e.g.
+    reviewing July while July is still running.
+
+        python manage.py generate-review 3
+        python manage.py generate-review 3 --start 2026-07-01 --end 2026-08-01
+
+    Spends real money on the Dispatch owner's OpenRouter key.
+    """
+    from datetime import datetime, timezone
+
+    from app.models import Summary
+    from app.services import summarize
+
+    if not argv or not argv[0].isdigit():
+        print("Usage: generate-review <summary_id> [--start YYYY-MM-DD --end YYYY-MM-DD]")
+        sys.exit(1)
+    summary_id = int(argv[0])
+
+    def _opt(name):
+        if name in argv:
+            return datetime.fromisoformat(argv[argv.index(name) + 1]).replace(
+                tzinfo=timezone.utc
+            )
+        return None
+
+    start, end = _opt("--start"), _opt("--end")
+
+    with app.app_context():
+        summary = db.session.get(Summary, summary_id)
+        if summary is None:
+            print(f"No Dispatch with id {summary_id}.")
+            sys.exit(1)
+        if start is None or end is None:
+            start, end = summarize.resolve_review_range(summary)
+            if start is None:
+                print("Reviews are off for this Dispatch; pass --start/--end to override.")
+                sys.exit(1)
+
+        from app.services.review_digest import digest_for_range
+        n = len(digest_for_range(summary, start, end))
+        print(f"Reviewing {n} edition(s) of {summary.name!r}: "
+              f"{start.date()} → {end.date()}")
+        if not n:
+            print("Nothing to review.")
+            sys.exit(1)
+
+        run = summarize.build_review(summary, start, end)
+        print(f"Cut review run {run.id}: {run.label!r} — {run.headline!r}")
+        print(f"  cost: ${run.agent_cost or 0:.4f}")
+
+
 def main():
     app = create_app()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
@@ -242,6 +298,8 @@ def main():
         backfill_coverage(app)
     elif cmd == "collapse-dupes":
         collapse_dupes(app, apply="--apply" in sys.argv)
+    elif cmd == "generate-review":
+        generate_review(app, sys.argv[2:])
     elif cmd == "run":
         app.run(host="0.0.0.0", port=app.config["PORT"], debug=True)
     else:

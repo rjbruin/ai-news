@@ -317,3 +317,124 @@ def test_get_edition_item_returns_one_story(app, db, user):
 
     assert "error" in t_get_edition_item(session, run.id, "nope")
     assert "error" in t_get_edition_item(session, 999999, "b_0")
+
+
+# ── interface ───────────────────────────────────────────────────────────────
+
+def test_settings_page_offers_every_review_period(auth_client, db, user):
+    _dispatch(db, user)
+    html = auth_client.get("/dispatch/settings").data.decode()
+    assert 'id="sec-review"' in html
+    for period in summarize.REVIEW_PERIODS:
+        assert f'value="{period}"' in html
+    assert "mem_review_content_config" in html
+    # Reviews inherit interests from the editions; no separate interests file.
+    assert "review_interests" not in html
+
+
+def test_settings_saves_review_period_and_config(auth_client, db, user):
+    from app.agent import memory as agent_memory
+
+    dispatch = _dispatch(db, user)
+    auth_client.post("/dispatch/settings", data={
+        "period": "day",
+        "review_period": "month",
+        "mem_review_content_config": "# My review rules",
+    })
+    db.session.refresh(dispatch)
+    assert dispatch.review_period == "month"
+    assert agent_memory.read(user, dispatch, "review_content_config") == "# My review rules"
+
+
+def test_settings_rejects_an_unknown_review_period(auth_client, db, user):
+    dispatch = _dispatch(db, user, review_period="month")
+    auth_client.post("/dispatch/settings", data={"period": "day", "review_period": "fortnight"})
+    db.session.refresh(dispatch)
+    assert dispatch.review_period is None
+
+
+def test_generate_review_requires_a_schedule(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    resp = auth_client.post(
+        f"/summaries/{dispatch.id}/review/generate", follow_redirects=True,
+    )
+    assert b"Turn on a review schedule first." in resp.data
+
+
+def test_generate_review_is_owner_only(auth_client, db, user, admin):
+    dispatch = _dispatch(db, admin, review_period="month")
+    resp = auth_client.post(f"/summaries/{dispatch.id}/review/generate")
+    assert resp.status_code == 403
+
+
+def test_review_marked_on_the_edition_page(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    review = _run(db, dispatch, kind="review", days_ago=1, content="<p>x</p>")
+
+    html = auth_client.get(f"/summaries/{dispatch.id}/editions/{review.id}").data.decode()
+    assert "Review edition" in html
+    assert "pill-purple" in html
+
+
+def test_edition_page_not_marked_as_review(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    run = _run(db, dispatch, days_ago=1, content="<p>x</p>")
+
+    html = auth_client.get(f"/summaries/{dispatch.id}/editions/{run.id}").data.decode()
+    assert "Review edition" not in html
+
+
+def test_calendar_shows_a_dot_per_kind(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    _run(db, dispatch, kind="edition", days_ago=0)
+    _run(db, dispatch, kind="review", days_ago=0)
+
+    html = auth_client.get("/summaries").data.decode()
+    assert "calendar-dot--review" in html
+    assert html.count("calendar-dot") >= 2
+
+
+def test_frontpage_shows_latest_edition_of_every_followed_dispatch(
+    auth_client, db, user, admin,
+):
+    mine = _dispatch(db, user)
+    theirs = _dispatch(db, admin)
+    theirs.name = "Theirs"
+    db.session.commit()
+    user.follow(mine)
+    user.follow(theirs)
+    db.session.commit()
+
+    _run(db, mine, days_ago=5, headline="Mine latest")
+    _run(db, theirs, days_ago=1, headline="Theirs latest")
+
+    html = auth_client.get("/dashboard").data.decode()
+    # The older Dispatch is no longer hidden by the newer one.
+    assert "Mine latest" in html
+    assert "Theirs latest" in html
+
+
+def test_frontpage_adds_an_unread_review_as_an_extra_card(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    _run(db, dispatch, kind="edition", days_ago=2, headline="The edition")
+    review = _run(db, dispatch, kind="review", days_ago=1, headline="The review")
+
+    html = auth_client.get("/dashboard").data.decode()
+    assert "The edition" in html
+    assert "The review" in html
+
+    # Once read it drops off, so it does not linger forever.
+    from app.models import EditionRead
+    db.session.add(EditionRead(user_id=user.id, run_id=review.id))
+    db.session.commit()
+    html = auth_client.get("/dashboard").data.decode()
+    assert "The edition" in html
+    assert "The review" not in html
