@@ -123,7 +123,9 @@ def index():
     if system_dispatch:
         demo_run = (
             SummaryRun.query
-            .filter_by(summary_id=system_dispatch.id, status="ok")
+            # kind: the logged-out demo should show a typical edition; a review
+            # is a periodic retrospective and reads as something else entirely.
+            .filter_by(summary_id=system_dispatch.id, status="ok", kind="edition")
             .order_by(SummaryRun.generated_at.desc())
             .first()
         )

@@ -119,6 +119,9 @@ def run_agent(
     log_fn=None,
     cancel_event=None,
     max_steps: int | None = None,
+    system_prompt: str | None = None,
+    opening_message: str | None = None,
+    tool_specs: list | None = None,
 ) -> list[dict]:
     """Run the agent loop and return the final block document.
 
@@ -145,10 +148,23 @@ def run_agent(
 
     emit({"type": "start", "items": len(session.items), "model": model})
 
+    # system_prompt/opening_message/tool_specs let a caller run a different
+    # editor over the same loop — review editions read past editions rather
+    # than news items (see agent/review_prompt.py). Defaults preserve the
+    # daily editor exactly.
+    specs = tool_specs if tool_specs is not None else tools.TOOL_SPECS
     messages = [
-        {"role": "system", "content": _cache_block(compose_system_prompt(session.user, session.summary))},
-        {"role": "user", "content": _opening_user_message(
-            session, extra_instruction, first_time=(seed_document is None),
+        {"role": "system", "content": _cache_block(
+            system_prompt
+            if system_prompt is not None
+            else compose_system_prompt(session.user, session.summary)
+        )},
+        {"role": "user", "content": (
+            opening_message
+            if opening_message is not None
+            else _opening_user_message(
+                session, extra_instruction, first_time=(seed_document is None),
+            )
         )},
     ]
 
@@ -160,7 +176,7 @@ def run_agent(
         emit({"type": "llm_call", "step": step + 1})
         _mark_cache_breakpoint(messages)
         message = openrouter.chat(
-            messages, tools=tools.TOOL_SPECS, api_key=api_key, model=model
+            messages, tools=specs, api_key=api_key, model=model
         )
         usage = message.get("_usage") or {}
         step_tokens = int(usage.get("total_tokens") or 0)

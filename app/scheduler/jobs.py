@@ -48,6 +48,15 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
             except Exception:  # noqa: BLE001
                 logger.exception("Edition cutting failed")
 
+            # Separate try: a failure cutting editions must not stop reviews,
+            # and vice versa — they run on independent cadences.
+            try:
+                n = summarize.cut_due_reviews()
+                if n:
+                    logger.info("Cut %d review edition(s)", n)
+            except Exception:  # noqa: BLE001
+                logger.exception("Review cutting failed")
+
     def _agent_maintenance_job():
         with app.app_context():
             from ..agent import memory as agent_memory

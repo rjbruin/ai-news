@@ -82,7 +82,10 @@ def resolve_range(summary: Summary) -> tuple[datetime | None, datetime]:
     # failure, often nothing).
     latest_run = (
         SummaryRun.query
-        .filter_by(summary_id=summary.id)
+        # kind: a review covers a whole month/quarter, so its range_end sits far
+        # in the future relative to a daily cadence. Left unfiltered it becomes
+        # this window's start and the next daily edition scopes to nothing.
+        .filter_by(summary_id=summary.id, kind="edition")
         .filter(SummaryRun.status != "failed")
         .order_by(SummaryRun.range_end.desc())
         .first()
@@ -500,6 +503,236 @@ def revise_edition(
     return run
 
 
+# ─────────────────────────── review editions ──────────────────────────────
+#
+# A review looks back over a period's editions rather than over news items.
+# See docs/review-editions-spec.md.
+
+REVIEW_PERIODS = ("week", "month", "quarter", "year")
+
+REVIEW_PERIOD_LABELS = {
+    "week": "Weekly",
+    "month": "Monthly",
+    "quarter": "Quarterly",
+    "year": "Yearly",
+}
+
+
+def _period_floor(when: datetime, period: str) -> datetime:
+    """The start of the calendar period containing ``when``."""
+    base = when.replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == "week":
+        return base - timedelta(days=base.weekday())
+    if period == "month":
+        return base.replace(day=1)
+    if period == "quarter":
+        return base.replace(month=((base.month - 1) // 3) * 3 + 1, day=1)
+    if period == "year":
+        return base.replace(month=1, day=1)
+    raise ValueError(f"Unknown review period: {period!r}")
+
+
+def _period_next(start: datetime, period: str) -> datetime:
+    """The start of the period following the one beginning at ``start``."""
+    if period == "week":
+        return start + timedelta(weeks=1)
+    if period == "month":
+        return (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    if period == "quarter":
+        month = start.month + 3
+        year = start.year + (month - 1) // 12
+        return start.replace(year=year, month=(month - 1) % 12 + 1, day=1)
+    if period == "year":
+        return start.replace(year=start.year + 1)
+    raise ValueError(f"Unknown review period: {period!r}")
+
+
+def resolve_review_range(summary: Summary, now: datetime | None = None):
+    """The (start, end) of the most recent *completed* review period.
+
+    Aligned to calendar boundaries, so a monthly review covers 1 July → 1
+    August rather than a rolling 30 days — "the July review" should mean July.
+    Returns (None, None) when reviews are off for this Dispatch.
+    """
+    period = summary.review_period
+    if period not in REVIEW_PERIODS:
+        return None, None
+    now = now or utcnow()
+    current_start = _period_floor(now, period)
+    return _period_floor(current_start - timedelta(days=1), period), current_start
+
+
+def _review_label(period: str, start: datetime, end: datetime) -> str:
+    if period == "week":
+        return f"Week of {start:%B %-d}"
+    if period == "month":
+        return f"{start:%B %Y} review"
+    if period == "quarter":
+        return f"Q{(start.month - 1) // 3 + 1} {start.year} review"
+    return f"{start.year} review"
+
+
+def latest_review(summary: Summary) -> SummaryRun | None:
+    return (
+        SummaryRun.query
+        .filter_by(summary_id=summary.id, kind="review")
+        .filter(SummaryRun.status != "failed")
+        .order_by(SummaryRun.range_end.desc())
+        .first()
+    )
+
+
+def build_review(
+    summary: Summary, start: datetime, end: datetime, *,
+    record_run: bool = True, log_fn=None, cancel_event=None,
+) -> SummaryRun | None:
+    """Run the review editor over ``summary``'s editions in [start, end).
+
+    Mirrors build_summary's persistence, but the agent reads a digest of past
+    editions instead of news items, and the resulting run is marked
+    kind="review" so nothing treats it as the latest regular edition.
+    """
+    from ..agent import creds, runner
+    from ..agent.context import AgentSession
+    from ..agent.review_prompt import compose_review_system_prompt, review_opening_message
+    from ..agent.tools import REVIEW_TOOL_SPECS
+    from ..summaries import registry as _registry
+    from .review_digest import digest_for_range, render_digest
+
+    plugin = _registry.create(summary.type_key)
+    if plugin is None or not getattr(plugin, "is_agentic", False):
+        raise ValueError("Only agentic Dispatches support review editions.")
+
+    digests = digest_for_range(summary, start, end)
+    if not digests:
+        raise ValueError(
+            "No editions in this period, so there is nothing to review."
+        )
+
+    api_key, model = creds.resolve(summary.user, summary=summary)
+    previous = latest_review(summary)
+
+    session = AgentSession(
+        user=summary.user, summary=summary, items=[],
+        range_start=start, range_end=end,
+    )
+    agent_log: list[dict] = []
+
+    def _collect(event: dict) -> None:
+        agent_log.append(event)
+        if log_fn is not None:
+            log_fn(event)
+
+    from ..agent.creds import MissingCredentials
+    from ..agent.runner import AgentCancelled
+
+    try:
+        document = runner.run_agent(
+            session, api_key=api_key, model=model, log_fn=_collect,
+            cancel_event=cancel_event,
+            max_steps=int((summary.params or {}).get("max_steps") or 0) or None,
+            system_prompt=compose_review_system_prompt(summary.user, summary, previous),
+            opening_message=review_opening_message(
+                summary, render_digest(digests), len(digests), start, end,
+            ),
+            tool_specs=REVIEW_TOOL_SPECS,
+        )
+    except (AgentCancelled, MissingCredentials):
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if record_run:
+            run = _persist_failed_run(
+                summary, start, end, len(digests), agent_log, error_message=str(exc),
+            )
+            run.kind = "review"
+            db.session.commit()
+        raise
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise AgentCancelled("Generation cancelled.")
+
+    artifact = plugin.build(
+        [], {**(summary.params or {}), "_document": document},
+        range_start=start, range_end=end,
+    )
+    if not record_run:
+        return None
+
+    run = SummaryRun(
+        summary_id=summary.id,
+        kind="review",
+        range_start=start.replace(tzinfo=None),
+        range_end=end.replace(tzinfo=None),
+        item_count=len(digests),
+        label=_review_label(summary.review_period or "month", start, end),
+        headline=_extract_headline(document),
+        content=artifact.html,
+        document=document,
+        agent_log=agent_log or None,
+        agent_cost=session.cost_used,
+        status="ok",
+    )
+    db.session.add(run)
+    db.session.commit()
+    logger.info(
+        "Cut review edition %d for summary %d over %d edition(s)",
+        run.id, summary.id, len(digests),
+    )
+    return run
+
+
+def cut_due_reviews(force: bool = False) -> int:
+    """Cut review editions for every Dispatch whose review period has elapsed."""
+    cut = 0
+    with current_app.test_request_context(base_url=current_app.config.get("PUBLIC_URL", "")):
+        candidates = (
+            Summary.query
+            .filter(Summary.enabled.is_(True))
+            .filter(Summary.review_period.isnot(None))
+            .all()
+        )
+        for summary in candidates:
+            try:
+                start, end = resolve_review_range(summary)
+                if start is None:
+                    continue
+                latest = latest_review(summary)
+                end_naive = end.replace(tzinfo=None)
+                if latest and latest.range_end and latest.range_end >= end_naive:
+                    continue  # this period's review already exists
+
+                failed = (
+                    SummaryRun.query
+                    .filter_by(summary_id=summary.id, kind="review", status="failed")
+                    .filter(SummaryRun.range_end == end_naive)
+                    .order_by(SummaryRun.generated_at.desc())
+                    .all()
+                )
+                if not force and failed:
+                    if len(failed) >= MAX_FAILED_ATTEMPTS_PER_PERIOD:
+                        continue
+                    if utcnow() - _aware(failed[0].generated_at) < FAILURE_BACKOFF:
+                        continue
+
+                run = build_review(summary, start, end)
+                if run is not None:
+                    cut += 1
+                    if summary.email_subscriber_count > 0:
+                        try:
+                            _send_edition_email(summary, run, run.content or "")
+                        except Exception:  # noqa: BLE001
+                            logger.exception("Failed to email review %d", run.id)
+                    autogenerate_channels(summary, run)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed to cut review for summary %d", summary.id)
+                Alert.push(
+                    user_id=summary.user_id,
+                    key=f"review:{summary.id}",
+                    message=f'Review edition failed for "{summary.name}": {exc}',
+                )
+    return cut
+
+
 def revision_chain(run: SummaryRun) -> list[SummaryRun]:
     """Return all revisions of the edition ``run`` belongs to, oldest first.
 
@@ -532,8 +765,14 @@ def revision_chain(run: SummaryRun) -> list[SummaryRun]:
     return chain
 
 
-def edition_heads(summary: Summary):
-    """Return the latest revision of each edition chain for a summary, newest first."""
+def edition_heads(summary: Summary, kind: str | None = None):
+    """Return the latest revision of each edition chain for a summary, newest first.
+
+    ``kind`` filters to one run kind ("edition" or "review"); the default of
+    None returns both, which is what surfaces showing everything a Dispatch has
+    published (the calendar, the merged feed) want. Callers that mean
+    specifically "the regular editions" must pass kind="edition".
+    """
     child_ids = [
         r.parent_run_id
         for r in SummaryRun.query.filter_by(summary_id=summary.id)
@@ -541,6 +780,8 @@ def edition_heads(summary: Summary):
         .all()
     ]
     q = SummaryRun.query.filter_by(summary_id=summary.id)
+    if kind is not None:
+        q = q.filter_by(kind=kind)
     if child_ids:
         q = q.filter(~SummaryRun.id.in_(child_ids))
     return q.order_by(SummaryRun.generated_at.desc()).all()
@@ -592,7 +833,10 @@ def cut_due_editions(force: bool = False) -> int:
                 # skipping the scheduled edition forever.
                 latest = (
                     SummaryRun.query
-                    .filter_by(summary_id=summary.id)
+                    # kind: without this a review's far-future range_end reads
+                    # as "this period is already cut" and daily editions stop
+                    # being produced, silently.
+                    .filter_by(summary_id=summary.id, kind="edition")
                     .filter(SummaryRun.status != "failed")
                     .order_by(SummaryRun.range_end.desc())
                     .first()
@@ -614,7 +858,7 @@ def cut_due_editions(force: bool = False) -> int:
                 if not force:
                     failed_this_period = (
                         SummaryRun.query
-                        .filter_by(summary_id=summary.id, status="failed")
+                        .filter_by(summary_id=summary.id, status="failed", kind="edition")
                         .filter(SummaryRun.range_end == expected_naive)
                         .order_by(SummaryRun.generated_at.desc())
                         .all()
