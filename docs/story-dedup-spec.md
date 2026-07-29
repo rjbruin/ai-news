@@ -1,8 +1,8 @@
 # Cross-edition story deduplication — spec for parts A and B
 
 Status: **implemented**. Measurements in this document come from the production
-Dispatch (id 3, "Daily agent") on 2026-07-29 — 1513 items, 13 editions with
-coverage, 527 scored pairs. Reproduce with `python scripts/dedup_report.py`.
+Dispatch (id 3, "Daily agent") on 2026-07-29 — 1516 items, 13 editions with
+coverage, 456 scored pairs. Reproduce with `python scripts/dedup_report.py`.
 
 Two things changed during implementation, both found by running against a copy
 of production; see "Deltas from the original spec" at the end.
@@ -17,15 +17,25 @@ tool. Recall against it is fuzzy and, when it fails, silent.
 
 ### The mechanism
 
-Items **341** and **447** carry byte-identical titles ("Anthropic Brings Claude
-Cowork to Web and Mobile for Max Subscribers"). 341 ran in the July 9 edition;
-447 ran again on July 13.
+Ingest creates several `NewsItem` rows for one story. Items **341**, **395**
+and **447** carry byte-identical titles ("Anthropic Brings Claude Cowork to Web
+and Mobile for Max Subscribers"); `NewsItem.dedup_hash` was a SHA of the raw
+`title|url`, so a differing URL made each a distinct row. A later edition is
+then handed a fresh id, never covered, absent from every record the system
+keeps — by every available signal it *is* new, and only the story is old.
 
-Ingest had created **four** rows for that one story (330, 341, 395, 406) from
-different sources. `NewsItem.dedup_hash` is a SHA of `title|url`
-(`app/models.py`), so differing URLs make them distinct rows. On July 13 the
-agent saw item 447: a fresh id, never covered, absent from every record the
-system keeps. By every available signal it *was* new — only the story was old.
+> **Correction (2026-07-29).** This document originally claimed 341 ran in the
+> July 9 edition and 447 again on July 13, making it a confirmed double-report.
+> That was wrong. The July 9 document contains no mention of Cowork; 341 was
+> counted as covered only because its stored URL was the bare domain
+> `https://techcrunch.com`, which matched an unrelated link in that edition.
+> The Cowork story ran **once**. See "The bare-domain coverage defect" below —
+> the row-forking mechanism is real and verified, that particular instance of
+> double-reporting was not.
+
+Confirmed double-reports do exist, in periods with no such contamination —
+Claude Opus 5 (July 27 → 28, 0.783), the Claude-chats-in-Google-search leak
+(July 28 → 29, 0.633), GPT-Red (July 16 → 20, 0.593).
 
 Two consequences drive this design:
 
@@ -34,6 +44,18 @@ Two consequences drive this design:
 2. **The agent is not being careless.** It is handed an item that looks new.
    The fix is to give it a signal, not a sterner instruction.
 
+### The bare-domain coverage defect
+
+`edition_coverage` matched an item to an edition by id *or* normalized URL.
+Newsletter extraction sometimes stores the publisher's homepage rather than the
+article link — 206 of 1516 items — and matching on that marked an item as
+covered by any edition linking to that publisher anywhere. 145 of those 206
+were matched to at least one edition they never appeared in, inflating recorded
+coverage by 17% (688 → 569 entries) and concentrated entirely in July 9–20.
+
+Fixed by requiring `looks_like_article_url` before a URL match. All figures in
+this document are post-fix.
+
 ### Measured signal
 
 TF-IDF + cosine over `title + one_liner`, 14-day lookback, IDF fit on the full
@@ -41,10 +63,10 @@ corpus (the same approach as `app/tagging/nb.py`):
 
 | Band | Pairs | Hand-labelled precision |
 |---|---:|---|
-| ≥ 0.52 | 10 | 10/10 — all genuine re-reports |
-| 0.40–0.52 | 11 | ~65% — real duplicates mixed with same-topic-different-story |
-| 0.30–0.40 | 35 | ~50% — genuinely ambiguous |
-| < 0.30 | 471 | mostly noise |
+| ≥ 0.52 | 7 | 7/7 — all genuine re-reports |
+| 0.40–0.52 | 10 | ~65% — real duplicates mixed with same-topic-different-story |
+| 0.30–0.40 | 27 | ~50% — genuinely ambiguous |
+| < 0.30 | 412 | mostly noise |
 
 Nothing above 0.52 was a false positive. Below ~0.45 the failures are topic
 collisions rather than story collisions ("Claude Opus 5 matches Fable 5 at half
@@ -173,7 +195,7 @@ Implementation notes:
 
 0.52 is where measured precision hit 10/10. The title-only rule exists because
 the worst real case (341/447) scores **1.000** on titles alone and warrants no
-ambiguity. 0.35 flags ≈2.5 items per edition (6.3% of covered items, worst
+ambiguity. 0.35 flags ≈2.2 items per edition (6.1% of covered items, worst
 edition 8) — small enough to state inline without crowding the prompt, which
 answers the "too much information" concern: total context goes *down* versus
 today's 7-day prose dump, because only matched items carry any extra text.
@@ -228,9 +250,13 @@ more prose into the prompt.
   plus a "what's new" delta) is deferred until A+B are measured in production.
   B's output is deliberately shaped as its input: ≈2.5 pairs per edition.
 - **Story entities / clustering** (part D) is not attempted.
-- **Ingest-time near-duplicate collapse** is a separate, purely deterministic win
-  — four rows for one Cowork story is itself a defect — and is tracked apart from
-  this spec.
+- **Ingest-time duplicate collapse** shipped separately (see `app/urls.py`,
+  `NewsItem.make_hash` and `_find_untitled_url_twin` in `services/ingest.py`).
+  It needs no similarity at all: every observed cluster collapses under URL
+  normalization plus ignoring bare-domain URLs. It reduces the input noise this
+  spec's part B otherwise has to compensate for, but does not replace it — a
+  story genuinely re-reported a week later by a different outlet still needs
+  edition-time matching.
 
 ## Deltas from the original spec
 

@@ -12,6 +12,8 @@ import re
 import uuid
 from urllib.parse import urlparse
 
+from ..urls import looks_like_article_url
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 # ── Block schema ──────────────────────────────────────────────────────────
@@ -124,20 +126,9 @@ def url_domain(url: str | None) -> str:
     return host
 
 
-def _looks_like_article_url(url: str) -> bool:
-    """True for a URL that plausibly points at a specific article rather than
-    a bare homepage (e.g. 'https://theverge.com/' or 'https://theverge.com').
-
-    The agent sometimes hand-types a source it doesn't actually have the
-    article link for, guessing the site's root domain instead — that's
-    misleading (the reader clicks through to the homepage, not the story).
-    Reject anything without a real path so those get dropped rather than
-    rendered as if they were a real citation.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return False
-    return parsed.path not in ("", "/")
+# Shared with ingest dedup — a bare-domain link is neither a citable source
+# nor a usable identity for a story. See app/urls.py.
+_looks_like_article_url = looks_like_article_url
 
 
 def _validate_block(block: dict, index: int) -> dict:
