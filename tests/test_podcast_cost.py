@@ -175,7 +175,9 @@ def test_cost_box_omits_revision_count_for_single_revision(auth_client, db, user
     assert "revisions)" not in html
 
 
-def test_editions_list_shows_podcast_cost_badge_on_icon(auth_client, db, user):
+def test_editions_list_channel_icon_carries_no_cost(auth_client, db, user):
+    """The podcast icon says a podcast exists, nothing more — cost belongs in
+    the edition's cost box, not hanging off the icon."""
     user.podcast_enabled = True
     db.session.commit()
     summary = Summary(
@@ -192,5 +194,7 @@ def test_editions_list_shows_podcast_cost_badge_on_icon(auth_client, db, user):
     db.session.add(run)
     db.session.commit()
 
-    resp = auth_client.get("/summaries")
-    assert b"$0.0099" in resp.data
+    html = auth_client.get("/summaries").data.decode()
+    assert "channel-icon--podcast" in html   # the icon is still rendered
+    assert "0.0099" not in html              # but carries no price
+    assert 'title="Podcast"' in html         # and no cost in the tooltip either
