@@ -529,7 +529,18 @@ class NewsItem(db.Model):
 
     @staticmethod
     def make_hash(title: str, url: str | None) -> str:
-        norm = (title or "").strip().lower() + "|" + (url or "").strip().lower()
+        """Identity of a story for ingest deduplication.
+
+        The URL is normalized (see app/urls.py) rather than compared raw: the
+        same article arriving as ``…/story/`` and ``…/story`` is one story, not
+        two. A bare-domain URL is dropped entirely — newsletter extraction
+        sometimes yields the publisher's root instead of the article link, and
+        hashing that in forks a single story into separate rows.
+        """
+        from .urls import looks_like_article_url, norm_url
+
+        key = norm_url(url) if looks_like_article_url(url) else ""
+        norm = (title or "").strip().lower() + "|" + key
         return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
     @property

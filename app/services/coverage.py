@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import urlsplit
 
+from ..urls import looks_like_article_url, norm_url  # noqa: F401 (norm_url re-exported)
 from .summarize import items_in_window
 
 # URLs stop at whitespace, quotes, angle/bracket/paren closers, and backslash
@@ -24,29 +24,6 @@ from .summarize import items_in_window
 _URL_RE = re.compile(r"https?://[^\s\"'<>)\]}\\]+")
 _ITEM_ID_RE = re.compile(r'"item_id"\s*:\s*"?(\d+)"?')
 _ITEM_IDS_RE = re.compile(r'"item_ids"\s*:\s*\[([^\]]*)\]')
-_TRAILING_PUNCT = ".,;:!?)]}\"'"
-
-
-def norm_url(url: str) -> str:
-    """Normalize a URL for comparison.
-
-    Drops the scheme and fragment, lowercases the host, strips a leading
-    ``www.`` and any trailing slash/punctuation, and keeps the path + query
-    (which often carry the article identity, e.g. ``watch?v=…``).
-    """
-    url = (url or "").strip()
-    if not url:
-        return ""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return url.lower().rstrip("/")
-    host = (parts.netloc or "").lower()
-    if host.startswith("www."):
-        host = host[4:]
-    path = parts.path.rstrip("/")
-    query = f"?{parts.query}" if parts.query else ""
-    return (host + path + query).rstrip(_TRAILING_PUNCT)
 
 
 def document_references(document) -> tuple[set[int], set[str]]:
@@ -68,6 +45,12 @@ def edition_coverage(run) -> dict:
     Matches each item in the edition's stored time window against the document
     by ``NewsItem`` id or normalized URL. Returns the scope size, the included
     count, and the omitted items (``NewsItem`` rows, newest first).
+
+    An item whose own URL is a bare domain can only be matched by id. Newsletter
+    extraction sometimes stores the publisher's root (``https://techcrunch.com``)
+    instead of the article link, and matching on that marks the item as covered
+    by *any* edition that happens to link to that publisher — which inflated
+    coverage on this corpus by 17%.
     """
     summary = run.summary
     exclude_seed = summary is not None and summary.type_key == "debug_agentic"
@@ -80,7 +63,11 @@ def edition_coverage(run) -> dict:
 
     covered, not_covered = [], []
     for item in scope:
-        if item.id in included_ids or (item.url and norm_url(item.url) in included_urls):
+        matched = item.id in included_ids or (
+            looks_like_article_url(item.url)
+            and norm_url(item.url) in included_urls
+        )
+        if matched:
             covered.append(item)
         else:
             not_covered.append(item)

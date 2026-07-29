@@ -190,7 +190,7 @@ def test_scoring_failure_degrades_to_no_flags(app, db, user, monkeypatch):
     """A broken deduper must never block edition generation."""
     summary = _dispatch(db, user)
     old = _item(db, "Some story", "Details.", days_ago=5)
-    new = _item(db, "Some story", "Details.", url="https://x.example", days_ago=1)
+    new = _item(db, "Some story", "Details.", url="https://x.example/story", days_ago=1)
     _cover(db, user, summary, [old], days_ago=4)
 
     from app.services import story_dedup

@@ -162,6 +162,77 @@ def _ingest_plain_source(source: Source) -> dict:
     return stats
 
 
+def _find_untitled_url_twin(title: str, url: str | None):
+    """An existing row that is the same story, arriving under a different URL.
+
+    Normalizing the URL (see NewsItem.make_hash) collapses ``…/story/`` and
+    ``…/story``, but not the case that actually forks stories in practice: one
+    poll yields the publisher's bare homepage and the next yields the real
+    permalink, so the two rows share a headline and nothing else.
+
+    Matching on an identical headline alone would be too loose in general — a
+    newsletter's recurring section titles would collide — so this only fires
+    when at least one side has no usable article link, and only inside a short
+    window. Both conditions hold for the extraction glitch and neither holds
+    for a title that legitimately recurs.
+    """
+    from datetime import timedelta
+
+    from flask import current_app
+
+    from ..urls import looks_like_article_url
+
+    title = (title or "").strip()
+    if not title:
+        return None
+
+    days = current_app.config.get("INGEST_DEDUP_TITLE_WINDOW_DAYS", 3)
+    if not days:
+        return None
+    floor = utcnow().replace(tzinfo=None) - timedelta(days=days)
+
+    incoming_has_url = looks_like_article_url(url)
+    candidates = (
+        NewsItem.query
+        .filter(db.func.lower(NewsItem.title) == title.lower())
+        .filter(NewsItem.fetched_at >= floor)
+        .order_by(NewsItem.fetched_at.desc())
+        .all()
+    )
+    for existing in candidates:
+        existing_has_url = looks_like_article_url(existing.url)
+        # Two real, different article links under one headline are left alone —
+        # that is a genuine cross-outlet duplicate, which story_dedup handles
+        # at edition time with the context to judge it.
+        if existing_has_url and incoming_has_url:
+            continue
+        return existing
+    return None
+
+
+def _merge_into_twin(existing: NewsItem, ex) -> None:
+    """Fold an incoming extraction into the row it duplicates.
+
+    Keeps the better data rather than simply dropping the newcomer: a real
+    article link beats a bare homepage, and a populated one_liner/summary beats
+    an empty one. Re-hashes when the URL improves so the upgraded row now
+    matches on identity too.
+    """
+    from ..urls import looks_like_article_url
+
+    if looks_like_article_url(ex.url) and not looks_like_article_url(existing.url):
+        existing.url = ex.url
+        existing.dedup_hash = NewsItem.make_hash(existing.title, ex.url)
+    if not existing.one_liner and ex.one_liner:
+        existing.one_liner = ex.one_liner
+    if not existing.summary_text and ex.summary:
+        existing.summary_text = ex.summary
+    logger.info(
+        "Ingest: merged duplicate extraction into item %s (%s)",
+        existing.id, (existing.title or "")[:60],
+    )
+
+
 def _ingest_docs_for_source(source: Source, plugin, docs: list, all_tags: list[Tag]) -> dict:
     """Dedup, extract, persist and tag ``docs`` against ``source``. Shared by
     plain sources and by each newsletter subscription split out of a mailbox."""
@@ -203,6 +274,11 @@ def _ingest_docs_for_source(source: Source, plugin, docs: list, all_tags: list[T
         for ex in extracted:
             dedup = NewsItem.make_hash(ex.title, ex.url)
             if NewsItem.query.filter_by(dedup_hash=dedup).first():
+                stats["skipped"] += 1
+                continue
+            twin = _find_untitled_url_twin(ex.title, ex.url)
+            if twin is not None:
+                _merge_into_twin(twin, ex)
                 stats["skipped"] += 1
                 continue
             item = NewsItem(

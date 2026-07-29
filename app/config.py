@@ -97,6 +97,15 @@ class Config:
     # Debug / local dev
     DEBUG_SEED = _bool(os.environ.get("DEBUG_SEED"), False)
 
+    # Window in which two rows sharing a headline are treated as one story when
+    # at least one lacks a usable article link — the newsletter-extraction glitch
+    # that forks a story across polls. 0 disables the check. Kept short so a
+    # legitimately recurring headline (a newsletter's weekly section) never
+    # collides with itself.
+    INGEST_DEDUP_TITLE_WINDOW_DAYS = int(
+        os.environ.get("INGEST_DEDUP_TITLE_WINDOW_DAYS", "3")
+    )
+
     # Agentic summary pipeline
     AGENT_ENABLED = _bool(os.environ.get("AGENT_ENABLED"), True)
     AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "50"))
