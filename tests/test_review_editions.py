@@ -15,9 +15,10 @@ from app.services import summarize
 
 
 def _dispatch(db, user, **kw):
+    kw.setdefault("params", {})
     s = Summary(
         user_id=user.id, name="Daily", type_key="agentic_page",
-        scope_mode="fixed_period", period="day", params={}, **kw,
+        scope_mode="fixed_period", period="day", **kw,
     )
     db.session.add(s)
     db.session.commit()
@@ -353,18 +354,13 @@ def test_settings_rejects_an_unknown_review_period(auth_client, db, user):
     assert dispatch.review_period is None
 
 
-def test_generate_review_requires_a_schedule(auth_client, db, user):
-    dispatch = _dispatch(db, user)
-    resp = auth_client.post(
-        f"/summaries/{dispatch.id}/review/generate", follow_redirects=True,
-    )
-    assert b"Turn on a review schedule first." in resp.data
-
-
-def test_generate_review_is_owner_only(auth_client, db, user, admin):
-    dispatch = _dispatch(db, admin, review_period="month")
-    resp = auth_client.post(f"/summaries/{dispatch.id}/review/generate")
-    assert resp.status_code == 403
+def test_settings_has_no_manual_generate_button(auth_client, db, user):
+    """Reviews are cut by the schedule alone — an on-demand button would let a
+    review land before its period had finished."""
+    _dispatch(db, user, review_period="month")
+    html = auth_client.get("/dispatch/settings").data.decode()
+    assert "Generate review now" not in html
+    assert "review/generate" not in html
 
 
 def test_review_marked_on_the_edition_page(auth_client, db, user):
@@ -495,3 +491,49 @@ def test_empty_review_period_is_skipped_not_alerted(app, db, user, monkeypatch):
     assert summarize.cut_due_reviews() == 0
     assert called == []
     assert Alert.query.filter(Alert.key == f"review:{summary.id}").count() == 0
+
+
+# ── release time ────────────────────────────────────────────────────────────
+
+def test_review_release_at_uses_the_dispatch_release_time(app, db, user):
+    summary = _dispatch(db, user, params={"release_time": "05:00"})
+    end = datetime(2026, 8, 1)
+    assert summarize.review_release_at(summary, end) == datetime(2026, 8, 1, 5, 0)
+
+
+def test_review_release_at_defaults_and_survives_junk(app, db, user):
+    assert summarize.review_release_at(
+        _dispatch(db, user), datetime(2026, 8, 1),
+    ) == datetime(2026, 8, 1, 8, 0)
+    assert summarize.review_release_at(
+        _dispatch(db, user, params={"release_time": "nonsense"}), datetime(2026, 8, 1),
+    ) == datetime(2026, 8, 1, 8, 0)
+
+
+def test_review_waits_for_the_release_time(app, db, user, monkeypatch):
+    """The period ends at midnight; the review must not fire until the
+    Dispatch's usual release hour that day."""
+    summary = _dispatch(db, user, review_period="month",
+                        params={"release_time": "05:00"})
+    start, end = summarize.resolve_review_range(summary)
+    _run(db, summary, days_ago=0, document=_doc("In period", "", ["A"]))
+    run = SummaryRun.query.filter_by(summary_id=summary.id, kind="edition").first()
+    run.generated_at = start.replace(tzinfo=None) + timedelta(days=1)
+    db.session.commit()
+
+    called = []
+    monkeypatch.setattr(summarize, "build_review", lambda *a, **kw: called.append(1))
+
+    # Just before the release time on the boundary day: not yet.
+    before = summarize.review_release_at(summary, end) - timedelta(minutes=1)
+    monkeypatch.setattr(summarize, "utcnow", lambda: before)
+    summarize.cut_due_reviews()
+    assert called == []
+
+    # Just after: cut.
+    monkeypatch.setattr(
+        summarize, "utcnow",
+        lambda: summarize.review_release_at(summary, end) + timedelta(minutes=1),
+    )
+    summarize.cut_due_reviews()
+    assert called == [1]

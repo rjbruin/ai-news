@@ -94,6 +94,17 @@ section.
 1 July → 1 August, not a rolling 30 days. `cut_due_reviews` sits beside
 `cut_due_editions` and reuses the same failure-backoff constants.
 
+A completed period ends at midnight, but the review is not cut until the
+Dispatch's own `release_time` on that day (`review_release_at`), so a
+monthly review lands in the slot readers already expect an edition rather
+than at 00:00 on the 1st.
+
+There is deliberately **no on-demand generate button**. Reviews are cut by
+the schedule alone; an on-demand path invites cutting a review over a
+period that has not finished, which is exactly the thing the calendar
+alignment exists to prevent. `manage.py generate-review` remains for ops,
+where an explicit range can be given deliberately.
+
 ## Interface
 
 - Reviews are marked with a distinct pill and an accent border on cards, so
@@ -104,8 +115,8 @@ section.
   (previously: one hero across all of them), plus an extra card per unread
   review.
 - Dispatch settings gains a Review editions card: period select, the content
-  textarea with reset-to-default, a note that interests are inherited, and a
-  "Generate review now" button for the owner.
+  textarea with reset-to-default, and a note that interests are inherited
+  and when the next review will be cut.
 
 ## Decisions
 
