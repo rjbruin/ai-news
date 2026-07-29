@@ -7,19 +7,17 @@
   generated). Icons represent the channels that exist for a run.
 #}
 
-{% macro channel_icons(run, show_podcast_cost=False) %}
+{% macro channel_icons(run) %}
 <span class="d-inline-flex align-items-center gap-2">
   <span class="channel-icon channel-icon--edition" title="Written edition">
     <i class="fa-solid fa-newspaper" aria-hidden="true"></i>
   </span>
   {% if run.news_podcast_audio %}
+  {# Existence only — generation cost belongs in the edition's cost box, not
+     hanging off an icon whose job is to say "there is a podcast". #}
   <a href="{{ url_for('web.edition_podcast', summary_id=run.summary_id, run_id=run.id) }}"
-     class="channel-icon channel-icon--podcast"
-     title="Podcast{% if show_podcast_cost and run.podcast_cost is not none %} · ${{ '%.4f'|format(run.podcast_cost) }}{% endif %}">
+     class="channel-icon channel-icon--podcast" title="Podcast">
     <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>
-    {% if show_podcast_cost and run.podcast_cost is not none %}
-    <span class="badge text-bg-light border text-body-secondary ms-1">${{ '%.4f'|format(run.podcast_cost) }}</span>
-    {% endif %}
   </a>
   {% endif %}
   {% if run.pdf_file and run.summary.pdf_export_enabled %}

@@ -565,7 +565,7 @@ def test_mark_all_read_does_not_affect_other_users(auth_client, db, user, admin,
 
 # ── Cost hidden from non-owning followers ──────────────────────────────────
 
-def test_podcast_cost_hidden_from_follower_in_channel_icon_tooltip(
+def test_podcast_cost_hidden_from_follower_on_editions_list(
     auth_client, db, user, admin, system_dispatch, system_run,
 ):
     admin.podcast_enabled = True
@@ -579,11 +579,19 @@ def test_podcast_cost_hidden_from_follower_in_channel_icon_tooltip(
     assert "0.4242" not in html
 
 
-def test_podcast_cost_shown_to_owner_in_channel_icon_tooltip(admin_client, db, admin, system_dispatch, system_run):
+def test_podcast_cost_shown_to_owner_in_cost_box_not_on_the_icon(
+    admin_client, db, admin, system_dispatch, system_run,
+):
+    """The owner still sees what a podcast cost — in the edition's cost box.
+    The channel icon itself stays a plain existence indicator."""
     admin.podcast_enabled = True
     system_run.news_podcast_audio = "podcast_1.mp3"
     system_run.podcast_cost = 0.4242
     db.session.commit()
 
-    html = admin_client.get(f"/summaries/{system_dispatch.id}/editions/{system_run.id}").data.decode()
+    html = admin_client.get(
+        f"/summaries/{system_dispatch.id}/editions/{system_run.id}"
+    ).data.decode()
     assert "0.4242" in html
+    assert "Podcast audio" in html          # the cost box line
+    assert 'title="Podcast"' in html        # icon tooltip, no price appended

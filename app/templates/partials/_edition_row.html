@@ -23,7 +23,7 @@
   <span class="pill pill-amber" title="Generation cost">${{ '%.4f'|format(run.agent_cost) }}</span>
   {% endif %}
   {% endif %}
-  <span class="small">{{ channel_icons(run, show_podcast_cost=is_own) }}</span>
+  <span class="small">{{ channel_icons(run) }}</span>
   <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
      class="btn btn-sm btn-outline-primary">Open</a>
   {% if is_own %}
@@ -70,7 +70,7 @@
       {% if is_own and run.agent_cost is not none %}
       <span class="pill pill-amber" title="Generation cost">${{ '%.4f'|format(run.agent_cost) }}</span>
       {% endif %}
-      <span title="Channels">{{ channel_icons(run, show_podcast_cost=is_own) }}</span>
+      <span title="Channels">{{ channel_icons(run) }}</span>
     </div>
     <div class="d-flex gap-2 flex-wrap">
       <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
