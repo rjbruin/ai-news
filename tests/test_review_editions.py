@@ -438,3 +438,44 @@ def test_frontpage_adds_an_unread_review_as_an_extra_card(auth_client, db, user)
     html = auth_client.get("/dashboard").data.decode()
     assert "The edition" in html
     assert "The review" not in html
+
+
+def test_digest_accepts_aware_bounds(app, db, user):
+    """resolve_review_range and the CLI both hand over aware datetimes, while
+    generated_at is stored naive — comparing them raises TypeError."""
+    from datetime import timezone
+
+    from app.services.review_digest import digest_for_range
+
+    summary = _dispatch(db, user)
+    _run(db, summary, days_ago=1, document=_doc("Aware", "", ["A"]))
+
+    now = utcnow().replace(tzinfo=None)
+    d = digest_for_range(
+        summary,
+        (now - timedelta(days=5)).replace(tzinfo=timezone.utc),
+        (now + timedelta(days=1)).replace(tzinfo=timezone.utc),
+    )
+    assert [x["headline"] for x in d] == ["Aware"]
+
+
+def test_cut_due_reviews_reaches_build_with_real_ranges(app, db, user, monkeypatch):
+    """End-to-end guard for the same hazard: cut_due_reviews passes
+    resolve_review_range's aware output straight through to the digest."""
+    summary = _dispatch(db, user, review_period="month")
+    start, _end = summarize.resolve_review_range(summary)
+    _run(db, summary, days_ago=0, document=_doc("In period", "", ["A"]))
+    # Place the edition inside the completed period.
+    run = SummaryRun.query.filter_by(summary_id=summary.id, kind="edition").first()
+    run.generated_at = start.replace(tzinfo=None) + timedelta(days=1)
+    db.session.commit()
+
+    seen = {}
+    def _fake_build(s, st, en, **kw):
+        from app.services.review_digest import digest_for_range
+        seen["n"] = len(digest_for_range(s, st, en))
+        return None
+    monkeypatch.setattr(summarize, "build_review", _fake_build)
+
+    summarize.cut_due_reviews()
+    assert seen.get("n") == 1

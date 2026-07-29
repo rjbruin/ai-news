@@ -79,6 +79,12 @@ def digest_for_range(
     if max_item_lines is None:
         max_item_lines = DEFAULT_MAX_ITEM_LINES
 
+    # generated_at is stored naive-UTC (SQLite drops tzinfo), while callers
+    # reasonably hand us aware bounds — resolve_review_range returns them, as
+    # does the CLI. Normalise rather than making every caller remember.
+    start = start.replace(tzinfo=None) if start.tzinfo else start
+    end = end.replace(tzinfo=None) if end.tzinfo else end
+
     runs = [
         r for r in edition_heads(summary, kind="edition")
         if r.generated_at is not None
