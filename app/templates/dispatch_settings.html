@@ -198,19 +198,15 @@
       </div>
 
       {% if summary.review_period %}
-      <div class="border-top pt-3 mt-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <div class="small text-body-secondary">
-          {% if latest_review %}
-          Last review: <strong>{{ latest_review.label }}</strong>
-          ({{ latest_review.generated_at.strftime('%Y-%m-%d') }}).
-          {% else %}
-          No review generated yet.
-          {% endif %}
-        </div>
-        <button type="submit" form="review-generate-form" class="btn btn-outline-primary btn-sm text-nowrap"
-                onclick="return confirm('Generate a review edition now? This uses your API key.')">
-          Generate review now
-        </button>
+      <div class="border-top pt-3 mt-3 small text-body-secondary">
+        {% if latest_review %}
+        Last review: <strong>{{ latest_review.label }}</strong>
+        ({{ latest_review.generated_at.strftime('%Y-%m-%d') }}).
+        {% else %}
+        No review generated yet.
+        {% endif %}
+        Reviews are cut once the period has completed, at the same release time
+        as your regular editions.
       </div>
       {% endif %}
     </div>
@@ -446,8 +442,6 @@
 {% if summary %}
 <form id="dispatch-delete-form" method="post" action="{{ url_for('web.summary_delete', summary_id=summary.id) }}"
       onsubmit="return confirm('This permanently deletes your Dispatch and every edition. This cannot be undone.')"></form>
-<form id="review-generate-form" method="post"
-      action="{{ url_for('web.review_generate', summary_id=summary.id) }}"></form>
 {% endif %}
 <form id="api-key-save-form" method="post" action="{{ url_for('web.api_key_save') }}"></form>
 <form id="api-key-remove-form" method="post" action="{{ url_for('web.api_key_remove') }}"></form>

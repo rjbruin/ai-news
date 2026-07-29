@@ -572,6 +572,22 @@ def _review_label(period: str, start: datetime, end: datetime) -> str:
     return f"{start.year} review"
 
 
+def review_release_at(summary: Summary, end: datetime) -> datetime:
+    """When the review for a period ending at ``end`` should actually be cut.
+
+    ``end`` is a calendar boundary, i.e. midnight on the first day of the next
+    period. Cutting there would land a monthly review at 00:00 on the 1st,
+    hours before the Dispatch's readers expect anything. Reuse the Dispatch's
+    own release_time so a review arrives in the same slot as an edition.
+    """
+    params = summary.params or {}
+    try:
+        h, m = map(int, (params.get("release_time") or "08:00").split(":"))
+    except (ValueError, AttributeError):
+        h, m = 8, 0
+    return end.replace(hour=h, minute=m, second=0, microsecond=0)
+
+
 def latest_review(summary: Summary) -> SummaryRun | None:
     return (
         SummaryRun.query
@@ -700,6 +716,12 @@ def cut_due_reviews(force: bool = False) -> int:
                 end_naive = end.replace(tzinfo=None)
                 if latest and latest.range_end and latest.range_end >= end_naive:
                     continue  # this period's review already exists
+
+                # Wait for the Dispatch's release time on the first day of the
+                # next period, rather than firing at midnight.
+                release_at = review_release_at(summary, end)
+                if not force and utcnow() < release_at:
+                    continue
 
                 # A period with nothing in it is a normal state, not a fault:
                 # reviews turned on mid-month look back at a period that

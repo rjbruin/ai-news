@@ -1400,36 +1400,6 @@ def summary_generate(summary_id: int):
     return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
 
 
-@bp.route("/summaries/<int:summary_id>/review/generate", methods=["POST"])
-@login_required
-def review_generate(summary_id: int):
-    """Cut a review edition on demand, for the most recent completed period.
-
-    Synchronous like summary_generate — a review reads a digest rather than a
-    full scope, so it is not meaningfully slower than a normal edition.
-    """
-    from ..agent.creds import MissingCredentials
-
-    summary = db.session.get(Summary, summary_id) or abort(404)
-    if summary.user_id != current_user.id:
-        abort(403)
-    if not summary.review_period:
-        flash("Turn on a review schedule first.", "warning")
-        return redirect(url_for("web.your_dispatch") + "#sec-review")
-
-    start, end = summarize.resolve_review_range(summary)
-    try:
-        run = summarize.build_review(summary, start, end)
-    except MissingCredentials as exc:
-        flash(str(exc), "warning")
-        return redirect(url_for("web.your_dispatch") + "#sec-api-keys")
-    except Exception as exc:  # noqa: BLE001
-        flash(f"Could not generate review: {exc}", "danger")
-        return redirect(url_for("web.your_dispatch") + "#sec-review")
-    summarize.autogenerate_channels(summary, run)
-    return redirect(url_for("web.edition_view", summary_id=summary.id, run_id=run.id))
-
-
 @bp.route("/summaries/<int:summary_id>/generate/debug")
 @login_required
 def generate_debug(summary_id: int):
