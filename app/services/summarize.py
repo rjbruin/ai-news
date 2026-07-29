@@ -701,6 +701,18 @@ def cut_due_reviews(force: bool = False) -> int:
                 if latest and latest.range_end and latest.range_end >= end_naive:
                     continue  # this period's review already exists
 
+                # A period with nothing in it is a normal state, not a fault:
+                # reviews turned on mid-month look back at a period that
+                # predates the Dispatch. Skipping quietly avoids alerting the
+                # owner on every scheduler tick until the period rolls over.
+                from .review_digest import digest_for_range
+                if not digest_for_range(summary, start, end):
+                    logger.info(
+                        "No editions in the review period for summary %d — skipping",
+                        summary.id,
+                    )
+                    continue
+
                 failed = (
                     SummaryRun.query
                     .filter_by(summary_id=summary.id, kind="review", status="failed")

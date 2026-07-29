@@ -479,3 +479,19 @@ def test_cut_due_reviews_reaches_build_with_real_ranges(app, db, user, monkeypat
 
     summarize.cut_due_reviews()
     assert seen.get("n") == 1
+
+
+def test_empty_review_period_is_skipped_not_alerted(app, db, user, monkeypatch):
+    """Reviews turned on mid-month look back at a period that predates the
+    Dispatch. That is normal, so it must not alert the owner every tick."""
+    from app.models import Alert
+
+    summary = _dispatch(db, user, review_period="month")
+    # An edition exists, but in the current period — not the completed one.
+    _run(db, summary, days_ago=0)
+
+    called = []
+    monkeypatch.setattr(summarize, "build_review", lambda *a, **kw: called.append(1))
+    assert summarize.cut_due_reviews() == 0
+    assert called == []
+    assert Alert.query.filter(Alert.key == f"review:{summary.id}").count() == 0
