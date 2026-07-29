@@ -20,13 +20,13 @@ from .context import AgentSession
 
 # ── Item serialisation ──────────────────────────────────────────────────────
 
-def _item_brief(item, topics: list[str] | None = None) -> dict:
+def _item_brief(item, topics: list[str] | None = None, prior: list | None = None) -> dict:
     # Note: deliberately NOT exposing item.source.name (the ingestion feed's
     # display name, e.g. "Newsletters from you@gmail.com") — it's config
     # metadata about how the item was fetched, not a per-article attribution,
     # and the agent was citing it verbatim when no other name was available.
     # url_domain gives it the actual thing the prompt asks it to cite.
-    return {
+    d = {
         "id": item.id,
         "title": item.title,
         "one_liner": item.one_liner,
@@ -37,13 +37,19 @@ def _item_brief(item, topics: list[str] | None = None) -> dict:
         "published_at": (item.published_at or item.fetched_at).isoformat()
         if (item.published_at or item.fetched_at) else None,
     }
+    # Only present when an earlier edition already covered this story — see
+    # services/story_dedup.py. Omitted entirely otherwise so the overwhelming
+    # majority of items carry no extra tokens.
+    if prior:
+        d["prior_coverage"] = [m.as_dict() for m in prior]
+    return d
 
 
-def _item_full(item, topics: list[str] | None = None) -> dict:
+def _item_full(item, topics: list[str] | None = None, prior: list | None = None) -> dict:
     # full_text is deliberately not exposed here — it's NULL for the
     # overwhelming majority of items (this app doesn't scrape full article
     # bodies), so it was pure dead weight in every get_item response.
-    d = _item_brief(item, topics)
+    d = _item_brief(item, topics, prior)
     d["summary_text"] = item.summary_text
     return d
 
@@ -53,7 +59,12 @@ def _item_full(item, topics: list[str] | None = None) -> dict:
 def t_list_scope_items(session: AgentSession) -> dict:
     return {
         "count": len(session.items),
-        "items": [_item_brief(i, session.item_tags.get(i.id, [])) for i in session.items],
+        "items": [
+            _item_brief(
+                i, session.item_tags.get(i.id, []), session.prior_coverage.get(i.id)
+            )
+            for i in session.items
+        ],
     }
 
 
@@ -61,7 +72,9 @@ def t_get_item(session: AgentSession, item_id: int) -> dict:
     item = session.item_by_id(item_id)
     if item is None:
         return {"error": f"No in-scope item with id {item_id}."}
-    return _item_full(item, session.item_tags.get(item_id, []))
+    return _item_full(
+        item, session.item_tags.get(item_id, []), session.prior_coverage.get(item_id)
+    )
 
 
 def t_list_past_editions(session: AgentSession, limit: int = 10, offset: int = 0) -> dict:
@@ -109,6 +122,28 @@ def t_read_headlines(session: AgentSession, days: int = 7) -> dict:
              "content": r.content}
             for r in rows
         ]
+    }
+
+
+def t_read_coverage(session: AgentSession, days: int = 14) -> dict:
+    """The item-linked record of what past editions actually cited.
+
+    Complements read_headlines: that returns the agent's own prose about an
+    edition, this returns exactly which articles ran, so 'have we covered
+    this?' can be answered against titles rather than paraphrase.
+    """
+    records = memory.recent_coverage(session.user, session.summary, days=days)
+    return {
+        "count": len(records),
+        "covered": [
+            {
+                "item_id": r["item_id"],
+                "title": r.get("title") or "",
+                "covered_on": r["edition_ts"].date().isoformat()
+                if hasattr(r.get("edition_ts"), "date") else None,
+            }
+            for r in records
+        ],
     }
 
 
@@ -259,6 +294,7 @@ _HANDLERS = {
     "list_past_editions": t_list_past_editions,
     "get_edition": t_get_edition,
     "read_headlines": t_read_headlines,
+    "read_coverage": t_read_coverage,
     "get_document": t_get_document,
     "set_document": t_set_document,
     "add_block": t_add_block,
@@ -322,6 +358,16 @@ TOOL_SPECS = [
     {"type": "function", "function": {
         "name": "read_headlines",
         "description": "Read brief headline notes from recent editions, to avoid re-reporting the same news.",
+        "parameters": {"type": "object", "properties": {
+            "days": {"type": "integer"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "read_coverage",
+        "description": (
+            "List the exact articles past editions cited, with the date each ran. "
+            "Use to check whether a story has already been covered — this is the "
+            "item-linked record, more reliable than the prose headline notes."
+        ),
         "parameters": {"type": "object", "properties": {
             "days": {"type": "integer"}}},
     }},

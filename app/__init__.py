@@ -172,6 +172,13 @@ def _prune_agent_headlines(app: Flask) -> None:
             logging.getLogger(__name__).info(
                 "Startup: pruned %d old quick-hit file(s)", pruned_qh
             )
+        # Longer window than headlines — see the scheduler job for why.
+        dedup_days = app.config.get("AGENT_DEDUP_LOOKBACK_DAYS", 14)
+        pruned_cov = agent_memory.prune_coverage(days=dedup_days)
+        if pruned_cov:
+            logging.getLogger(__name__).info(
+                "Startup: pruned %d old coverage file(s)", pruned_cov
+            )
     except Exception:
         from .extensions import db
         db.session.rollback()

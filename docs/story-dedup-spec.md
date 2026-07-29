@@ -1,8 +1,11 @@
 # Cross-edition story deduplication — spec for parts A and B
 
-Status: proposed. Measurements in this document come from the production
+Status: **implemented**. Measurements in this document come from the production
 Dispatch (id 3, "Daily agent") on 2026-07-29 — 1513 items, 13 editions with
 coverage, 527 scored pairs. Reproduce with `python scripts/dedup_report.py`.
+
+Two things changed during implementation, both found by running against a copy
+of production; see "Deltas from the original spec" at the end.
 
 ## Problem
 
@@ -228,6 +231,28 @@ more prose into the prompt.
 - **Ingest-time near-duplicate collapse** is a separate, purely deterministic win
   — four rows for one Cowork story is itself a defect — and is tracked apart from
   this spec.
+
+## Deltas from the original spec
+
+Both surfaced by running the implementation against a copy of production.
+
+**Coverage records carry `run_id`, and revisions exclude their own chain.**
+`revise_edition` re-runs the agent over the *same* window, and by then the
+parent edition's coverage record exists — so every item the parent featured
+came back flagged as a duplicate of itself, which would have told the agent to
+drop the entire edition. Records now carry `run_id`, and `find_prior_coverage`
+takes `exclude_run_ids`, which `revise_edition` populates from
+`revision_chain(parent_run)`. A revision replaces its parent, so that parent's
+coverage is not already-covered ground.
+
+**Coverage retention is the dedup lookback, not the headline window, and the
+backfill respects it.** Pruning coverage on `AGENT_HEADLINES_RETENTION_DAYS`
+(7) would delete half the corpus the 14-day matcher needs, so both prune call
+sites use `AGENT_DEDUP_LOOKBACK_DAYS`. Relatedly, the backfill originally wrote
+records for every edition ever generated; startup pruning then deleted the
+older ones, so re-running it looked non-idempotent (9 written, 9 skipped, on
+every run). It now only considers editions inside the retention window and is
+genuinely idempotent.
 
 ## Known caveats
 

@@ -54,12 +54,19 @@ def start_scheduler(app: Flask) -> BackgroundScheduler | None:
 
             try:
                 days = app.config.get("AGENT_HEADLINES_RETENTION_DAYS", 7)
+                # Coverage outlives headlines: story_dedup matches against a
+                # longer window, so pruning it on the headline retention would
+                # delete the corpus it needs.
+                dedup_days = app.config.get("AGENT_DEDUP_LOOKBACK_DAYS", 14)
                 pruned = agent_memory.prune_headlines(days=days)
                 if pruned:
                     logger.info("Pruned %d old headline file(s)", pruned)
                 pruned_qh = agent_memory.prune_quick_hits(days=days)
                 if pruned_qh:
                     logger.info("Pruned %d old quick-hit file(s)", pruned_qh)
+                pruned_cov = agent_memory.prune_coverage(days=dedup_days)
+                if pruned_cov:
+                    logger.info("Pruned %d old coverage file(s)", pruned_cov)
                 max_chars = app.config.get("AGENT_HISTORY_MAX_CHARS", 6000)
                 trimmed = agent_memory.prune_history(max_chars=max_chars)
                 if trimmed:

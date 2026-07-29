@@ -284,6 +284,26 @@ def build_summary(
             ]
             agent_memory.write_quick_hits(summary.user, summary, run.generated_at, quick_hits)
 
+            # Deterministic record of what this edition actually cited, so the
+            # next one can be told precisely what ground is already covered
+            # (see docs/story-dedup-spec.md). Computed here rather than lazily
+            # from the stored document because `items` — the scope this was
+            # chosen from — is already in hand.
+            from .coverage import document_references, norm_url
+            cited_ids, cited_urls = document_references(document)
+            agent_memory.write_coverage(
+                summary.user, summary, run.generated_at,
+                [
+                    {
+                        "item_id": it.id, "title": it.title, "url": it.url,
+                        "run_id": run.id,
+                    }
+                    for it in items
+                    if it.id in cited_ids
+                    or (it.url and norm_url(it.url) in cited_urls)
+                ],
+            )
+
     if mark_consumed:
         summary.last_consumed_at = utcnow()
     db.session.commit()
@@ -338,6 +358,7 @@ def _persist_failed_run(
 def _build_agentic(
     summary, plugin, items, start, end, *,
     seed_document, extra_instruction, log_fn=None, cancel_event=None,
+    exclude_run_ids=None,
 ):
     """Run the agent to produce a document, then render it via the plugin.
 
@@ -356,9 +377,14 @@ def _build_agentic(
 
     api_key, model = creds.resolve(summary.user, summary=summary)
     item_tags = item_topic_names([i.id for i in items], summary.user)
+    from .story_dedup import find_prior_coverage
+    prior_coverage = find_prior_coverage(
+        summary.user, summary, items, exclude_run_ids=exclude_run_ids,
+    )
     session = AgentSession(
         user=summary.user, summary=summary, items=items,
         range_start=start, range_end=end, item_tags=item_tags,
+        prior_coverage=prior_coverage,
     )
     try:
         max_steps = int((summary.params or {}).get("max_steps")) or None
@@ -438,6 +464,9 @@ def revise_edition(
             extra_instruction=_feedback_instruction(feedback, from_scratch=from_scratch),
             log_fn=_collect,
             cancel_event=cancel_event,
+            # A revision replaces its edition, so that edition's own coverage
+            # must not count as ground already covered.
+            exclude_run_ids={r.id for r in revision_chain(parent_run)},
         )
     except (AgentCancelled, MissingCredentials):
         raise
