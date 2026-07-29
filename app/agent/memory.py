@@ -195,6 +195,90 @@ def prune_quick_hits(*, days: int) -> int:
     return n
 
 
+# ── Coverage (one row per edition, system-derived) ─────────────────────────
+#
+# The deterministic record of which in-scope items an edition actually cited,
+# extracted from its block document (see app/services/coverage.py). Unlike
+# `headlines` — the agent's own freeform prose about what it wrote — this is
+# item-linked and cannot drift from what was published.
+#
+# It exists so a later edition can be told, precisely, what has already been
+# covered, and so story_dedup has a corpus of real article text to match new
+# candidates against rather than the agent's paraphrase of it.
+#
+# title/url are denormalized so a record stays readable after its NewsItem is
+# pruned, and so building the match corpus needs no join. run_id is carried so
+# a revision can exclude its own edition chain — a revision replaces its
+# parent, so the parent's coverage is not "already covered" ground for it.
+
+def write_coverage(user, summary, edition_ts, items: list[dict]) -> AgentMemory | None:
+    """Store the COVERAGE record for one edition. No-op if nothing was cited."""
+    if not items:
+        return None
+    row = AgentMemory(
+        user_id=user.id,
+        summary_id=summary.id,
+        kind="coverage",
+        edition_ts=edition_ts,
+        content=json.dumps(items),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def recent_coverage(user, summary, *, days: int) -> list[dict]:
+    """Return covered-item records from the last ``days`` days, newest first.
+
+    Each record is {item_id, title, url, run_id, edition_ts}.
+    """
+    floor = utcnow().replace(tzinfo=None) - timedelta(days=days)
+    rows = (
+        AgentMemory.query.filter_by(
+            user_id=user.id, summary_id=summary.id, kind="coverage"
+        )
+        .filter(AgentMemory.edition_ts >= floor)
+        .order_by(AgentMemory.edition_ts.desc())
+        .all()
+    )
+    out: list[dict] = []
+    for row in rows:
+        try:
+            items = json.loads(row.content or "[]")
+        except (TypeError, ValueError):
+            continue
+        for it in items:
+            if isinstance(it, dict) and it.get("item_id") is not None:
+                out.append({**it, "edition_ts": row.edition_ts})
+    return out
+
+
+def coverage_exists(summary_id: int, edition_ts) -> bool:
+    """Whether a coverage record already exists for this edition.
+
+    Used by the backfill command to stay idempotent.
+    """
+    return (
+        AgentMemory.query.filter_by(
+            summary_id=summary_id, kind="coverage", edition_ts=edition_ts
+        ).first()
+        is not None
+    )
+
+
+def prune_coverage(*, days: int) -> int:
+    """Delete coverage rows older than ``days`` days. Returns count removed."""
+    floor = utcnow().replace(tzinfo=None) - timedelta(days=days)
+    n = (
+        AgentMemory.query.filter_by(kind="coverage")
+        .filter(AgentMemory.edition_ts < floor)
+        .delete(synchronize_session=False)
+    )
+    if n:
+        db.session.commit()
+    return n
+
+
 def prune_history(*, max_chars: int) -> int:
     """Trim oversized `history` singletons to their most recent max_chars.
 

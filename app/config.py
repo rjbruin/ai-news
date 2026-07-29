@@ -108,6 +108,21 @@ class Config:
     # content length instead, keeping the most recent chars.
     AGENT_HISTORY_MAX_CHARS = int(os.environ.get("AGENT_HISTORY_MAX_CHARS", "6000"))
 
+    # Cross-edition story deduplication (docs/story-dedup-spec.md). Thresholds
+    # are cosine similarity over TF-IDF of title + one_liner, calibrated against
+    # production with scripts/dedup_report.py: >=0.52 measured 10/10 precision,
+    # >=0.35 flags ~2.5 items per edition. Lookback is deliberately longer than
+    # the headline retention — a weekly edition can't see its predecessor at 7.
+    AGENT_DEDUP_ENABLED = _bool(os.environ.get("AGENT_DEDUP_ENABLED"), True)
+    AGENT_DEDUP_THRESHOLD = float(os.environ.get("AGENT_DEDUP_THRESHOLD", "0.35"))
+    AGENT_DEDUP_CERTAIN_THRESHOLD = float(
+        os.environ.get("AGENT_DEDUP_CERTAIN_THRESHOLD", "0.52")
+    )
+    AGENT_DEDUP_TITLE_THRESHOLD = float(
+        os.environ.get("AGENT_DEDUP_TITLE_THRESHOLD", "0.90")
+    )
+    AGENT_DEDUP_LOOKBACK_DAYS = int(os.environ.get("AGENT_DEDUP_LOOKBACK_DAYS", "14"))
+
 
 class DevConfig(Config):
     SESSION_COOKIE_SECURE = False

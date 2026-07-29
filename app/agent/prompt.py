@@ -138,8 +138,19 @@ Within HTML-allowed fields use tags, not Markdown syntax:
 Workflow:
 1. Call list_scope_items to see what's available; get_item for full text when
    you need it.
-2. Check read_headlines (recent editions) so you do NOT re-report news already
-   covered. Use list_past_editions / get_edition for deeper continuity.
+2. Do NOT re-report news already covered. Items that continue an earlier
+   edition's story arrive pre-flagged with a `prior_coverage` field listing
+   what ran and when — check it on every item you plan to feature:
+     - "likely_duplicate": this story already ran. Leave it out, unless there
+       is a concrete new development since — and then write ONLY what changed,
+       not the story again.
+     - "possible_follow_up": same story or merely the same topic. Look at the
+       cited prior item and decide. If it is the same story, cover only what
+       is new; if it is genuinely a different story, treat it normally.
+   An absent `prior_coverage` field means nothing similar has run recently.
+   read_coverage lists past editions' articles directly, read_headlines gives
+   your own notes on them, and list_past_editions / get_edition give the full
+   text for deeper continuity.
 3. Decide the full structure and story list, THEN build it in ONE
    set_document call, following the content configuration and interests
    below. Do not construct the document by adding blocks one at a time —
@@ -231,6 +242,14 @@ def compose_system_prompt(user, summary) -> str:
         for r in headline_rows
     )
 
+    dedup_days = current_app.config.get("AGENT_DEDUP_LOOKBACK_DAYS", 14)
+    coverage_rows = memory.recent_coverage(user, summary, days=dedup_days)
+    coverage_text = "\n".join(
+        f"- [{r['edition_ts']:%Y-%m-%d}] {r.get('title') or ''}"
+        if r.get("edition_ts") else f"- {r.get('title') or ''}"
+        for r in coverage_rows
+    )
+
     quick_hits = memory.recent_quick_hits(user, summary, days=retention)
     quick_hits_text = "\n".join(
         f"- [{qh['edition_ts']:%Y-%m-%d}] {qh['headline']}" if qh.get("edition_ts") else f"- {qh['headline']}"
@@ -254,6 +273,12 @@ def compose_system_prompt(user, summary) -> str:
         _section(
             f"RECENT HEADLINES (last {retention} days — do not re-report)",
             headlines_text,
+        ),
+        _section(
+            f"ALREADY COVERED (last {dedup_days} days — the exact articles past "
+            "editions ran; in-scope items resembling these are flagged with "
+            "prior_coverage)",
+            coverage_text,
         ),
         _section(
             f"RECENT QUICK HITS (last {retention} days — ran as more_news, not a "

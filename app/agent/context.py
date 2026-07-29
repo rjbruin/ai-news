@@ -23,6 +23,10 @@ class AgentSession:
     tokens_used: int = 0
     cost_used: float = 0.0
     item_tags: dict[int, list[str]] = field(default_factory=dict)  # item_id -> topic names
+    # item_id -> [PriorMatch]; computed once before the run so every scope item
+    # carries its own already-covered warning (see services/story_dedup.py).
+    # Items with no match are absent, so unflagged items cost no tokens.
+    prior_coverage: dict[int, list] = field(default_factory=dict)
 
     def item_by_id(self, item_id):
         for it in self.items:
