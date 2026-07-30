@@ -396,6 +396,82 @@ def test_calendar_shows_a_dot_per_kind(auth_client, db, user):
     assert html.count("calendar-dot") >= 2
 
 
+def _rendered_dots(html):
+    """The calendar-dot <span> elements actually rendered in the grid,
+    excluding the CSS rules in <style> (which also contain the class names)."""
+    import re
+    return re.findall(r'<span class="calendar-dot(?:\s|--|")[^"]*"', html)
+
+
+def test_calendar_dot_is_filled_when_unread(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    _run(db, dispatch, kind="edition", days_ago=0)
+
+    html = auth_client.get("/summaries").data.decode()
+    dots = _rendered_dots(html)
+    assert len(dots) == 1
+    assert "calendar-dot--read" not in dots[0]
+
+
+def test_calendar_dot_is_outlined_once_all_read(auth_client, db, user):
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    run = _run(db, dispatch, kind="edition", days_ago=0)
+
+    from app.models import EditionRead
+    db.session.add(EditionRead(user_id=user.id, run_id=run.id))
+    db.session.commit()
+
+    html = auth_client.get("/summaries").data.decode()
+    dots = _rendered_dots(html)
+    assert len(dots) == 1
+    assert "calendar-dot--read" in dots[0]
+
+
+def test_calendar_dot_stays_filled_if_any_same_kind_run_unread(auth_client, db, user):
+    """Two editions on the same day, only one read — the day's edition dot
+    must still read as unread."""
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    read_run = _run(db, dispatch, kind="edition", days_ago=0)
+    _run(db, dispatch, kind="edition", days_ago=0)
+
+    from app.models import EditionRead
+    db.session.add(EditionRead(user_id=user.id, run_id=read_run.id))
+    db.session.commit()
+
+    html = auth_client.get("/summaries").data.decode()
+    dots = _rendered_dots(html)
+    assert len(dots) == 1  # one dot for the day's "edition" kind, not per-run
+    assert "calendar-dot--read" not in dots[0]
+
+
+def test_calendar_dots_track_kinds_independently(auth_client, db, user):
+    """An unread review must not keep a fully-read edition dot looking
+    unread, and vice versa."""
+    dispatch = _dispatch(db, user)
+    user.follow(dispatch)
+    db.session.commit()
+    edition = _run(db, dispatch, kind="edition", days_ago=0)
+    _run(db, dispatch, kind="review", days_ago=0)
+
+    from app.models import EditionRead
+    db.session.add(EditionRead(user_id=user.id, run_id=edition.id))
+    db.session.commit()
+
+    html = auth_client.get("/summaries").data.decode()
+    dots = _rendered_dots(html)
+    assert len(dots) == 2
+    read_dots = [d for d in dots if "calendar-dot--read" in d]
+    unread_dots = [d for d in dots if "calendar-dot--read" not in d]
+    assert len(read_dots) == 1 and "calendar-dot--review" not in read_dots[0]
+    assert len(unread_dots) == 1 and "calendar-dot--review" in unread_dots[0]
+
+
 def test_frontpage_shows_latest_edition_of_every_followed_dispatch(
     auth_client, db, user, admin,
 ):

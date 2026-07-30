@@ -40,12 +40,26 @@
     display: flex; justify-content: center; gap: 2px; margin: 3px auto 0;
   }
   .calendar-dot {
-    display: block; width: 5px; height: 5px; border-radius: 50%;
+    display: block; width: 6px; height: 6px; border-radius: 50%;
     background: var(--ag-blue);
   }
   .calendar-dot--review { background: var(--ag-purple); }
+  /* Read: a ring rather than a filled dot. box-shadow instead of border so the
+     dot keeps its size regardless of box-sizing, which matters at 6px. */
+  .calendar-dot--read {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--ag-blue);
+  }
+  .calendar-dot--review.calendar-dot--read {
+    box-shadow: inset 0 0 0 1px var(--ag-purple);
+  }
   .has-failed-only .calendar-dot { background: var(--ag-coral); }
   .calendar-day.is-selected .calendar-dot { background: #fff; }
+  /* Must follow the is-selected fill above, or a read dot goes solid white. */
+  .calendar-day.is-selected .calendar-dot--read {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px #fff;
+  }
 </style>
 
 {% if active_generations %}
@@ -102,10 +116,13 @@
                     {% if entries %}data-day-panel="day-{{ day.isoformat() }}" role="button" tabindex="0"{% endif %}>
                   {{ day.day }}
                   {% if entries %}
-                  {% set kinds = entries | map(attribute='0') | map(attribute='kind') | list %}
                   <span class="calendar-dots">
-                    {% if 'edition' in kinds %}<span class="calendar-dot"></span>{% endif %}
-                    {% if 'review' in kinds %}<span class="calendar-dot calendar-dot--review"></span>{% endif %}
+                    {% for kind, unread in day_dots.get(day, []) %}
+                    <span class="calendar-dot
+                                 {{ 'calendar-dot--review' if kind == 'review' }}
+                                 {{ '' if unread else 'calendar-dot--read' }}"
+                          title="{{ kind|capitalize }}{{ '' if unread else ' (read)' }}"></span>
+                    {% endfor %}
                   </span>
                   {% endif %}
                 </td>
