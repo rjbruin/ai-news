@@ -260,11 +260,12 @@ class ApiKey(db.Model):
     generation) — one row per (owner, provider) (enforced by the partial
     unique index below), plus the single seeded global OpenRouter key.
 
-    ``owner_user_id`` is NULL only for the global key (``is_global=True``),
-    whose secret lives in the ``OPENROUTER_API_KEY`` env var rather than in
-    this row — it is conceptually owned by every admin rather than any one
-    user, so any admin can view/manage it. It funds every ownerless
-    ("system") Source.
+    ``owner_user_id`` is NULL only for the global key (``is_global=True``) —
+    it is conceptually owned by every admin rather than any one user, so any
+    admin can view/manage it (see the admin Settings form). It funds every
+    ownerless ("system") Source. Its secret is normally set via that form
+    (encrypted into ``key_enc``, like any other key); the ``OPENROUTER_API_KEY``
+    env var is a deploy-time fallback for when no admin has set one yet.
     """
 
     __tablename__ = "api_keys"
@@ -279,7 +280,9 @@ class ApiKey(db.Model):
     owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     label = db.Column(db.String(120), nullable=False)
     provider = db.Column(db.String(30), default="openrouter", nullable=False)
-    key_enc = db.Column(db.Text, nullable=True)  # NULL for the global key (read from env)
+    # NULL for the global key until an admin sets one via the Settings form,
+    # in which case get_key() falls back to the OPENROUTER_API_KEY env var.
+    key_enc = db.Column(db.Text, nullable=True)
     is_global = db.Column(db.Boolean, default=False, nullable=False)
     revoked_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
@@ -299,15 +302,22 @@ class ApiKey(db.Model):
         self.key_enc = encrypt(plaintext) if plaintext else None
 
     def get_key(self) -> str | None:
-        """Return the usable secret: the env var for the global key, else the
-        decrypted per-user secret."""
+        """Return the usable secret.
+
+        For every key, ``key_enc`` (set via the owner's or admin's form) wins
+        when present. The global key alone has a second fallback — the
+        ``OPENROUTER_API_KEY`` env var — for deploys where no admin has set
+        one via the Settings form yet.
+        """
+        from .crypto import decrypt
+
+        if self.key_enc:
+            return decrypt(self.key_enc)
         if self.is_global:
             from flask import current_app
 
             return current_app.config.get("OPENROUTER_API_KEY") or None
-        from .crypto import decrypt
-
-        return decrypt(self.key_enc) if self.key_enc else None
+        return None
 
     def can_manage(self, user: "User") -> bool:
         if self.is_global:
@@ -695,6 +705,10 @@ class Summary(db.Model):
     def email_subscriber_count(self) -> int:
         return db.session.query(dispatch_email_subscriptions).filter_by(summary_id=self.id).count()
 
+    @property
+    def follower_count(self) -> int:
+        return db.session.query(dispatch_subscriptions).filter_by(summary_id=self.id).count()
+
     @classmethod
     def published(cls):
         """Query of all published Dispatches (for the directory + onboarding)."""
@@ -801,6 +815,35 @@ class EditionRead(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
     run_id = db.Column(db.Integer, db.ForeignKey("summary_runs.id"), primary_key=True)
     read_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+
+class PageVisit(db.Model):
+    """Anonymous, cookie-free page-visit counter.
+
+    One row per (endpoint, day) — every matching request increments the
+    counter in place rather than logging a row per hit, so this stays cheap
+    to store and query even at high traffic. No visitor identity is kept;
+    this can only ever answer "how many times was this page requested", not
+    "how many distinct people visited"."""
+
+    __tablename__ = "page_visits"
+
+    id = db.Column(db.Integer, primary_key=True)
+    endpoint = db.Column(db.String(120), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    count = db.Column(db.Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("endpoint", "date", name="uq_page_visits_endpoint_date"),
+    )
+
+    @classmethod
+    def record(cls, endpoint: str, day) -> None:
+        row = cls.query.filter_by(endpoint=endpoint, date=day).first()
+        if row is None:
+            row = cls(endpoint=endpoint, date=day, count=0)
+            db.session.add(row)
+        row.count += 1
 
 
 class Alert(db.Model):

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Usage analytics · Admin · Dispatch{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Usage analytics</h1>
+  <a href="{{ url_for('admin.index') }}" class="btn btn-outline-secondary btn-sm">← Back to admin</a>
+</div>
+
+<p class="text-body-secondary small mb-4">
+  No cookies are used — page visits are anonymous per-page counters, not per-visitor.
+  Edition reads and subscriber counts are for signed-in users only.
+</p>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small">Total users</div>
+        <div class="h4 mb-0">{{ total_users }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-body-secondary small">Users with own Dispatch</div>
+        <div class="h4 mb-0">{{ users_with_own_dispatch }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="h5">Page visits <span class="text-body-secondary small fw-normal">(last {{ days }} days)</span></h2>
+<div class="table-responsive mb-4">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr><th>Page</th><th class="text-end">Visits</th></tr>
+    </thead>
+    <tbody>
+      {% for endpoint, total in page_visits %}
+      <tr>
+        <td class="small font-monospace">{{ endpoint }}</td>
+        <td class="text-end">{{ total }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" class="text-body-secondary small">No page visits recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5">Edition reads per day <span class="text-body-secondary small fw-normal">(last {{ days }} days)</span></h2>
+<div class="table-responsive mb-4">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr><th>Day</th><th class="text-end">Reads</th></tr>
+    </thead>
+    <tbody>
+      {% for day, total in reads_per_day %}
+      <tr>
+        <td class="small">{{ day }}</td>
+        <td class="text-end">{{ total }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" class="text-body-secondary small">No edition reads recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5">Reads &amp; subscribers per Dispatch</h2>
+<div class="table-responsive mb-4">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr><th>Dispatch</th><th class="text-end">Subscribers</th><th class="text-end">Reads (all time)</th></tr>
+    </thead>
+    <tbody>
+      {% for d in dispatches %}
+      <tr>
+        <td class="small">{{ d.display_name }}</td>
+        <td class="text-end">{{ subscriber_counts.get(d.id, 0) }}</td>
+        <td class="text-end">{{ reads_per_dispatch_map.get(d.id, 0) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-body-secondary small">No Dispatches yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5">Most-read editions <span class="text-body-secondary small fw-normal">(top 50, all time)</span></h2>
+<div class="table-responsive mb-4">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr><th>Dispatch</th><th>Edition</th><th class="text-end">Reads</th></tr>
+    </thead>
+    <tbody>
+      {% for run_id, label, headline, dispatch_name, dispatch_published_name, total in reads_per_edition %}
+      <tr>
+        <td class="small">{{ dispatch_published_name or dispatch_name }}</td>
+        <td class="small">{{ headline or label or run_id }}</td>
+        <td class="text-end">{{ total }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-body-secondary small">No edition reads recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

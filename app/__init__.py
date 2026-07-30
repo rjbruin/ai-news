@@ -59,6 +59,7 @@ def create_app(config_object: type | None = None) -> Flask:
     app.register_blueprint(api_bp)
 
     register_template_helpers(app)
+    register_page_visit_tracking(app)
 
     # Purge editions that have no displayable content (e.g. created before
     # the content column was added).
@@ -189,6 +190,33 @@ def _ensure_dirs(app: Flask) -> None:
     base = Path(app.root_path).parent
     (base / "instance").mkdir(exist_ok=True)
     (Path(app.root_path) / "static" / "artifacts").mkdir(parents=True, exist_ok=True)
+
+
+def register_page_visit_tracking(app: Flask) -> None:
+    """Count page requests per endpoint, per day — no cookies, no visitor
+    identity, just "how many times was this page requested" (see
+    models.PageVisit). Only GET hits on our own web/auth pages count;
+    static assets, the API blueprint, and non-2xx/3xx responses are noise."""
+
+    @app.after_request
+    def _record_page_visit(response):
+        from flask import request
+        from .extensions import db
+        from .models import PageVisit, utcnow
+
+        endpoint = request.endpoint or ""
+        if (
+            request.method == "GET"
+            and response.status_code < 400
+            and (endpoint.startswith("web.") or endpoint.startswith("auth."))
+        ):
+            try:
+                PageVisit.record(endpoint, utcnow().date())
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                app.logger.exception("Failed to record page visit for %s", endpoint)
+        return response
 
 
 def register_template_helpers(app: Flask) -> None:

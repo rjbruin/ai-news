@@ -65,12 +65,21 @@
         </li>
         <li><hr class="dropdown-divider"></li>
         {% endif %}
+        {% if current_user.has_podcast_access %}
         <li>
           <a class="dropdown-item"
              href="{{ url_for('web.edition_podcast', summary_id=summary.id, run_id=run.id) }}">
             Podcast
           </a>
         </li>
+        {% else %}
+        <li>
+          <a class="dropdown-item"
+             href="{{ url_for('web.your_dispatch') }}#sec-elevenlabs-key">
+            Podcast (add a key first)
+          </a>
+        </li>
+        {% endif %}
       </ul>
     </div>
     {% if run.share_token %}

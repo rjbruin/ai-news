@@ -3,14 +3,15 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Sources</h1>
-  {% if current_user.is_approved %}
+  {% if current_user.own_dispatch or current_user.is_admin %}
   <a href="{{ url_for('web.source_new') }}" class="btn btn-primary">Add source</a>
   {% endif %}
 </div>
 <p class="text-body-secondary small">
   News items collected here are shared across all users. Each source is paid for by its
-  owner's own API key — approved users can add their own sources and retract them at any time.
-  Newsletter mailboxes are split automatically into one source per newsletter as they're detected.
+  owner's own API key — anyone with their own Dispatch can add sources and retract them at
+  any time. Newsletter mailboxes are split automatically into one source per newsletter as
+  they're detected.
 </p>
 
 {% macro subscription_badge(status) %}
