@@ -5,7 +5,7 @@ import json
 import logging
 import queue
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (
@@ -27,16 +27,20 @@ from ..extensions import db
 from ..models import (
     AdminSettings,
     Alert,
+    ApiKey,
+    EditionRead,
     IgnoredSender,
     IngestRun,
     Invite,
     NewsItem,
     NewsItemTag,
+    PageVisit,
     Source,
     Summary,
     SummaryRun,
     Tag,
     User,
+    dispatch_subscriptions,
     utcnow,
 )
 from ..services import costs, ingest, poll_registry, retag_registry
@@ -82,12 +86,94 @@ def index():
         recent_runs=recent_runs,
         ignored_senders=IgnoredSender.query.order_by(IgnoredSender.created_at.desc()).all(),
         admin_settings=AdminSettings.get(),
+        global_api_key=ApiKey.get_or_create_global(),
+        openrouter_env_key_configured=bool(current_app.config.get("OPENROUTER_API_KEY")),
         elevenlabs_key_configured=bool(current_app.config.get("ELEVENLABS_API_KEY")),
         cost_summary=costs.cost_summary(),
         invites=Invite.query.order_by(Invite.created_at.desc()).all(),
         retag_state=retag_registry.snapshot(),
         dispatches=Summary.query.filter_by(type_key="agentic_page")
         .order_by(Summary.created_at).all(),
+    )
+
+
+@bp.route("/analytics")
+@admin_required
+def analytics():
+    from sqlalchemy import func
+
+    days = 30
+    since_date = (utcnow() - timedelta(days=days)).date()
+
+    page_visits = (
+        PageVisit.query
+        .filter(PageVisit.date >= since_date)
+        .with_entities(
+            PageVisit.endpoint, func.sum(PageVisit.count).label("total")
+        )
+        .group_by(PageVisit.endpoint)
+        .order_by(func.sum(PageVisit.count).desc())
+        .all()
+    )
+
+    reads_per_day = (
+        db.session.query(
+            func.date(EditionRead.read_at).label("day"),
+            func.count(EditionRead.user_id).label("total"),
+        )
+        .filter(EditionRead.read_at >= utcnow() - timedelta(days=days))
+        .group_by(func.date(EditionRead.read_at))
+        .order_by(func.date(EditionRead.read_at))
+        .all()
+    )
+
+    reads_per_dispatch = (
+        db.session.query(
+            Summary.id, Summary.name, func.count(EditionRead.user_id).label("total")
+        )
+        .join(SummaryRun, SummaryRun.summary_id == Summary.id)
+        .join(EditionRead, EditionRead.run_id == SummaryRun.id)
+        .group_by(Summary.id, Summary.name)
+        .order_by(func.count(EditionRead.user_id).desc())
+        .all()
+    )
+
+    reads_per_edition = (
+        db.session.query(
+            SummaryRun.id, SummaryRun.label, SummaryRun.headline,
+            Summary.name, Summary.published_name,
+            func.count(EditionRead.user_id).label("total"),
+        )
+        .join(Summary, SummaryRun.summary_id == Summary.id)
+        .join(EditionRead, EditionRead.run_id == SummaryRun.id)
+        .group_by(SummaryRun.id, SummaryRun.label, SummaryRun.headline, Summary.name, Summary.published_name)
+        .order_by(func.count(EditionRead.user_id).desc())
+        .limit(50)
+        .all()
+    )
+
+    dispatches = Summary.query.filter_by(type_key="agentic_page").order_by(Summary.created_at).all()
+    subscriber_counts = dict(
+        db.session.query(
+            dispatch_subscriptions.c.summary_id, func.count(dispatch_subscriptions.c.user_id)
+        ).group_by(dispatch_subscriptions.c.summary_id).all()
+    )
+    reads_per_dispatch_map = {row.id: row.total for row in reads_per_dispatch}
+
+    return render_template(
+        "admin/analytics.html",
+        days=days,
+        page_visits=page_visits,
+        reads_per_day=reads_per_day,
+        reads_per_edition=reads_per_edition,
+        dispatches=dispatches,
+        subscriber_counts=subscriber_counts,
+        reads_per_dispatch_map=reads_per_dispatch_map,
+        users_with_own_dispatch=(
+            db.session.query(func.count(func.distinct(Summary.user_id)))
+            .filter(Summary.type_key == "agentic_page").scalar()
+        ),
+        total_users=User.query.count(),
     )
 
 
@@ -565,6 +651,37 @@ def save_admin_settings():
     settings.elevenlabs_model = (request.form.get("elevenlabs_model") or "").strip() or None
     db.session.commit()
     flash("Admin settings saved.", "success")
+    return redirect(url_for("admin.index") + "#admin-settings")
+
+
+@bp.route("/settings/global-api-key/save", methods=["POST"])
+@admin_required
+def save_global_api_key():
+    """Set or rotate the global OpenRouter key that funds ownerless
+    ("system") Sources. Stored encrypted like any other key; see
+    ApiKey.get_key() for the env-var fallback when this is unset."""
+    secret = (request.form.get("secret") or "").strip()
+    if not secret:
+        flash("An API key is required.", "danger")
+        return redirect(url_for("admin.index") + "#admin-settings")
+    key = ApiKey.get_or_create_global()
+    key.set_key(secret)
+    key.revoked_at = None
+    db.session.commit()
+    flash("Global API key saved.", "success")
+    return redirect(url_for("admin.index") + "#admin-settings")
+
+
+@bp.route("/settings/global-api-key/remove", methods=["POST"])
+@admin_required
+def remove_global_api_key():
+    """Clear the DB-stored global key, reverting to the OPENROUTER_API_KEY
+    env var (if any) rather than deleting the row itself — cost history
+    stays attached to it either way."""
+    key = ApiKey.get_or_create_global()
+    key.set_key(None)
+    db.session.commit()
+    flash("Global API key cleared — falling back to the OPENROUTER_API_KEY environment variable, if set.", "success")
     return redirect(url_for("admin.index") + "#admin-settings")
 
 

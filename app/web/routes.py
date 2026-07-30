@@ -1859,10 +1859,14 @@ def edition_podcast(summary_id: int, run_id: int):
         abort(404)
 
     if is_own:
-        if not current_user.has_podcast_access:
+        # An owner who already generated a podcast can always come back to
+        # listen to it — access only gates *generating* a new one. Without
+        # this, revoking your ElevenLabs key (or an admin revoking
+        # podcast_enabled) would 403 you out of your own existing episode.
+        if not run.news_podcast_audio and not current_user.has_podcast_access:
             abort(403)
         has_key = bool(current_user.elevenlabs_key) or bool(current_app.config.get("ELEVENLABS_API_KEY"))
-        if not has_key:
+        if not run.news_podcast_audio and not has_key:
             flash("Add your ElevenLabs key on the Your Dispatch page to generate a podcast.", "warning")
             return redirect(url_for("web.your_dispatch") + "#sec-elevenlabs-key")
     elif not run.news_podcast_audio:
