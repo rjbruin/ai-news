@@ -1163,12 +1163,26 @@ def summaries():
     ok_days = {d for d, entries in by_day.items() if any(r.status == "ok" for r, _ in entries)}
     failed_only_days = set(by_day.keys()) - ok_days
 
+    # One dot per run kind present on a day, filled while anything of that kind
+    # is still unread and outlined once it has all been read. Computed here
+    # rather than in the template because it needs a per-run read lookup, and
+    # a day can hold several Dispatches' editions at once.
+    day_dots: dict[date, list[tuple[str, bool]]] = {}
+    for day, entries in by_day.items():
+        dots = []
+        for kind in ("edition", "review"):
+            runs = [r for r, _ in entries if r.kind == kind]
+            if runs:
+                dots.append((kind, any(not r.is_read_by(current_user) for r in runs)))
+        day_dots[day] = dots
+
     weeks = calendar_module.Calendar(firstweekday=0).monthdatescalendar(year, month)
 
     return render_template(
         "summaries/list.html",
         weeks=weeks,
         by_day=by_day,
+        day_dots=day_dots,
         ok_days=ok_days,
         failed_only_days=failed_only_days,
         month_label=first.strftime("%B %Y"),
