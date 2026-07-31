@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "partials/_ai_badge.html" import ai_badge %}
+{% block title %}AI disclosure · Dispatch{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  {{ ai_badge(size='md', label=false) }}
+  <h1 class="h3 mb-0">How Dispatch uses AI</h1>
+</div>
+<p class="text-body-secondary mb-4">
+  You'll see this badge on every edition, and it always links back here. This page explains what
+  it means in plain terms.
+</p>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h2 class="h5">What's AI-generated</h2>
+    <p>
+      Every edition on Dispatch — the article you're reading, its headline, and its topic tags —
+      is written by an AI agent, not a human editor. The agent is given a set of source articles
+      (from newsletters and RSS feeds a Dispatch owner has added) and a topic taxonomy, and it
+      independently selects, groups, and writes up what it judges to matter. Podcast episodes work
+      the same way: the two-host script and the synthetic voice audio are both AI-generated, start
+      to finish.
+    </p>
+    <p class="mb-0">
+      No part of an edition's text, headline, tags, or podcast script or audio is written or
+      recorded by a person before publication.
+    </p>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h2 class="h5">What a human decides</h2>
+    <p class="mb-0">
+      A Dispatch's owner chooses which sources feed it, which topics it emphasizes, and when it
+      publishes — and can revise or regenerate an edition after the fact. What they don't do is
+      write or fact-check the text themselves before it goes out. Treat every edition as a
+      first draft from an AI system, not a vetted human-written article.
+    </p>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h2 class="h5">Transparency requirements</h2>
+    <p class="mb-0">
+      This disclosure — and the badge on every AI-generated page — exists to meet the
+      transparency obligations for AI-generated and synthetic content under
+      <a href="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32024R1689" target="_blank" rel="noopener">
+        Article 50 of the EU AI Act (Regulation (EU) 2024/1689)</a>, which requires that content
+      generated or manipulated by an AI system be marked as such in a machine-readable and
+      clearly identifiable way.
+    </p>
+  </div>
+</div>
+{% endblock %}

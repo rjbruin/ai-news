@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_channels.html" import channel_icons, channel_hero with context %}
 {% from "partials/_podcast_subscribe.html" import podcast_subscribe_button, podcast_subscribe_modal %}
+{% from "partials/_ai_badge.html" import ai_badge %}
 {% block title %}{{ run.label or 'Edition' }} · {{ summary.name }} · Dispatch{% endblock %}
 {% block content %}
 
@@ -43,6 +44,7 @@
       {% if is_agentic and run.revision and run.revision > 1 %}
       <span class="pill pill-slate">rev {{ run.revision }}</span>
       {% endif %}
+      {{ ai_badge(size='sm') }}
     </div>
     {% if not is_shared_view and is_own %}
     <div class="d-flex align-items-center gap-2 mt-1">

@@ -202,6 +202,60 @@ h1, h2, h3, h4, h5, h6,
 .channel-pill--podcast { background: var(--ag-teal-tint);  color: var(--ag-teal); }
 .channel-pill--pdf     { background: var(--ag-coral-tint); color: var(--ag-coral); }
 
+/* AI-generated content disclosure badge — our own CSS recreation of the
+   EU pictogram used for AI-generated content, styled in the app's brand
+   gradient. Links to /ai-disclosure everywhere it appears (edition pages,
+   footer, frontpage) — see AI Act (EU) 2024/1689, Article 50. */
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  text-decoration: none;
+  color: inherit;
+}
+.ai-badge:hover { color: inherit; text-decoration: none; }
+.ai-badge:hover .ai-badge__mark {
+  transform: scale(1.06);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, .3);
+}
+.ai-badge__mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 22%;
+  background: linear-gradient(120deg, var(--brand-dark), var(--brand) 55%, var(--ag-teal));
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .3);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.ai-badge__text {
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1;
+}
+.ai-badge__sparkle {
+  position: absolute;
+  background: #fff;
+  opacity: .9;
+  clip-path: polygon(50% 0%, 61% 35%, 100% 50%, 61% 65%, 50% 100%, 39% 65%, 0% 50%, 39% 35%);
+}
+.ai-badge__label {
+  font-size: .78rem;
+  font-weight: 500;
+}
+
+.ai-badge--sm .ai-badge__mark { width: 20px; height: 20px; }
+.ai-badge--sm .ai-badge__text { font-size: .5rem; }
+.ai-badge--sm .ai-badge__sparkle { width: 7px; height: 7px; top: -2px; right: -2px; }
+.ai-badge--sm .ai-badge__label { font-size: .72rem; }
+
+.ai-badge--md .ai-badge__mark { width: 30px; height: 30px; }
+.ai-badge--md .ai-badge__text { font-size: .68rem; }
+.ai-badge--md .ai-badge__sparkle { width: 10px; height: 10px; top: -3px; right: -3px; }
+.ai-badge--md .ai-badge__label { font-size: .85rem; }
+
 a { color: var(--brand); }
 a:hover { color: var(--brand-dark); }
 
