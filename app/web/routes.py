@@ -142,6 +142,13 @@ def index():
     return render_template("index.html", demo_run=demo_run, source_badges=source_badges)
 
 
+@bp.route("/ai-disclosure")
+def ai_disclosure():
+    """Public disclosure of how AI is used across Dispatch — linked from the
+    AI-generated badge on every edition, the footer, and the frontpage."""
+    return render_template("ai_disclosure.html")
+
+
 @bp.route("/alerts/<int:alert_id>/dismiss", methods=["POST"])
 @login_required
 def dismiss_alert(alert_id: int):

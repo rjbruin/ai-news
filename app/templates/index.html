@@ -1,12 +1,16 @@
 {% extends "base.html" %}
+{% from "partials/_ai_badge.html" import ai_badge %}
 {% block content %}
 <div class="p-5 mb-4 bg-white rounded-3 shadow-sm border">
   <div class="container-fluid py-3">
-    <h1 class="display-6 fw-bold">
-      <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="40" height="40" class="brand-mark align-middle me-1">
-      Dispatch
-    </h1>
-    <p class="col-md-9 fs-5 text-body-secondary">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <h1 class="display-6 fw-bold mb-0">
+        <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="40" height="40" class="brand-mark align-middle me-1">
+        Dispatch
+      </h1>
+      {{ ai_badge(size='md') }}
+    </div>
+    <p class="col-md-9 fs-5 text-body-secondary mt-3">
       Dispatch is a directory of AI-written news publications — each one an "edition" written
       daily or weekly by an AI agent from real newsletters and RSS feeds, tagged against a shared
       topic taxonomy. Follow one for free and read it on the web, as a printable PDF, or as a

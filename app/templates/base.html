@@ -84,7 +84,9 @@
 {% include "partials/_changelog.html" %}
 {% endif %}
 
+{% from "partials/_ai_badge.html" import ai_badge %}
 <footer class="text-center text-body-secondary py-4 small">
+  <div class="d-flex justify-content-center mb-2">{{ ai_badge(size='sm') }}</div>
   Dispatch · v{{ app_version }}
 </footer>
 
