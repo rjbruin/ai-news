@@ -85,9 +85,11 @@
 {% endif %}
 
 {% from "partials/_ai_badge.html" import ai_badge %}
-<footer class="text-center text-body-secondary py-4 small">
-  <div class="d-flex justify-content-center mb-2">{{ ai_badge(size='sm') }}</div>
-  Dispatch · v{{ app_version }}
+<footer class="text-body-secondary py-4 small">
+  <div class="container d-flex justify-content-center align-items-center position-relative">
+    <span>Dispatch · v{{ app_version }}</span>
+    <div class="position-absolute end-0">{{ ai_badge(size='sm') }}</div>
+  </div>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
