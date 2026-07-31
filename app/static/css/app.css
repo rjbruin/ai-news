@@ -224,7 +224,7 @@ h1, h2, h3, h4, h5, h6,
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: 22%;
+  border-radius: 50%;
   background: linear-gradient(120deg, var(--brand-dark), var(--brand) 55%, var(--ag-teal));
   color: #fff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, .3);
@@ -235,12 +235,6 @@ h1, h2, h3, h4, h5, h6,
   letter-spacing: .02em;
   line-height: 1;
 }
-.ai-badge__sparkle {
-  position: absolute;
-  background: #fff;
-  opacity: .9;
-  clip-path: polygon(50% 0%, 61% 35%, 100% 50%, 61% 65%, 50% 100%, 39% 65%, 0% 50%, 39% 35%);
-}
 .ai-badge__label {
   font-size: .78rem;
   font-weight: 500;
@@ -248,12 +242,10 @@ h1, h2, h3, h4, h5, h6,
 
 .ai-badge--sm .ai-badge__mark { width: 20px; height: 20px; }
 .ai-badge--sm .ai-badge__text { font-size: .5rem; }
-.ai-badge--sm .ai-badge__sparkle { width: 7px; height: 7px; top: -2px; right: -2px; }
 .ai-badge--sm .ai-badge__label { font-size: .72rem; }
 
 .ai-badge--md .ai-badge__mark { width: 30px; height: 30px; }
 .ai-badge--md .ai-badge__text { font-size: .68rem; }
-.ai-badge--md .ai-badge__sparkle { width: 10px; height: 10px; top: -3px; right: -3px; }
 .ai-badge--md .ai-badge__label { font-size: .85rem; }
 
 a { color: var(--brand); }
