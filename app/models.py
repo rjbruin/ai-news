@@ -817,6 +817,61 @@ class EditionRead(db.Model):
     read_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
 
+class ItemFeedback(db.Model):
+    """A reader's up/down vote on one item block within one edition.
+
+    Anchored on ``block_id`` (the vote is on *this writeup*, which is what the
+    reader actually saw) but also stores ``item_id`` where the block cites one
+    — that's the part that generalises, since the same NewsItem can be written
+    up again in a later edition. ``item_id`` is nullable because an item block
+    covering several sources has no single item to point at.
+
+    Votes are recorded for every reader (followers included) as an engagement
+    signal, but only the Dispatch *owner's* votes steer generation — see
+    app/services/reader_feedback.py. Owner-only is deliberate: they pay for
+    generation and control editorial direction.
+    """
+
+    __tablename__ = "item_feedback"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    run_id = db.Column(db.Integer, db.ForeignKey("summary_runs.id"), nullable=False, index=True)
+    block_id = db.Column(db.String(64), nullable=False)
+    # NULL when the block cites no single NewsItem (multi-source writeup), or
+    # when the cited item has since been deleted.
+    item_id = db.Column(
+        db.Integer, db.ForeignKey("news_items.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    vote = db.Column(db.Integer, nullable=False)  # +1 or -1
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "run_id", "block_id", name="uq_item_feedback_user_block"),
+    )
+
+    @classmethod
+    def record(cls, user_id: int, run_id: int, block_id: str, item_id, vote: int):
+        """Set, flip, or clear one vote. Re-sending the same vote clears it
+        (the badge is a toggle), so a reader can undo a misclick without a
+        separate control. Returns the resulting vote (+1/-1) or None."""
+        row = cls.query.filter_by(
+            user_id=user_id, run_id=run_id, block_id=block_id
+        ).first()
+        if row is None:
+            db.session.add(cls(
+                user_id=user_id, run_id=run_id, block_id=block_id,
+                item_id=item_id, vote=vote,
+            ))
+            return vote
+        if row.vote == vote:
+            db.session.delete(row)
+            return None
+        row.vote = vote
+        row.item_id = item_id
+        return vote
+
+
 class PageVisit(db.Model):
     """Anonymous, cookie-free page-visit counter.
 

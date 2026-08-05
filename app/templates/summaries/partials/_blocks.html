@@ -1,15 +1,38 @@
 {# Renders an agentic summary document (list of block dicts) to HTML.
    Each block type maps to a system-defined layout element. The agent only
-   produces these block types; all styling lives here. #}
+   produces these block types; all styling lives here.
 
-{% macro render_blocks(blocks) %}
-<div class="agentic-summary">
-  {% for block in blocks %}{{ render_block(block) }}{% endfor %}
+   `votable` opts in to the up/down feedback badge on item blocks. It is OFF
+   by default on purpose: this macro also renders the PDF export, the emailed
+   edition (via summaries/agentic_page.html) and the logged-out frontpage
+   demo, none of which can carry working vote buttons. Only the live edition
+   page passes votable=true. `votes` maps block_id -> +1/-1 for the current
+   reader, so an already-cast vote renders in its active state. #}
+
+{% macro render_blocks(blocks, votable=false, votes={}) %}
+<div class="agentic-summary{{ ' agentic-summary--votable' if votable }}">
+  {% for block in blocks %}{{ render_block(block, votable, votes) }}{% endfor %}
 </div>
 {% endmacro %}
 
 
-{% macro render_block(block) %}
+{% macro vote_badge(block, votes) %}
+{%- set cast = votes.get(block.id) -%}
+<div class="item-vote" data-block-id="{{ block.id }}"
+     {% if block.item_id %}data-item-id="{{ block.item_id }}"{% endif %}>
+  <button type="button" class="item-vote__btn{{ ' is-active' if cast == 1 }}" data-vote="1"
+          aria-pressed="{{ 'true' if cast == 1 else 'false' }}" aria-label="More like this">
+    <i class="fa-regular fa-thumbs-up" aria-hidden="true"></i>
+  </button>
+  <button type="button" class="item-vote__btn{{ ' is-active' if cast == -1 }}" data-vote="-1"
+          aria-pressed="{{ 'true' if cast == -1 else 'false' }}" aria-label="Less like this">
+    <i class="fa-regular fa-thumbs-down" aria-hidden="true"></i>
+  </button>
+</div>
+{% endmacro %}
+
+
+{% macro render_block(block, votable=false, votes={}) %}
 {%- set t = block.type -%}
 
 {# ── Structural blocks ─────────────────────────────────────────────────── #}
@@ -34,7 +57,7 @@
 
 {# ── Content blocks (current generation) ──────────────────────────────── #}
 {%- elif t == 'item' -%}
-  <article class="agentic-item mb-3">
+  <article class="agentic-item mb-3{{ ' agentic-item--votable' if votable }}">
     <h3 class="an-h3 mb-0">
       {{ block.headline }}
       {%- if block.escalated_from_quick_hit %}<span class="badge text-bg-light border text-body-secondary ms-1" title="Previously covered as a quick hit">↑ escalated</span>{% endif -%}
@@ -42,6 +65,7 @@
     </h3>
     <p class="agentic-item__subheader mb-1">{{ block.subheader }}</p>
     <div class="agentic-item__summary">{{ block.summary | md }}</div>
+    {% if votable %}{{ vote_badge(block, votes) }}{% endif %}
   </article>
 
 {%- elif t == 'trend' -%}

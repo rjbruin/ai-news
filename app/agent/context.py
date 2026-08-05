@@ -27,6 +27,10 @@ class AgentSession:
     # carries its own already-covered warning (see services/story_dedup.py).
     # Items with no match are absent, so unflagged items cost no tokens.
     prior_coverage: dict[int, list] = field(default_factory=dict)
+    # item_id -> {"score", "basis"} derived from the owner's past up/down votes
+    # (see services/reader_feedback.py). Same contract as prior_coverage: only
+    # items with a clear signal appear, so the rest cost nothing.
+    reader_signal: dict[int, dict] = field(default_factory=dict)
 
     def item_by_id(self, item_id):
         for it in self.items:

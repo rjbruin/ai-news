@@ -20,7 +20,10 @@ from .context import AgentSession
 
 # ── Item serialisation ──────────────────────────────────────────────────────
 
-def _item_brief(item, topics: list[str] | None = None, prior: list | None = None) -> dict:
+def _item_brief(
+    item, topics: list[str] | None = None, prior: list | None = None,
+    signal: dict | None = None,
+) -> dict:
     # Note: deliberately NOT exposing item.source.name (the ingestion feed's
     # display name, e.g. "Newsletters from you@gmail.com") — it's config
     # metadata about how the item was fetched, not a per-article attribution,
@@ -42,14 +45,21 @@ def _item_brief(item, topics: list[str] | None = None, prior: list | None = None
     # majority of items carry no extra tokens.
     if prior:
         d["prior_coverage"] = [m.as_dict() for m in prior]
+    # Likewise only present when the reader's past votes say something clear
+    # about this item — see services/reader_feedback.py.
+    if signal:
+        d["reader_signal"] = signal
     return d
 
 
-def _item_full(item, topics: list[str] | None = None, prior: list | None = None) -> dict:
+def _item_full(
+    item, topics: list[str] | None = None, prior: list | None = None,
+    signal: dict | None = None,
+) -> dict:
     # full_text is deliberately not exposed here — it's NULL for the
     # overwhelming majority of items (this app doesn't scrape full article
     # bodies), so it was pure dead weight in every get_item response.
-    d = _item_brief(item, topics, prior)
+    d = _item_brief(item, topics, prior, signal)
     d["summary_text"] = item.summary_text
     return d
 
@@ -61,7 +71,8 @@ def t_list_scope_items(session: AgentSession) -> dict:
         "count": len(session.items),
         "items": [
             _item_brief(
-                i, session.item_tags.get(i.id, []), session.prior_coverage.get(i.id)
+                i, session.item_tags.get(i.id, []), session.prior_coverage.get(i.id),
+                session.reader_signal.get(i.id),
             )
             for i in session.items
         ],
@@ -73,7 +84,8 @@ def t_get_item(session: AgentSession, item_id: int) -> dict:
     if item is None:
         return {"error": f"No in-scope item with id {item_id}."}
     return _item_full(
-        item, session.item_tags.get(item_id, []), session.prior_coverage.get(item_id)
+        item, session.item_tags.get(item_id, []), session.prior_coverage.get(item_id),
+        session.reader_signal.get(item_id)
     )
 
 

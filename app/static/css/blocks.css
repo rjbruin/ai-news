@@ -91,6 +91,63 @@
 }
 .agentic-item__summary p:last-child { margin-bottom: 0; }
 
+/* ── Per-item feedback badge ────────────────────────────────────────────
+   Deliberately NOT hover-gated: hover-to-reveal has no touch equivalent and
+   leaves keyboard users unable to reach the control at all. Instead it sits
+   quietly at ~35% opacity in normal document flow (no absolute positioning,
+   so it can never overlap the last line of the summary), and lifts to full
+   strength on item hover, keyboard focus, or once a vote is cast. Only
+   rendered when the edition page passes votable=true — see _blocks.html. */
+.item-vote {
+  display: flex;
+  justify-content: flex-end;
+  gap: .1rem;
+  margin-top: .35rem;
+  opacity: .35;
+  transition: opacity .15s ease;
+}
+.agentic-item:hover .item-vote,
+.item-vote:focus-within { opacity: 1; }
+
+.item-vote__btn {
+  border: 0;
+  background: transparent;
+  color: var(--bs-secondary-color, #6c757d);
+  border-radius: 50%;
+  /* flex-shrink would otherwise squeeze these narrower than they are tall,
+     turning the round hit area into an oval. */
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  line-height: 1;
+  font-size: .8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, transform .15s ease;
+}
+.item-vote__btn:hover { background: var(--ag-blue-tint); color: var(--ag-blue); }
+.item-vote__btn:active { transform: scale(.88); }
+.item-vote__btn:focus-visible { outline: 2px solid var(--ag-blue); outline-offset: 1px; }
+
+/* A cast vote keeps the whole badge legible at rest — it's state, not just
+   an affordance, so it must survive the parent's 35% resting opacity. */
+.item-vote:has(.is-active) { opacity: 1; }
+.item-vote__btn.is-active[data-vote="1"]  { background: var(--ag-teal-tint);  color: var(--ag-teal); }
+.item-vote__btn.is-active[data-vote="-1"] { background: var(--ag-coral-tint); color: var(--ag-coral); }
+
+/* Touch: no hover to lift the badge, so rest slightly stronger and give the
+   buttons a full 44px tap target without making the glyphs any bigger. */
+@media (hover: none) {
+  .item-vote { opacity: .45; }
+  .item-vote__btn { width: 2.75rem; height: 2.75rem; }
+}
+
+@media print {
+  .item-vote { display: none !important; }
+}
+
 .agentic-trend {
   background: var(--ag-purple-tint);
   border-left: 4px solid var(--ag-purple);
