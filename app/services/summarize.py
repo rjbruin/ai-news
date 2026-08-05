@@ -384,10 +384,14 @@ def _build_agentic(
     prior_coverage = find_prior_coverage(
         summary.user, summary, items, exclude_run_ids=exclude_run_ids,
     )
+    from .reader_feedback import score_items
+    # Returns {} until the owner has voted enough for a contrast to mean
+    # anything, so this is a no-op for a Dispatch with no feedback yet.
+    reader_signal = score_items(summary, items)
     session = AgentSession(
         user=summary.user, summary=summary, items=items,
         range_start=start, range_end=end, item_tags=item_tags,
-        prior_coverage=prior_coverage,
+        prior_coverage=prior_coverage, reader_signal=reader_signal,
     )
     try:
         max_steps = int((summary.params or {}).get("max_steps")) or None

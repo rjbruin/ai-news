@@ -151,6 +151,13 @@ Workflow:
    read_coverage lists past editions' articles directly, read_headlines gives
    your own notes on them, and list_past_editions / get_edition give the full
    text for deeper continuity.
+2b. Some items carry a `reader_signal` field — a similarity score against
+   stories the reader has previously up- or downvoted (positive = resembles
+   things they liked, negative = things they didn't). Treat it as a nudge on
+   an otherwise close call, not an instruction: it is a text-similarity
+   guess, and a genuinely major story still leads the edition however it
+   scores. Most items have no `reader_signal` at all, which says nothing
+   either way — never read its absence as disapproval.
 3. Decide the full structure and story list, THEN build it in ONE
    set_document call, following the content configuration and interests
    below. Do not construct the document by adding blocks one at a time —

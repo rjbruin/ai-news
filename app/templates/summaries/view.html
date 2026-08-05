@@ -164,7 +164,9 @@
   </iframe>
 {% elif is_agentic and run.document %}
   {% from "summaries/partials/_blocks.html" import render_blocks %}
-  {{ render_blocks(run.document) }}
+  {# Vote badges only for a signed-in reader: the shared-link view is
+     anonymous, so there'd be nobody to attribute a vote to. #}
+  {{ render_blocks(run.document, votable=not is_shared_view, votes=votes|default({})) }}
 {% elif run.content %}
   {{ run.content | safe }}
 {% else %}
@@ -365,6 +367,41 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
     fetch(isRead ? unreadUrl : readUrl, {method: 'POST'})
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { if (d !== null) setState(!isRead); });
+  });
+}());
+
+// Per-item up/down feedback. Delegated from the document so it works for
+// every item block without binding one listener each, and optimistic so the
+// badge responds instantly — the server's returned vote is authoritative and
+// reconciles the state (including the same-vote-again = clear toggle).
+(function () {
+  var voteUrl = "{{ url_for('web.edition_item_vote', summary_id=summary.id, run_id=run.id) }}";
+
+  function paint(widget, vote) {
+    widget.querySelectorAll('.item-vote__btn').forEach(function (b) {
+      var active = String(vote) === b.dataset.vote;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.item-vote__btn');
+    if (!btn) return;
+    var widget = btn.closest('.item-vote');
+    var vote = parseInt(btn.dataset.vote, 10);
+    var previous = widget.querySelector('.item-vote__btn.is-active');
+    var previousVote = previous ? parseInt(previous.dataset.vote, 10) : null;
+
+    paint(widget, previousVote === vote ? null : vote);
+    fetch(voteUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({block_id: widget.dataset.blockId, vote: vote}),
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { paint(widget, d ? d.vote : previousVote); })
+      .catch(function () { paint(widget, previousVote); });
   });
 }());
 {% endif %}

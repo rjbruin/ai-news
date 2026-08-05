@@ -28,7 +28,7 @@ from functools import wraps
 from ..agent.runner import AgentCancelled
 from ..extensions import db
 from ..models import (
-    ApiKey, Alert, EditionRead, NewsItem,
+    ApiKey, Alert, EditionRead, ItemFeedback, NewsItem,
     NewsItemTag, Source, Summary, SummaryRun, Tag, User, UserDisabledSource,
     dispatch_email_subscriptions, dispatch_subscriptions, utcnow,
 )
@@ -654,6 +654,11 @@ def your_dispatch():
 
     tier_complete, tier_highlights, tier_none = _topic_tiers_for(current_user, summary)
 
+    # Suggestions only — the owner moves the badge themselves. See
+    # services/reader_feedback.py for why this is never auto-applied.
+    from ..services import reader_feedback
+    topic_vote_suggestions = reader_feedback.topic_suggestions(summary) if summary else []
+
     from ..services.podcast import _get_news_podcast_format, DEFAULT_NEWS_PODCAST_FORMAT
 
     news_podcast_format = None
@@ -671,6 +676,7 @@ def your_dispatch():
         tier_complete=tier_complete,
         tier_highlights=tier_highlights,
         tier_none=tier_none,
+        topic_vote_suggestions=topic_vote_suggestions,
         news_podcast_format=news_podcast_format,
         default_news_podcast_format=DEFAULT_NEWS_PODCAST_FORMAT,
         podcast_feed_url=podcast_feed_url,
@@ -1543,13 +1549,62 @@ def edition_view(summary_id: int, run_id: int):
         from ..services.coverage import edition_coverage
         coverage = edition_coverage(run)
 
+    votes = {
+        f.block_id: f.vote
+        for f in ItemFeedback.query.filter_by(user_id=current_user.id, run_id=run.id)
+    }
+
     return render_template(
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
         is_shared_view=False, is_own=is_own, coverage=coverage,
-        is_read=run.is_read_by(current_user),
+        is_read=run.is_read_by(current_user), votes=votes,
         total_agent_cost=total_agent_cost, total_podcast_cost=total_podcast_cost,
     )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/vote", methods=["POST"])
+@login_required
+def edition_item_vote(summary_id: int, run_id: int):
+    """Record one reader's up/down vote on an item block.
+
+    Gated on _can_read, not ownership: a follower's votes are a real
+    engagement signal worth capturing. Only the owner's votes actually steer
+    generation (see services/reader_feedback.py) — this route just records.
+    """
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if not _can_read(summary):
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    block_id = (payload.get("block_id") or "").strip()
+    vote = payload.get("vote")
+    if not block_id or vote not in (1, -1):
+        return jsonify({"error": "block_id and a vote of 1 or -1 are required."}), 400
+
+    # Trust the document, not the client, for which item a block cites — the
+    # posted block_id is only used to look it up.
+    block = None
+    for b in run.document or []:
+        if b.get("id") == block_id:
+            block = b
+            break
+    if block is None:
+        return jsonify({"error": "Unknown block for this edition."}), 404
+
+    item_id = block.get("item_id")
+    if item_id is not None and db.session.get(NewsItem, item_id) is None:
+        item_id = None  # cited item has since been purged
+
+    result = ItemFeedback.record(
+        user_id=current_user.id, run_id=run.id, block_id=block_id,
+        item_id=item_id, vote=vote,
+    )
+    db.session.commit()
+    return jsonify({"vote": result})
 
 
 @bp.route("/shared/<token>")
