@@ -58,14 +58,20 @@
 {# ── Content blocks (current generation) ──────────────────────────────── #}
 {%- elif t == 'item' -%}
   <article class="agentic-item mb-3{{ ' agentic-item--votable' if votable }}">
-    <h3 class="an-h3 mb-0">
-      {{ block.headline }}
-      {%- if block.escalated_from_quick_hit %}<span class="badge text-bg-light border text-body-secondary ms-1" title="Previously covered as a quick hit">↑ escalated</span>{% endif -%}
-      {%- for src in (block.sources or []) %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
-    </h3>
+    {# The badge shares a flex row with the headline rather than being
+       absolutely positioned, so a long headline reflows beside it instead of
+       running underneath it. Without the votable class this wrapper is a
+       plain block div and renders exactly as the bare <h3> did. #}
+    <div class="agentic-item__head">
+      <h3 class="an-h3 mb-0">
+        {{ block.headline }}
+        {%- if block.escalated_from_quick_hit %}<span class="badge text-bg-light border text-body-secondary ms-1" title="Previously covered as a quick hit">↑ escalated</span>{% endif -%}
+        {%- for src in (block.sources or []) %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
+      </h3>
+      {% if votable %}{{ vote_badge(block, votes) }}{% endif %}
+    </div>
     <p class="agentic-item__subheader mb-1">{{ block.subheader }}</p>
     <div class="agentic-item__summary">{{ block.summary | md }}</div>
-    {% if votable %}{{ vote_badge(block, votes) }}{% endif %}
   </article>
 
 {%- elif t == 'trend' -%}

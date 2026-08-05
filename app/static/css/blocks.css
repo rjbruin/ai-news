@@ -94,15 +94,32 @@
 /* ── Per-item feedback badge ────────────────────────────────────────────
    Deliberately NOT hover-gated: hover-to-reveal has no touch equivalent and
    leaves keyboard users unable to reach the control at all. Instead it sits
-   quietly at ~35% opacity in normal document flow (no absolute positioning,
-   so it can never overlap the last line of the summary), and lifts to full
+   quietly at ~35% opacity in the item's top-right corner, lifting to full
    strength on item hover, keyboard focus, or once a vote is cast. Only
-   rendered when the edition page passes votable=true — see _blocks.html. */
+   rendered when the edition page passes votable=true — see _blocks.html.
+
+   It shares a flex row with the headline rather than being absolutely
+   positioned, so a long headline reflows beside it instead of running
+   underneath. The wrapper is only a flex container when the badge is
+   actually present, leaving the PDF/email markup rendering unchanged. */
+.agentic-item--votable .agentic-item__head {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+}
+.agentic-item--votable .agentic-item__head .an-h3 {
+  flex: 1 1 auto;
+  min-width: 0;   /* let a long headline wrap instead of pushing the badge out */
+}
+
 .item-vote {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-end;
   gap: .1rem;
-  margin-top: .35rem;
+  /* Nudge up so the buttons optically align with the headline's cap height
+     rather than sitting a touch low against its line box. */
+  margin-top: -.2rem;
   opacity: .35;
   transition: opacity .15s ease;
 }
