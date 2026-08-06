@@ -15,12 +15,13 @@
 <div class="d-flex justify-content-between align-items-start mb-2">
   <span class="text-body-secondary small fw-semibold d-flex align-items-center gap-2">
     <span style="width:8px;height:8px;border-radius:2px;background:var(--ag-teal);display:inline-block"></span>
-    Latest from your Dispatches
+    Next to read
   </span>
   <a href="{{ url_for('web.summaries') }}" class="small">All editions</a>
 </div>
 {% for card in hero_cards %}
-{{ edition_hero_card(card.run, card.summary, is_own=card.is_own, coverage=card.coverage) }}
+{{ edition_hero_card(card.run, card.summary, is_own=card.is_own, coverage=card.coverage,
+                     other_unread=card.get('other_unread', 0)) }}
 {% endfor %}
 {% else %}
 <div class="card shadow-sm mb-4">

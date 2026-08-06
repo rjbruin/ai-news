@@ -248,6 +248,39 @@ h1, h2, h3, h4, h5, h6,
 .ai-badge--md .ai-badge__text { font-size: .68rem; }
 .ai-badge--md .ai-badge__label { font-size: .85rem; }
 
+/* Ask Dispatch — inline citation chips. Every factual claim carries one; a
+   marker that didn't resolve renders as a visible warning instead, so a
+   fabricated reference is obvious rather than silently dropped. */
+.ask-answer { white-space: pre-wrap; }
+.ask-cite {
+  font-size: .75em;
+  font-weight: 700;
+  vertical-align: super;
+  text-decoration: none;
+  padding: 0 .15em;
+}
+.ask-cite:hover { text-decoration: underline; }
+.ask-cite--broken {
+  color: var(--ag-coral);
+  background: var(--ag-coral-tint);
+  border-radius: .25rem;
+  padding: 0 .3em;
+  vertical-align: baseline;
+  font-size: .78em;
+}
+
+/* The next-edition card is a whole-card link — give it the same lift the
+   edition cards elsewhere get, so it reads as somewhere to go rather than
+   as another metadata panel. */
+.next-edition {
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.next-edition:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .12) !important;
+}
+.next-edition .min-w-0 { min-width: 0; }
+
 a { color: var(--brand); }
 a:hover { color: var(--brand-dark); }
 

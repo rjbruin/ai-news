@@ -46,7 +46,7 @@
    or-item-count/cost), channel icons, and action buttons (Open always;
    Logs/Retry/Delete owner-only, same gating as edition_row above). Used by
    the dashboard hero and the Editions calendar's day-detail panel. #}
-{% macro edition_hero_card(run, summary, is_own=False, coverage=None) %}
+{% macro edition_hero_card(run, summary, is_own=False, coverage=None, other_unread=0) %}
 {% from "partials/_channels.html" import channel_icons with context %}
 <div class="card shadow-sm mb-3{{ ' edition-card--review' if run.is_review else '' }}">
   <div class="card-body">
@@ -90,6 +90,12 @@
         <button class="btn btn-sm btn-outline-danger">Delete</button></form>
       {% endif %}
     </div>
+    {% if other_unread %}
+    <div class="small text-body-secondary mt-2">
+      {{ other_unread }} more unread edition{{ '' if other_unread == 1 else 's' }} in this Dispatch ·
+      <a href="{{ url_for('web.dispatch_detail', summary_id=summary.id) }}">See all editions</a>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endmacro %}

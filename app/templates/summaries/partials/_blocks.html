@@ -16,19 +16,39 @@
 {% endmacro %}
 
 
-{% macro vote_badge(block, votes) %}
-{%- set cast = votes.get(block.id) -%}
-<div class="item-vote" data-block-id="{{ block.id }}"
-     {% if block.item_id %}data-item-id="{{ block.item_id }}"{% endif %}>
+{# `up_only` drops the downvote — used on quick hits, where the useful signal
+   is "this deserved a full write-up" and there's no meaningful "less like
+   this" for a one-line mention that was already the minimum treatment. #}
+{% macro vote_badge(block_id, item_id, votes, up_only=false) %}
+{%- set cast = votes.get(block_id) -%}
+<div class="item-vote" data-block-id="{{ block_id }}"
+     {% if item_id %}data-item-id="{{ item_id }}"{% endif %}>
   <button type="button" class="item-vote__btn{{ ' is-active' if cast == 1 }}" data-vote="1"
-          aria-pressed="{{ 'true' if cast == 1 else 'false' }}" aria-label="More like this">
+          aria-pressed="{{ 'true' if cast == 1 else 'false' }}"
+          aria-label="{{ 'Worth a full write-up' if up_only else 'More like this' }}"
+          title="{{ 'Worth a full write-up next time' if up_only else 'More like this' }}">
     <i class="fa-regular fa-thumbs-up" aria-hidden="true"></i>
   </button>
+  {% if not up_only %}
   <button type="button" class="item-vote__btn{{ ' is-active' if cast == -1 }}" data-vote="-1"
-          aria-pressed="{{ 'true' if cast == -1 else 'false' }}" aria-label="Less like this">
+          aria-pressed="{{ 'true' if cast == -1 else 'false' }}" aria-label="Less like this"
+          title="Less like this">
     <i class="fa-regular fa-thumbs-down" aria-hidden="true"></i>
   </button>
+  {% endif %}
 </div>
+{% endmacro %}
+
+
+{% macro share_button(block) %}
+<button type="button" class="item-vote__btn item-share" title="Share this story"
+        aria-label="Share this story"
+        data-block-id="{{ block.id }}"
+        data-headline="{{ block.headline }}"
+        data-summary="{{ block.summary | striptags | trim }}"
+        data-article-url="{{ (block.sources or [{}])[0].get('url', '') }}">
+  <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
+</button>
 {% endmacro %}
 
 
@@ -57,10 +77,11 @@
 
 {# ── Content blocks (current generation) ──────────────────────────────── #}
 {%- elif t == 'item' -%}
-  <article class="agentic-item mb-3{{ ' agentic-item--votable' if votable }}">
-    {# The badge shares a flex row with the headline rather than being
-       absolutely positioned, so a long headline reflows beside it instead of
-       running underneath it. Without the votable class this wrapper is a
+  {# id: the anchor a shared link points at (…/shared/<token>#<block id>). #}
+  <article class="agentic-item mb-3{{ ' agentic-item--votable' if votable }}" id="{{ block.id }}">
+    {# The controls share a flex row with the headline rather than being
+       absolutely positioned, so a long headline reflows beside them instead
+       of running underneath. Without the votable class this wrapper is a
        plain block div and renders exactly as the bare <h3> did. #}
     <div class="agentic-item__head">
       <h3 class="an-h3 mb-0">
@@ -68,7 +89,12 @@
         {%- if block.escalated_from_quick_hit %}<span class="badge text-bg-light border text-body-secondary ms-1" title="Previously covered as a quick hit">↑ escalated</span>{% endif -%}
         {%- for src in (block.sources or []) %}<a href="{{ src.url }}" class="story-source" target="_blank" rel="noopener">{{ src.domain }}</a>{% endfor %}
       </h3>
-      {% if votable %}{{ vote_badge(block, votes) }}{% endif %}
+      {% if votable %}
+      <div class="item-vote">
+        {{ share_button(block) }}
+      </div>
+      {{ vote_badge(block.id, block.item_id, votes) }}
+      {% endif %}
     </div>
     <p class="agentic-item__subheader mb-1">{{ block.subheader }}</p>
     <div class="agentic-item__summary">{{ block.summary | md }}</div>
@@ -85,9 +111,13 @@
     <div class="agentic-more-news__title">More news</div>
     <ul>
       {% for it in block['items'] %}
-      <li>
+      {# A more_news entry has no id of its own, so synthesise a stable one
+         from its parent block plus position. The document is immutable once
+         generated, so the index can't drift out from under a stored vote. #}
+      <li class="agentic-more-news__item">
         <span>{{ it.headline | emphasis_html }}</span>
         {%- if it.url %}<a href="{{ it.url }}" class="story-source" target="_blank" rel="noopener">{{ it.url | url_domain }}</a>{% endif %}
+        {% if votable %}{{ vote_badge(block.id ~ ':' ~ loop.index0, it.item_id, votes, up_only=true) }}{% endif %}
       </li>
       {% endfor %}
     </ul>

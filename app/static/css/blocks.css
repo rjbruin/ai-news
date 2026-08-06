@@ -154,11 +154,24 @@
 .item-vote__btn.is-active[data-vote="1"]  { background: var(--ag-teal-tint);  color: var(--ag-teal); }
 .item-vote__btn.is-active[data-vote="-1"] { background: var(--ag-coral-tint); color: var(--ag-coral); }
 
+/* Quick hits are one-liners, so their upvote sits inline at the end of the
+   row and shrinks to match the smaller type rather than dominating it. */
+.agentic-more-news__item {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+}
+.agentic-more-news__item > span:first-child { flex: 1 1 auto; min-width: 0; }
+.agentic-more-news__item .item-vote { margin-top: 0; }
+.agentic-more-news__item .item-vote__btn { width: 1.6rem; height: 1.6rem; font-size: .7rem; }
+.agentic-more-news__item:hover .item-vote { opacity: 1; }
+
 /* Touch: no hover to lift the badge, so rest slightly stronger and give the
    buttons a full 44px tap target without making the glyphs any bigger. */
 @media (hover: none) {
   .item-vote { opacity: .45; }
   .item-vote__btn { width: 2.75rem; height: 2.75rem; }
+  .agentic-more-news__item .item-vote__btn { width: 2.75rem; height: 2.75rem; }
 }
 
 @media print {
