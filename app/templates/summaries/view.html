@@ -173,135 +173,182 @@
   <p class="text-body-secondary">This edition has no stored content.</p>
 {% endif %}
 
-{% if not is_shared_view and is_own and (total_agent_cost or total_podcast_cost) %}
-<div class="card shadow-sm mt-4 d-print-none">
-  <div class="card-body">
-    <div class="fw-semibold text-body mb-2">
-      Cost{{ ' (all %d revisions)' % revisions|length if revisions|length > 1 else '' }}
+{# ── Next edition ─────────────────────────────────────────────────────
+   Sits directly below the article, before anything meta about this edition:
+   once you've finished reading, going somewhere next is the primary action.
+   "Next" is the next *newer* edition, matching the reading direction the
+   dashboard sets up by surfacing the oldest unread one first. #}
+{% if next_edition and not is_shared_view %}
+<a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=next_edition.run.id) }}"
+   class="card shadow-sm mt-4 d-print-none text-decoration-none next-edition">
+  <div class="card-body d-flex align-items-center gap-3">
+    <div class="flex-grow-1 min-w-0">
+      <div class="text-body-secondary small mb-1">Next edition</div>
+      <div class="fw-semibold text-body">
+        {{ next_edition.run.headline or next_edition.run.label
+           or next_edition.run.generated_at.strftime('%Y-%m-%d') }}
+      </div>
+      <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+        <span class="pill pill-teal">
+          {{ next_edition.run.label or next_edition.run.generated_at.strftime('%Y-%m-%d') }}
+        </span>
+        {% if next_edition.run.is_review %}
+        <span class="pill pill-purple">Review edition</span>
+        {% endif %}
+        {% if next_edition.is_read %}
+        <span class="pill pill-slate">
+          <i class="fa-regular fa-envelope-open" aria-hidden="true"></i> Read
+        </span>
+        {% else %}
+        <span class="pill pill-blue">
+          <i class="fa-solid fa-envelope" aria-hidden="true"></i> Unread
+        </span>
+        {% endif %}
+      </div>
     </div>
-    <div class="d-flex flex-column gap-1 small">
-      {% if total_agent_cost %}
-      <div class="d-flex justify-content-between">
-        <span class="text-body-secondary"><i class="fa-solid fa-robot me-1" aria-hidden="true"></i>Edition generation</span>
-        <span>${{ '%.4f'|format(total_agent_cost) }}</span>
-      </div>
-      {% endif %}
-      {% if total_podcast_cost %}
-      <div class="d-flex justify-content-between">
-        <span class="text-body-secondary"><i class="fa-solid fa-microphone-lines me-1" aria-hidden="true"></i>Podcast audio</span>
-        <span>${{ '%.4f'|format(total_podcast_cost) }}</span>
-      </div>
-      {% endif %}
-      {% if total_agent_cost and total_podcast_cost %}
-      <hr class="my-1">
-      <div class="d-flex justify-content-between fw-semibold">
-        <span>Total</span>
-        <span>${{ '%.4f'|format(total_agent_cost + total_podcast_cost) }}</span>
-      </div>
-      {% endif %}
-    </div>
+    <i class="fa-solid fa-arrow-right text-body-secondary" aria-hidden="true"></i>
   </div>
-</div>
+</a>
 {% endif %}
 
-{% if coverage and coverage.scope_count %}
+{# ── About this edition ───────────────────────────────────────────────
+   Cost, coverage and editor feedback were three separate cards competing
+   for attention below every edition. They're all metadata *about* the
+   edition rather than part of it, so they collapse into one box. #}
+{% set show_cost = not is_shared_view and is_own and (total_agent_cost or total_podcast_cost) %}
+{% set show_coverage = coverage and coverage.scope_count %}
+{% set show_feedback = is_agentic and not is_shared_view and is_own and run.status != 'failed' %}
+{% if show_cost or show_coverage or show_feedback %}
 <style>
   .coverage-chevron { transition: transform .15s ease; }
   .coverage-toggle[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
 </style>
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
-    <button class="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-2 w-100 text-start coverage-toggle"
-            type="button" data-bs-toggle="collapse" data-bs-target="#coverage-box"
-            aria-expanded="false" aria-controls="coverage-box">
-      <i class="fa-solid fa-chevron-right small coverage-chevron text-body-secondary"></i>
-      <span class="fw-semibold text-body">Coverage</span>
-      <span class="text-body-secondary small">
-        {{ coverage.included_count }} of {{ coverage.scope_count }} in-scope items included{% if coverage.not_covered %} · {{ coverage.not_covered|length }} left out{% endif %}
-      </span>
-    </button>
-    <div class="collapse mt-3" id="coverage-box">
-      {% macro coverage_list(items) %}
-      <ul class="list-unstyled mb-0 small">
-        {% for item in items %}
-        <li class="mb-2">
-          {% if item.url %}
-            <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
-          {% else %}
-            {{ item.title }}
-          {% endif %}
-          {% if item.source and item.source.name %}
-            <span class="text-body-secondary">· {{ item.source.name }}</span>
-          {% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-      {% endmacro %}
+    <div class="fw-semibold text-body mb-3">About this edition</div>
 
-      <p class="fw-semibold small mb-2">
-        <i class="fa-solid fa-check text-success me-1"></i>
-        Included ({{ coverage.covered|length }})
-      </p>
-      {% if coverage.covered %}
-      {{ coverage_list(coverage.covered) }}
-      {% else %}
-      <p class="small text-body-secondary mb-0">No in-scope items were matched to this edition.</p>
-      {% endif %}
-
-      <p class="fw-semibold small mb-2 mt-3">
-        <i class="fa-solid fa-xmark text-body-secondary me-1"></i>
-        Left out ({{ coverage.not_covered|length }})
-      </p>
-      {% if coverage.not_covered %}
-      {{ coverage_list(coverage.not_covered) }}
-      {% else %}
-      <p class="small text-body-secondary mb-0">Every in-scope item was included in this edition.</p>
-      {% endif %}
+    {% if show_cost %}
+    <div class="mb-3">
+      <div class="small fw-semibold text-body mb-2">
+        Cost{{ ' (all %d revisions)' % revisions|length if revisions|length > 1 else '' }}
+      </div>
+      <div class="d-flex flex-column gap-1 small">
+        {% if total_agent_cost %}
+        <div class="d-flex justify-content-between">
+          <span class="text-body-secondary"><i class="fa-solid fa-robot me-1" aria-hidden="true"></i>Edition generation</span>
+          <span>${{ '%.4f'|format(total_agent_cost) }}</span>
+        </div>
+        {% endif %}
+        {% if total_podcast_cost %}
+        <div class="d-flex justify-content-between">
+          <span class="text-body-secondary"><i class="fa-solid fa-microphone-lines me-1" aria-hidden="true"></i>Podcast audio</span>
+          <span>${{ '%.4f'|format(total_podcast_cost) }}</span>
+        </div>
+        {% endif %}
+        {% if total_agent_cost and total_podcast_cost %}
+        <hr class="my-1">
+        <div class="d-flex justify-content-between fw-semibold">
+          <span>Total</span>
+          <span>${{ '%.4f'|format(total_agent_cost + total_podcast_cost) }}</span>
+        </div>
+        {% endif %}
+      </div>
     </div>
+    {% endif %}
+
+    {% if show_coverage %}
+    {% if show_cost %}<hr>{% endif %}
+    <div class="{{ 'mb-3' if show_feedback }}">
+      <button class="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-2 w-100 text-start coverage-toggle"
+              type="button" data-bs-toggle="collapse" data-bs-target="#coverage-box"
+              aria-expanded="false" aria-controls="coverage-box">
+        <i class="fa-solid fa-chevron-right small coverage-chevron text-body-secondary"></i>
+        <span class="fw-semibold small text-body">Coverage</span>
+        <span class="text-body-secondary small">
+          {{ coverage.included_count }} of {{ coverage.scope_count }} in-scope items included{% if coverage.not_covered %} · {{ coverage.not_covered|length }} left out{% endif %}
+        </span>
+      </button>
+      <div class="collapse mt-3" id="coverage-box">
+        {% macro coverage_list(items) %}
+        <ul class="list-unstyled mb-0 small">
+          {% for item in items %}
+          <li class="mb-2">
+            {% if item.url %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+            {% else %}
+              {{ item.title }}
+            {% endif %}
+            {% if item.source and item.source.name %}
+              <span class="text-body-secondary">· {{ item.source.name }}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endmacro %}
+
+        <p class="fw-semibold small mb-2">
+          <i class="fa-solid fa-check text-success me-1"></i>
+          Included ({{ coverage.covered|length }})
+        </p>
+        {% if coverage.covered %}
+        {{ coverage_list(coverage.covered) }}
+        {% else %}
+        <p class="small text-body-secondary mb-0">No in-scope items were matched to this edition.</p>
+        {% endif %}
+
+        <p class="fw-semibold small mb-2 mt-3">
+          <i class="fa-solid fa-xmark text-body-secondary me-1"></i>
+          Left out ({{ coverage.not_covered|length }})
+        </p>
+        {% if coverage.not_covered %}
+        {{ coverage_list(coverage.not_covered) }}
+        {% else %}
+        <p class="small text-body-secondary mb-0">Every in-scope item was included in this edition.</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if show_feedback %}
+    {% if show_cost or show_coverage %}<hr>{% endif %}
+    <div>
+      <button class="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-2 w-100 text-start coverage-toggle"
+              type="button" data-bs-toggle="collapse" data-bs-target="#feedback-box"
+              aria-expanded="false" aria-controls="feedback-box">
+        <i class="fa-solid fa-chevron-right small coverage-chevron text-body-secondary"></i>
+        <span class="fw-semibold small text-body">Give feedback to the editor</span>
+      </button>
+      <div class="collapse mt-3" id="feedback-box">
+        <p class="small text-body-secondary mb-2">
+          Ask for changes to this edition, or state a lasting preference (topics to
+          include/exclude, how much of each, structure). A new revision is created;
+          lasting preferences are remembered for future editions.
+        </p>
+        <form method="post"
+              action="{{ url_for('web.edition_feedback', summary_id=summary.id, run_id=run.id) }}">
+          <textarea name="feedback" class="form-control mb-2" rows="3"
+                    placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="from_scratch" id="feedback-scratch" value="1">
+            <label class="form-check-label small text-body-secondary" for="feedback-scratch">
+              Start this revision from scratch instead of editing the current draft
+            </label>
+          </div>
+          <div class="text-end">
+            <button type="submit"
+                    formaction="{{ url_for('web.edition_feedback_save', summary_id=summary.id, run_id=run.id) }}"
+                    class="btn btn-outline-secondary btn-sm">Save for next time</button>
+            <button type="submit" class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}
 
-{% if is_agentic and not is_shared_view and is_own and run.status != 'failed' %}
-<style>
-  .coverage-chevron { transition: transform .15s ease; }
-  .coverage-toggle[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
-</style>
-<div class="card shadow-sm mt-4 d-print-none">
-  <div class="card-body">
-    <button class="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-2 w-100 text-start coverage-toggle"
-            type="button" data-bs-toggle="collapse" data-bs-target="#feedback-box"
-            aria-expanded="false" aria-controls="feedback-box">
-      <i class="fa-solid fa-chevron-right small coverage-chevron text-body-secondary"></i>
-      <span class="fw-semibold text-body">Give feedback to the editor</span>
-    </button>
-    <div class="collapse mt-3" id="feedback-box">
-      <p class="small text-body-secondary mb-2">
-        Ask for changes to this edition, or state a lasting preference (topics to
-        include/exclude, how much of each, structure). A new revision is created;
-        lasting preferences are remembered for future editions.
-      </p>
-      <form method="post"
-            action="{{ url_for('web.edition_feedback', summary_id=summary.id, run_id=run.id) }}">
-        <textarea name="feedback" class="form-control mb-2" rows="3"
-                  placeholder="e.g. Lead with research papers, and drop crypto coverage entirely."></textarea>
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" name="from_scratch" id="feedback-scratch" value="1">
-          <label class="form-check-label small text-body-secondary" for="feedback-scratch">
-            Start this revision from scratch instead of editing the current draft
-          </label>
-        </div>
-        <div class="text-end">
-          <button type="submit"
-                  formaction="{{ url_for('web.edition_feedback_save', summary_id=summary.id, run_id=run.id) }}"
-                  class="btn btn-outline-secondary btn-sm">Save for next time</button>
-          <button type="submit" class="btn btn-primary btn-sm btn-generate">Submit feedback &amp; revise</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-{% elif is_agentic and not is_shared_view and not is_own and run.status != 'failed' %}
+{% if is_agentic and not is_shared_view and not is_own and run.status != 'failed' %}
 <div class="card shadow-sm mt-4 d-print-none">
   <div class="card-body">
     <span class="fw-semibold text-body">This is {{ summary.user.username }}'s Dispatch</span>
@@ -322,6 +369,61 @@
       <button type="submit" class="btn btn-primary btn-sm">Set up my own Dispatch</button>
     </form>
     {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if not is_shared_view %}
+{# Share dialog — one per page, retargeted by whichever item's button opened
+   it (see the share JS below). #}
+<div class="modal fade" id="share-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Share this story</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="btn-group w-100 mb-3" role="group" aria-label="What to link to">
+          <input type="radio" class="btn-check" name="share-target" id="share-target-edition"
+                 value="edition" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary btn-sm" for="share-target-edition">
+            This edition's write-up
+          </label>
+          <input type="radio" class="btn-check" name="share-target" id="share-target-article"
+                 value="article" autocomplete="off">
+          <label class="btn btn-outline-secondary btn-sm" for="share-target-article">
+            Original article
+          </label>
+        </div>
+
+        <div id="share-notice" class="alert alert-warning small py-2 px-3 d-none" role="alert"></div>
+
+        <label class="form-label small text-body-secondary" for="share-text">Text to share</label>
+        <textarea id="share-text" class="form-control mb-2" rows="7" readonly></textarea>
+
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary btn-sm" id="share-copy">
+            <i class="fa-regular fa-copy me-1" aria-hidden="true"></i>Copy
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="share-native">
+            <i class="fa-solid fa-share-nodes me-1" aria-hidden="true"></i>Share…
+          </button>
+        </div>
+
+        <hr>
+        <div class="small text-body-secondary mb-2">Send via</div>
+        <div class="d-flex flex-wrap gap-2" id="share-social">
+          <a class="btn btn-outline-secondary btn-sm" data-share="signal" target="_blank" rel="noopener">Signal</a>
+          <a class="btn btn-outline-secondary btn-sm" data-share="whatsapp" target="_blank" rel="noopener">WhatsApp</a>
+          <a class="btn btn-outline-secondary btn-sm" data-share="telegram" target="_blank" rel="noopener">Telegram</a>
+          <a class="btn btn-outline-secondary btn-sm" data-share="mastodon" target="_blank" rel="noopener">Mastodon</a>
+          <a class="btn btn-outline-secondary btn-sm" data-share="x" target="_blank" rel="noopener">X</a>
+          <a class="btn btn-outline-secondary btn-sm" data-share="linkedin" target="_blank" rel="noopener">LinkedIn</a>
+          <a class="btn btn-outline-secondary btn-sm" data-share="email">Email</a>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -387,7 +489,7 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
 
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('.item-vote__btn');
-    if (!btn) return;
+    if (!btn || btn.classList.contains('item-share')) return;
     var widget = btn.closest('.item-vote');
     var vote = parseInt(btn.dataset.vote, 10);
     var previous = widget.querySelector('.item-vote__btn.is-active');
@@ -402,6 +504,123 @@ document.querySelectorAll('.btn-generate').forEach(function(btn) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { paint(widget, d ? d.vote : previousVote); })
       .catch(function () { paint(widget, previousVote); });
+  });
+}());
+
+// Share dialog. The shared text is always: URL, blank line, the edition's
+// own summary of the story, then a fixed AI-generated attribution line.
+(function () {
+  var SHARE_LINK_URL = "{{ url_for('web.edition_share_link', summary_id=summary.id, run_id=run.id) }}";
+  var ATTRIBUTION = '(Summary generated by Dispatch using AI.)';
+  var modalEl = document.getElementById('share-modal');
+  if (!modalEl) return;
+  var modal = new bootstrap.Modal(modalEl);
+  var textEl = document.getElementById('share-text');
+  var noticeEl = document.getElementById('share-notice');
+  var nativeBtn = document.getElementById('share-native');
+  var current = null;      // {blockId, summary, articleUrl}
+  var editionUrl = null;   // resolved lazily; null until the link is minted
+
+  function compose(url) {
+    return url + '\n\n' + (current.summary || '') + '\n\n' + ATTRIBUTION;
+  }
+
+  function selectedTarget() {
+    var picked = document.querySelector('input[name="share-target"]:checked');
+    return picked ? picked.value : 'edition';
+  }
+
+  function notice(msg, kind) {
+    if (!msg) { noticeEl.classList.add('d-none'); return; }
+    noticeEl.textContent = msg;
+    noticeEl.className = 'alert alert-' + (kind || 'warning') + ' small py-2 px-3';
+  }
+
+  function socialLinks(text, url) {
+    var t = encodeURIComponent(text);
+    var u = encodeURIComponent(url);
+    return {
+      // Signal has no documented web share endpoint; sgnl:// is a protocol
+      // handler that only resolves if the Signal app is installed and has
+      // registered it. Falls back to the native share sheet below.
+      signal: 'sgnl://send?text=' + t,
+      whatsapp: 'https://wa.me/?text=' + t,
+      telegram: 'https://t.me/share/url?url=' + u + '&text=' + t,
+      mastodon: 'https://mastodonshare.com/?text=' + t,
+      x: 'https://twitter.com/intent/tweet?text=' + t,
+      linkedin: 'https://www.linkedin.com/sharing/share-offsite/?url=' + u,
+      email: 'mailto:?subject=' + encodeURIComponent(current.headline || 'Shared from Dispatch') +
+             '&body=' + t,
+    };
+  }
+
+  function render(url) {
+    var text = compose(url);
+    textEl.value = text;
+    var links = socialLinks(text, url);
+    document.querySelectorAll('#share-social [data-share]').forEach(function (a) {
+      a.href = links[a.dataset.share] || '#';
+    });
+    nativeBtn.classList.toggle('d-none', !navigator.share);
+    nativeBtn.onclick = function () {
+      navigator.share({text: text}).catch(function () {});
+    };
+  }
+
+  function refresh() {
+    if (selectedTarget() === 'article') {
+      if (!current.articleUrl) {
+        notice('This write-up has no original article link — share the edition write-up instead.');
+        textEl.value = '';
+        return;
+      }
+      notice(null);
+      render(current.articleUrl);
+      return;
+    }
+    if (editionUrl) { notice('This edition is publicly readable by anyone with the link.', 'info');
+                      render(editionUrl); return; }
+    notice('Getting a public link…', 'secondary');
+    textEl.value = '';
+    fetch(SHARE_LINK_URL, {method: 'POST'})
+      .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          notice(res.d.error || 'Could not create a public link.', 'warning');
+          return;
+        }
+        editionUrl = res.d.url + '#' + current.blockId;
+        notice('This edition is now publicly readable by anyone with the link.', 'info');
+        render(editionUrl);
+      })
+      .catch(function () { notice('Could not create a public link.', 'warning'); });
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.item-share');
+    if (!btn) return;
+    current = {
+      blockId: btn.dataset.blockId,
+      headline: btn.dataset.headline,
+      summary: btn.dataset.summary,
+      articleUrl: btn.dataset.articleUrl,
+    };
+    document.getElementById('share-target-edition').checked = true;
+    refresh();
+    modal.show();
+  });
+
+  document.querySelectorAll('input[name="share-target"]').forEach(function (r) {
+    r.addEventListener('change', refresh);
+  });
+
+  document.getElementById('share-copy').addEventListener('click', function () {
+    var btn = this;
+    navigator.clipboard.writeText(textEl.value).then(function () {
+      var was = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Copied';
+      setTimeout(function () { btn.innerHTML = was; }, 1500);
+    });
   });
 }());
 {% endif %}

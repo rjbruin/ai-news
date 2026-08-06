@@ -178,23 +178,38 @@ def dashboard():
     # extra cards: they arrive rarely and are easy to miss otherwise.
     from ..services.coverage import edition_coverage
 
+    read_run_ids = {
+        r.run_id for r in EditionRead.query.filter_by(user_id=current_user.id)
+    }
+
     hero_cards = []
     for summary in followed:
-        latest_edition = (
+        # Oldest *unread* rather than newest: editions build on each other, so
+        # working forward in time reads correctly, and a backlog surfaces from
+        # the bottom instead of the top (where it would stay buried). Falls
+        # back to the newest edition once everything has been read, so a
+        # caught-up Dispatch still shows something.
+        editions = (
             SummaryRun.query
             .filter_by(summary_id=summary.id, kind="edition")
             .filter(SummaryRun.status == "ok")
-            .order_by(SummaryRun.generated_at.desc())
-            .first()
+            .order_by(SummaryRun.generated_at.asc())
+            .all()
         )
-        if latest_edition is not None:
+        unread = [e for e in editions if e.id not in read_run_ids]
+        featured = unread[0] if unread else (editions[-1] if editions else None)
+
+        if featured is not None:
             hero_cards.append({
-                "run": latest_edition,
+                "run": featured,
                 "summary": summary,
                 "is_own": summary.user_id == current_user.id,
                 "coverage": (
-                    edition_coverage(latest_edition) if latest_edition.document else None
+                    edition_coverage(featured) if featured.document else None
                 ),
+                # Everything else still waiting, so the reader can see the
+                # backlog without opening the Dispatch.
+                "other_unread": max(0, len(unread) - 1),
             })
 
         latest_rev = (
@@ -210,9 +225,12 @@ def dashboard():
                 "summary": summary,
                 "is_own": summary.user_id == current_user.id,
                 "coverage": None,
+                "other_unread": 0,
             })
 
-    hero_cards.sort(key=lambda c: c["run"].generated_at or utcnow(), reverse=True)
+    # Oldest first now that the cards are "what to read next" rather than
+    # "what's newest" — the longest-waiting edition should be nearest the top.
+    hero_cards.sort(key=lambda c: c["run"].generated_at or utcnow())
 
     enabled_sources = [
         s for s in Source.query.filter_by(enabled=True).order_by(Source.name).all()
@@ -1554,13 +1572,50 @@ def edition_view(summary_id: int, run_id: int):
         for f in ItemFeedback.query.filter_by(user_id=current_user.id, run_id=run.id)
     }
 
+    nxt = summarize.next_edition(run)
+    next_edition_info = None
+    if nxt is not None:
+        next_edition_info = {
+            "run": nxt,
+            "is_read": nxt.is_read_by(current_user),
+        }
+
     return render_template(
         "summaries/view.html",
         summary=summary, run=run, is_agentic=is_agentic, revisions=chain,
         is_shared_view=False, is_own=is_own, coverage=coverage,
         is_read=run.is_read_by(current_user), votes=votes,
+        next_edition=next_edition_info,
         total_agent_cost=total_agent_cost, total_podcast_cost=total_podcast_cost,
     )
+
+
+_NO_SUCH_BLOCK = object()
+
+
+def _resolve_voted_item(document, block_id: str):
+    """Item id cited by ``block_id``, or _NO_SUCH_BLOCK if it isn't in the
+    document. Returns None for a real block that cites no single item.
+
+    Handles both anchors: a plain block id for an ``item`` block, and the
+    synthesised ``<parent id>:<index>`` form for one entry inside a
+    ``more_news`` (quick hits) block, which has no id of its own.
+    """
+    blocks = document or []
+    parent_id, _, index = block_id.partition(":")
+    for b in blocks:
+        if b.get("id") != parent_id:
+            continue
+        if not index:
+            return b.get("item_id")
+        if b.get("type") != "more_news":
+            return _NO_SUCH_BLOCK
+        try:
+            entry = (b.get("items") or [])[int(index)]
+        except (ValueError, IndexError):
+            return _NO_SUCH_BLOCK
+        return entry.get("item_id")
+    return _NO_SUCH_BLOCK
 
 
 @bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/vote", methods=["POST"])
@@ -1587,15 +1642,9 @@ def edition_item_vote(summary_id: int, run_id: int):
 
     # Trust the document, not the client, for which item a block cites — the
     # posted block_id is only used to look it up.
-    block = None
-    for b in run.document or []:
-        if b.get("id") == block_id:
-            block = b
-            break
-    if block is None:
+    item_id = _resolve_voted_item(run.document, block_id)
+    if item_id is _NO_SUCH_BLOCK:
         return jsonify({"error": "Unknown block for this edition."}), 404
-
-    item_id = block.get("item_id")
     if item_id is not None and db.session.get(NewsItem, item_id) is None:
         item_id = None  # cited item has since been purged
 
@@ -1605,6 +1654,76 @@ def edition_item_vote(summary_id: int, run_id: int):
     )
     db.session.commit()
     return jsonify({"vote": result})
+
+
+@bp.route("/summaries/<int:summary_id>/ask", methods=["GET", "POST"])
+@login_required
+def dispatch_ask(summary_id: int):
+    """Ask Dispatch — a question-answering pass over the news archive and this
+    Dispatch's own editions, billed to the asking user's own OpenRouter key.
+
+    Gated on having a key rather than on owning the Dispatch: a follower can
+    ask questions about a Dispatch they read, and pays for their own queries.
+    """
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if not _can_read(summary):
+        abort(403)
+
+    key = current_user.api_key
+    if key is None or not key.active:
+        return render_template(
+            "summaries/ask.html", summary=summary, needs_key=True,
+            question=None, result=None,
+        )
+
+    question = (request.form.get("question") or "").strip() if request.method == "POST" else None
+    result = None
+    if question:
+        from ..services import ask as ask_svc
+        secret = key.get_key()
+        model = (summary.params or {}).get("model") or current_app.config["OPENROUTER_MODEL"]
+        try:
+            result = ask_svc.ask(summary, question, api_key=secret, model=model)
+        except Exception as exc:  # noqa: BLE001 — surfaced to the asker as-is
+            logger.exception("Ask Dispatch failed for summary %d", summary_id)
+            flash(f"Couldn't answer that: {exc}", "danger")
+
+    return render_template(
+        "summaries/ask.html", summary=summary, needs_key=False,
+        question=question, result=result,
+    )
+
+
+@bp.route("/summaries/<int:summary_id>/editions/<int:run_id>/share-link", methods=["POST"])
+@login_required
+def edition_share_link(summary_id: int, run_id: int):
+    """Return the public link for this edition, minting a share token if the
+    owner asks for one.
+
+    Minting is owner-only: handing out a share link makes the edition readable
+    by anyone with the URL, and that's the owner's call to make about their own
+    Dispatch, not a follower's. A follower gets an existing link if the owner
+    already published one, and a 403 otherwise — so the share dialog can offer
+    them the original-article option instead of silently publishing.
+    """
+    summary = db.session.get(Summary, summary_id) or abort(404)
+    if not _can_read(summary):
+        abort(403)
+    run = db.session.get(SummaryRun, run_id) or abort(404)
+    if run.summary_id != summary_id:
+        abort(404)
+
+    if not run.share_token:
+        if summary.user_id != current_user.id:
+            return jsonify({
+                "error": "Only the owner of this Dispatch can publish one of its editions."
+            }), 403
+        run.share_token = secrets.token_hex(32)
+        db.session.commit()
+
+    return jsonify({
+        "url": url_for("web.edition_shared", token=run.share_token, _external=True),
+    })
 
 
 @bp.route("/shared/<token>")

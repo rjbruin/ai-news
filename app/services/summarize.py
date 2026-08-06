@@ -825,6 +825,24 @@ def edition_heads(summary: Summary, kind: str | None = None):
     return q.order_by(SummaryRun.generated_at.desc()).all()
 
 
+def next_edition(run: SummaryRun) -> SummaryRun | None:
+    """The next *newer* edition of the same Dispatch, or None at the newest.
+
+    "Next" means newer because that's the direction reading flows: the
+    dashboard surfaces the oldest unread edition, so a reader works forward
+    in time. Matches on the same ``kind`` — a review is a different artefact
+    and shouldn't appear as the next daily edition. Only edition *heads* are
+    considered, so a superseded revision never shows up as somewhere to go.
+    """
+    if run.generated_at is None:
+        return None
+    heads = edition_heads(run.summary, kind=run.kind)
+    # edition_heads is newest-first; the next newer one is the last head
+    # still strictly newer than this run.
+    newer = [h for h in heads if h.generated_at and h.generated_at > run.generated_at]
+    return newer[-1] if newer else None
+
+
 def edition_heads_in_range(dispatches, start: datetime, end: datetime):
     """Latest revision of each edition chain across `dispatches` whose
     generated_at falls in [start, end) — naive UTC bounds, matching how

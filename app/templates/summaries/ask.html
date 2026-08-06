@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Ask · {{ summary.display_name }} · Dispatch{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="{{ url_for('web.dispatch_detail', summary_id=summary.id) }}"
+     class="text-body-secondary small text-decoration-none">← {{ summary.display_name }}</a>
+</div>
+
+<h1 class="h4 mb-1">Ask {{ summary.display_name }}</h1>
+<p class="text-body-secondary small mb-4">
+  Ask a question about the news. The editor searches the ingested news items and
+  this Dispatch's past editions, and answers with a link behind every claim.
+</p>
+
+{% if needs_key %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <p class="mb-2">
+      Ask Dispatch runs on your own OpenRouter key, so you pay only for the
+      questions you ask. Add a key to enable it.
+    </p>
+    <a href="{{ url_for('web.your_dispatch') }}#sec-api-keys" class="btn btn-primary btn-sm">
+      Add an API key
+    </a>
+  </div>
+</div>
+{% else %}
+
+<form method="post" class="mb-4">
+  <div class="mb-2">
+    <textarea name="question" class="form-control" rows="3" required
+              placeholder="e.g. What happened with open-weight model licensing this month?">{{ question or '' }}</textarea>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <button class="btn btn-primary btn-ask">Ask</button>
+    <span class="text-body-secondary small">Billed to your own OpenRouter key.</span>
+  </div>
+</form>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="ask-answer">{{ result.answer_html }}</div>
+
+    {% if result.references %}
+    <hr>
+    <div class="small fw-semibold text-body mb-2">References</div>
+    <ol class="small mb-0 ps-3">
+      {% for ref in result.references %}
+      <li class="mb-1">
+        <a href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a>
+        <span class="text-body-secondary">
+          · {{ 'news item' if ref.kind == 'item' else 'past edition' }}
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <hr>
+    <p class="small text-body-secondary mb-0">
+      This answer cites nothing from the archive — treat it with suspicion.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<p class="text-body-secondary small">
+  Answered from this Dispatch's archive by AI, at a cost of
+  ${{ '%.4f'|format(result.cost) }} on your key. Every claim should carry a
+  reference — if one doesn't, it isn't supported by anything in the archive.
+</p>
+{% endif %}
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-ask').forEach(function (btn) {
+  var form = btn.closest('form');
+  if (!form) return;
+  form.addEventListener('submit', function () {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Researching…';
+  });
+});
+</script>
+{% endblock %}

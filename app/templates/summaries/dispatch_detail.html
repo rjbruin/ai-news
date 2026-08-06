@@ -12,6 +12,12 @@
     </p>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
+    {% if current_user.is_authenticated and (is_own or is_following) %}
+    <a href="{{ url_for('web.dispatch_ask', summary_id=summary.id) }}"
+       class="btn btn-sm btn-outline-primary">
+      <i class="fa-solid fa-magnifying-glass me-1" aria-hidden="true"></i>Ask Dispatch
+    </a>
+    {% endif %}
     {% if is_own %}
       {% if active_generation %}
       <span class="btn btn-sm btn-primary disabled">
