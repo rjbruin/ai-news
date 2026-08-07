@@ -62,13 +62,27 @@
       This answer cites nothing from the archive — treat it with suspicion.
     </p>
     {% endif %}
+
+    <hr>
+    <div class="d-flex justify-content-between align-items-baseline small">
+      <span class="text-body-secondary">
+        <i class="fa-solid fa-robot me-1" aria-hidden="true"></i>Cost of this question
+      </span>
+      <span class="fw-semibold">${{ '%.4f'|format(result.cost) }}</span>
+    </div>
+    {% if result.tokens %}
+    <div class="d-flex justify-content-between align-items-baseline small text-body-secondary">
+      <span>Tokens used</span>
+      <span>{{ '{:,}'.format(result.tokens) }}</span>
+    </div>
+    {% endif %}
   </div>
 </div>
 
 <p class="text-body-secondary small">
-  Answered from this Dispatch's archive by AI, at a cost of
-  ${{ '%.4f'|format(result.cost) }} on your key. Every claim should carry a
-  reference — if one doesn't, it isn't supported by anything in the archive.
+  Answered from this Dispatch's archive by AI, billed to your own key. Every
+  claim should carry a reference — if one doesn't, it isn't supported by
+  anything in the archive.
 </p>
 {% endif %}
 {% endif %}

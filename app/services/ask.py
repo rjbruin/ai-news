@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import secrets
 
 from flask import url_for
 from markupsafe import Markup, escape
@@ -294,45 +295,77 @@ def _resolve_citation(kind: str, ident: int, block_id: str | None, summary):
     return (label, url)
 
 
+# Markdown is rendered for readability, but the answer is untrusted text, so
+# the allow-list is deliberately narrower than the app's normal `md` filter:
+# no `a` and no `img`. That's what keeps the no-model-authored-URLs property
+# intact now that Markdown link syntax is being parsed — `[text](http://evil)`
+# becomes an <a> during Markdown rendering and is then stripped back to plain
+# text here, so it can never reach the reader as something clickable. The only
+# anchors in the output are the ones we substitute in ourselves afterwards.
+_ANSWER_TAGS = {
+    "p", "br", "hr", "strong", "em", "b", "i", "code", "pre",
+    "ul", "ol", "li", "blockquote", "h3", "h4", "h5", "h6",
+}
+
+
 def render_answer(text: str, summary) -> tuple[Markup, list[dict]]:
     """Turn an answer containing citation markers into safe HTML plus the
     list of resolved references.
 
-    Everything outside a marker is escaped, so no model-authored HTML (or
-    model-authored ``<a href>``) can reach the page. Markers that resolve
-    become numbered links; markers that don't become a visible warning, so a
-    fabricated citation is obvious rather than invisible.
+    Order matters. Citations are pulled out *first* and replaced with opaque
+    placeholder tokens, so Markdown can't mangle a marker (``[item:1]`` is
+    close enough to Markdown link syntax to be worth not finding out). The
+    remaining text is Markdown-rendered and then sanitised down to
+    ``_ANSWER_TAGS`` — which excludes ``a``/``img``, so nothing the model
+    wrote survives as a link. Only then are the placeholders swapped for
+    anchors we built ourselves from database lookups.
+
+    The placeholder carries a per-render random nonce, so the model can't
+    forge one by writing the token into its own answer.
     """
+    import bleach
+    import markdown as md
+
+    nonce = secrets.token_hex(8)
     refs: list[dict] = []
     seen: dict[tuple, int] = {}
-    out: list[str] = []
-    pos = 0
+    slots: dict[str, str] = {}
 
-    for m in _CITE_RE.finditer(text or ""):
-        out.append(str(escape(text[pos:m.start()])))
-        pos = m.end()
+    def _placeholder(html: str) -> str:
+        # Alphanumeric only: Markdown leaves a bare word alone, where anything
+        # with punctuation risks being treated as syntax.
+        token = f"x{nonce}x{len(slots)}x"
+        slots[token] = html
+        return token
+
+    def _sub(m: re.Match) -> str:
         kind, ident, block_id = m.group(1), int(m.group(2)), m.group(3)
         resolved = _resolve_citation(kind, ident, block_id, summary)
         if resolved is None:
-            out.append(
+            return _placeholder(
                 '<span class="ask-cite ask-cite--broken" '
                 'title="This reference did not resolve to anything in the archive">'
                 'unverified reference</span>'
             )
-            continue
         label, url = resolved
         key = (kind, ident, block_id)
         if key not in seen:
             seen[key] = len(refs) + 1
             refs.append({"n": len(refs) + 1, "label": label, "url": url, "kind": kind})
         n = seen[key]
-        out.append(
+        return _placeholder(
             f'<a class="ask-cite" href="{escape(url)}" '
             f'title="{escape(label)}" target="_blank" rel="noopener">[{n}]</a>'
         )
 
-    out.append(str(escape(text[pos:])))
-    return Markup("".join(out)), refs
+    staged = _CITE_RE.sub(_sub, text or "")
+    rendered = md.markdown(staged, extensions=["extra", "sane_lists"])
+    clean = bleach.clean(rendered, tags=_ANSWER_TAGS, attributes={}, strip=True)
+
+    for token, html in slots.items():
+        clean = clean.replace(token, html)
+
+    return Markup(clean), refs
 
 
 # ── The loop ─────────────────────────────────────────────────────────────────

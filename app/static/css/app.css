@@ -251,7 +251,18 @@ h1, h2, h3, h4, h5, h6,
 /* Ask Dispatch — inline citation chips. Every factual claim carries one; a
    marker that didn't resolve renders as a visible warning instead, so a
    fabricated reference is obvious rather than silently dropped. */
-.ask-answer { white-space: pre-wrap; }
+/* The answer is Markdown-rendered into real block elements now, so it must
+   NOT also honour source whitespace — pre-wrap would re-introduce the blank
+   lines Markdown already consumed as paragraph breaks. */
+.ask-answer > *:last-child { margin-bottom: 0; }
+.ask-answer ul, .ask-answer ol { padding-left: 1.25rem; }
+.ask-answer li { margin-bottom: .25rem; }
+.ask-answer code {
+  background: var(--ag-slate-tint);
+  padding: .1em .35em;
+  border-radius: .25rem;
+  font-size: .9em;
+}
 .ask-cite {
   font-size: .75em;
   font-weight: 700;

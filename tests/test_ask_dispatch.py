@@ -162,16 +162,74 @@ def test_citation_to_another_dispatchs_edition_does_not_resolve(app, db, user, a
     assert refs == []
 
 
-def test_model_authored_html_is_escaped(app, db, user):
+def test_model_authored_html_is_neutralised(app, db, user):
     """Nothing the model writes may reach the page as markup — in particular
-    it must not be able to author its own <a href>."""
+    it must not be able to author its own <a href> or a <script>. The tags are
+    stripped and only inert text survives."""
     d = _dispatch(db, user)
     evil = 'See <a href="https://evil.test">here</a> and <script>alert(1)</script>'
     with app.test_request_context():
         html, refs = ask_svc.render_answer(evil, d)
-    assert "<a href=\"https://evil.test\"" not in html
-    assert "<script>" not in html
-    assert "&lt;script&gt;" in html
+    assert "<a " not in html
+    assert "evil.test" not in html
+    assert "<script" not in html
+    assert refs == []
+
+
+def test_markdown_is_rendered(app, db, user):
+    d = _dispatch(db, user)
+    answer = "Here is **bold** and *italic*.\n\n- first point\n- second point"
+    with app.test_request_context():
+        html, _ = ask_svc.render_answer(answer, d)
+    assert "<strong>bold</strong>" in html
+    assert "<em>italic</em>" in html
+    assert "<li>first point</li>" in html
+    assert "<ul>" in html
+    # The literal Markdown syntax must not survive as text.
+    assert "**bold**" not in html
+
+
+def test_markdown_link_syntax_does_not_become_a_link(app, db, user):
+    """Rendering Markdown adds a second way to author a link. `[text](url)`
+    must still be stripped to plain text — otherwise the model could smuggle
+    an invented URL past the citation system."""
+    d = _dispatch(db, user)
+    with app.test_request_context():
+        html, refs = ask_svc.render_answer(
+            "See [this source](https://invented.example/story).", d)
+    assert "<a " not in html
+    assert "invented.example" not in html
+    assert "this source" in html
+    assert refs == []
+
+
+def test_markdown_image_syntax_is_stripped(app, db, user):
+    d = _dispatch(db, user)
+    with app.test_request_context():
+        html, _ = ask_svc.render_answer("![alt](https://evil.test/track.gif)", d)
+    assert "<img" not in html
+    assert "evil.test" not in html
+
+
+def test_citation_inside_markdown_still_links(app, db, user):
+    """A marker inside a list item or bold run must survive Markdown intact."""
+    d = _dispatch(db, user)
+    item = _item(db, "Nested citation item")
+    with app.test_request_context():
+        html, refs = ask_svc.render_answer(
+            f"- **Big news** [item:{item.id}]\n- Something else", d)
+    assert "<li>" in html
+    assert 'class="ask-cite"' in html
+    assert len(refs) == 1
+
+
+def test_model_cannot_forge_a_citation_placeholder(app, db, user):
+    """Placeholders carry a per-render nonce, so a model writing something
+    placeholder-shaped gets inert text, not an injected anchor."""
+    d = _dispatch(db, user)
+    with app.test_request_context():
+        html, refs = ask_svc.render_answer("x0000x0x and xdeadbeefx1x", d)
+    assert "<a " not in html
     assert refs == []
 
 
