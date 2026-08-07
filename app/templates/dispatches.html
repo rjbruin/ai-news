@@ -28,6 +28,13 @@
           {% endif %}
           <a href="{{ url_for('web.dispatch_detail', summary_id=d.id) }}"
              class="btn btn-sm btn-outline-primary">See Editions</a>
+          {# Same gate as the route: you can ask about a Dispatch you read. #}
+          {% if (own and d.id == own.id) or d.id in following_ids %}
+          <a href="{{ url_for('web.dispatch_ask', summary_id=d.id) }}"
+             class="btn btn-sm btn-outline-primary">
+            <i class="fa-solid fa-magnifying-glass me-1" aria-hidden="true"></i>Ask
+          </a>
+          {% endif %}
           {% if own and d.id == own.id %}
             {# You always "follow" your own; no unfollow toggle needed here. #}
           {% elif d.id in following_ids %}

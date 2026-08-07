@@ -80,6 +80,45 @@ def test_follower_may_ask(auth_client, db, user, admin):
     assert auth_client.get(f"/summaries/{other.id}/ask").status_code == 200
 
 
+# ── Discoverability ─────────────────────────────────────────────────────────
+# The feature shipped reachable only from the per-Dispatch detail page, which
+# is a click deeper than anyone looks. These pin the entry points.
+
+def test_dispatches_directory_links_to_ask_for_own(auth_client, db, user):
+    d = _dispatch(db, user)
+    user.follow(d)
+    db.session.commit()
+    html = auth_client.get("/dispatches").data.decode()
+    assert f"/summaries/{d.id}/ask" in html
+
+
+def test_dispatches_directory_links_to_ask_for_followed(auth_client, db, user, admin):
+    other = _dispatch(db, admin, name="Theirs")
+    other.is_published = True
+    other.published_name = "Theirs"
+    user.follow(other)
+    db.session.commit()
+    html = auth_client.get("/dispatches").data.decode()
+    assert f"/summaries/{other.id}/ask" in html
+
+
+def test_dispatches_directory_hides_ask_for_unfollowed(auth_client, db, user, admin):
+    """No point offering to answer questions about a Dispatch you don't read —
+    and the route would 403 anyway."""
+    other = _dispatch(db, admin, name="Theirs")
+    other.is_published = True
+    other.published_name = "Theirs"
+    db.session.commit()
+    html = auth_client.get("/dispatches").data.decode()
+    assert f"/summaries/{other.id}/ask" not in html
+
+
+def test_dispatch_detail_links_to_ask(auth_client, db, user):
+    d = _dispatch(db, user)
+    html = auth_client.get(f"/dispatches/{d.id}").data.decode()
+    assert f"/summaries/{d.id}/ask" in html
+
+
 # ── Citation rendering ──────────────────────────────────────────────────────
 
 def test_item_citation_becomes_a_link(app, db, user):
