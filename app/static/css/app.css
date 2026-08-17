@@ -137,6 +137,50 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: 0 10px 26px rgba(15, 23, 42, .12);
 }
 
+/* Edition list rows. Desktop keeps the original single line: title stretches,
+   metadata and buttons sit right-aligned. Below the sm breakpoint the two
+   groups stack, so the title gets the full width instead of being crushed
+   into a few characters by the buttons beside it. */
+.edition-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.edition-row__main {
+  display: flex;
+  /* Top-aligned, not centred: against a headline that wraps to several lines
+     a centred dot floats halfway down the block, detached from the text it
+     marks. This keeps it beside the first line at any length. */
+  align-items: flex-start;
+  gap: .5rem;
+  flex: 1 1 auto;
+  min-width: 0;   /* let the title wrap rather than push the buttons out */
+}
+.edition-row__dot { margin-top: .5rem; }   /* optically centre on line one */
+.edition-row__title { min-width: 0; }
+.edition-row__meta {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-shrink: 0;
+}
+
+@media (min-width: 576px) {
+  .app-footer__badge { position: absolute; right: 0; }
+}
+
+@media (max-width: 575.98px) {
+  .edition-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .4rem;
+  }
+  .edition-row__meta { flex-wrap: wrap; gap: .35rem; }
+  /* The row title links to the same place, so on mobile this button is pure
+     duplication — and it's the widest thing on the line. */
+  .edition-row__open { display: none; }
+}
+
 /* Pills — colored chips for small stats (item count, generation cost,
    revision number). One tint per palette color, reusing the same
    light-fill/dark-text pairing as the agentic block colors above. */
