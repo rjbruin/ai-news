@@ -5,40 +5,50 @@
 {% macro edition_row(run, summary, is_own=False, show_dispatch=False) %}
 {% from "partials/_channels.html" import channel_icons with context %}
 {% set is_read = run.is_read_by(current_user) %}
-<div class="list-group-item hover-lift d-flex align-items-center gap-2 py-2">
-  {% if not is_read %}
-  <i class="fa-solid fa-circle fa-2xs text-primary" title="Unread"></i>
-  {% endif %}
-  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
-     class="flex-grow-1 text-body text-decoration-none {{ '' if is_read else 'fw-semibold' }}">
-    {{ run.headline or run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
-    {% if show_dispatch %}<span class="text-body-secondary small ms-1">· {{ summary.display_name }}</span>{% endif %}
-  </a>
-  {% if run.is_review %}<span class="pill pill-purple">Review</span>{% endif %}
-  <span class="pill pill-teal">{{ run.label or run.generated_at.strftime('%Y-%m-%d') }}</span>
-  {% if run.status == 'failed' %}
-  <span class="pill pill-coral">Failed</span>
-  {% else %}
-  <span class="pill pill-blue">{{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}</span>
-  {% if is_own and run.agent_cost is not none %}
-  <span class="pill pill-amber" title="Generation cost">${{ '%.4f'|format(run.agent_cost) }}</span>
-  {% endif %}
-  {% endif %}
-  <span class="small">{{ channel_icons(run) }}</span>
-  <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
-     class="btn btn-sm btn-outline-primary">Open</a>
-  {% if is_own %}
-  {% if run.agent_log %}
-  <a href="{{ url_for('web.edition_logs', summary_id=summary.id, run_id=run.id) }}"
-     class="btn btn-sm btn-outline-secondary">Logs</a>
-  {% endif %}
-  {% if run.status == 'failed' %}
-  <form method="post" action="{{ url_for('web.edition_retry', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
-    <button class="btn btn-sm btn-outline-danger">Retry</button></form>
-  {% endif %}
-  <form method="post" action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
-    <button class="btn btn-sm btn-outline-danger">Delete</button></form>
-  {% endif %}
+{# Two groups rather than one flat flex line: on a narrow screen the metadata
+   and buttons drop onto their own row instead of competing with the headline
+   for width, which was squeezing the title into a handful of characters and
+   wrapping it over many lines. #}
+<div class="list-group-item hover-lift edition-row py-2">
+  <div class="edition-row__main">
+    {% if not is_read %}
+    <i class="fa-solid fa-circle fa-2xs text-primary flex-shrink-0 edition-row__dot" title="Unread"></i>
+    {% endif %}
+    <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+       class="edition-row__title text-body text-decoration-none {{ '' if is_read else 'fw-semibold' }}">
+      {{ run.headline or run.label or run.generated_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if show_dispatch %}<span class="text-body-secondary small ms-1">· {{ summary.display_name }}</span>{% endif %}
+    </a>
+  </div>
+  <div class="edition-row__meta">
+    {% if run.is_review %}<span class="pill pill-purple">Review</span>{% endif %}
+    <span class="pill pill-teal">{{ run.label or run.generated_at.strftime('%Y-%m-%d') }}</span>
+    {% if run.status == 'failed' %}
+    <span class="pill pill-coral">Failed</span>
+    {% else %}
+    <span class="pill pill-blue">{{ run.item_count }} item{{ 's' if run.item_count != 1 else '' }}</span>
+    {% if is_own and run.agent_cost is not none %}
+    <span class="pill pill-amber" title="Generation cost">${{ '%.4f'|format(run.agent_cost) }}</span>
+    {% endif %}
+    {% endif %}
+    <span class="small">{{ channel_icons(run) }}</span>
+    {# Duplicates the row title's link, so it's hidden on mobile where the
+       width it costs matters more than the redundant affordance. #}
+    <a href="{{ url_for('web.edition_view', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-sm btn-outline-primary edition-row__open">Open</a>
+    {% if is_own %}
+    {% if run.agent_log %}
+    <a href="{{ url_for('web.edition_logs', summary_id=summary.id, run_id=run.id) }}"
+       class="btn btn-sm btn-outline-secondary">Logs</a>
+    {% endif %}
+    {% if run.status == 'failed' %}
+    <form method="post" action="{{ url_for('web.edition_retry', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
+      <button class="btn btn-sm btn-outline-danger">Retry</button></form>
+    {% endif %}
+    <form method="post" action="{{ url_for('web.edition_delete', summary_id=summary.id, run_id=run.id) }}" class="d-inline">
+      <button class="btn btn-sm btn-outline-danger">Delete</button></form>
+    {% endif %}
+  </div>
 </div>
 {% endmacro %}
 

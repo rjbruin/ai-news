@@ -86,9 +86,13 @@
 
 {% from "partials/_ai_badge.html" import ai_badge %}
 <footer class="text-body-secondary py-4 small">
-  <div class="container d-flex justify-content-center align-items-center position-relative">
+  {# Absolute right-alignment only from sm up. On a phone it pins the badge
+     hard against the screen edge with no breathing room, so there it just
+     stacks under the version line instead. #}
+  <div class="container d-flex flex-column flex-sm-row justify-content-center
+              align-items-center gap-2 position-relative">
     <span>Dispatch · v{{ app_version }}</span>
-    <div class="position-absolute end-0">{{ ai_badge(size='sm') }}</div>
+    <div class="app-footer__badge">{{ ai_badge(size='sm') }}</div>
   </div>
 </footer>
 
